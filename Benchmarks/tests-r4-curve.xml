@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<test-run id="2" testcasecount="3" result="Passed" total="3" passed="3" failed="0" inconclusive="0" skipped="0" asserts="0" engine-version="3.5.0.0" clr-version="4.0.30319.42000" start-time="2026-10-07 19:23:18Z" end-time="2026-10-07 19:23:38Z" duration="19.5888255">
+  <test-suite type="TestSuite" id="1000" name="QuadremeshHeadless" fullname="QuadremeshHeadless" runstate="Runnable" testcasecount="186" result="Passed" start-time="2026-10-07 19:23:18Z" end-time="2026-10-07 19:23:38Z" duration="19.588826" total="3" passed="3" failed="0" inconclusive="0" skipped="0" asserts="0">
+    <properties>
+      <property name="platform" value="EditMode" />
+    </properties>
+    <test-suite type="Assembly" id="1211" name="NativeRemesher.Tests.dll" fullname="C:/Users/rufat/UnityProject/remesher/Headless/Library/ScriptAssemblies/NativeRemesher.Tests.dll" runstate="Runnable" testcasecount="186" result="Passed" start-time="2026-10-07 19:23:18Z" end-time="2026-10-07 19:23:38Z" duration="19.580063" total="3" passed="3" failed="0" inconclusive="0" skipped="0" asserts="0">
+      <properties>
+        <property name="_PID" value="31192" />
+        <property name="_APPDOMAIN" value="Unity Child Domain" />
+        <property name="platform" value="EditMode" />
+        <property name="EditorOnly" value="True" />
+      </properties>
+      <test-suite type="TestSuite" id="1212" name="NativeRemesher" fullname="NativeRemesher" runstate="Runnable" testcasecount="186" result="Passed" start-time="2026-10-07 19:23:18Z" end-time="2026-10-07 19:23:38Z" duration="19.579385" total="3" passed="3" failed="0" inconclusive="0" skipped="0" asserts="0">
+        <properties />
+        <test-suite type="TestSuite" id="1213" name="Tests" fullname="NativeRemesher.Tests" runstate="Runnable" testcasecount="186" result="Passed" start-time="2026-10-07 19:23:18Z" end-time="2026-10-07 19:23:38Z" duration="19.578875" total="3" passed="3" failed="0" inconclusive="0" skipped="0" asserts="0">
+          <properties />
+          <test-suite type="TestFixture" id="1005" name="CurveNetworkTests" fullname="NativeRemesher.Tests.CurveNetworkTests" classname="NativeRemesher.Tests.CurveNetworkTests" runstate="Runnable" testcasecount="3" result="Passed" start-time="2026-10-07 19:23:18Z" end-time="2026-10-07 19:23:38Z" duration="19.572890" total="3" passed="3" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1006" name="CubeEdgesAreTheCurves" fullname="NativeRemesher.Tests.CurveNetworkTests.CubeEdgesAreTheCurves" methodname="CubeEdgesAreTheCurves" classname="NativeRemesher.Tests.CurveNetworkTests" runstate="Runnable" seed="1954571469" result="Passed" start-time="2026-10-07 19:23:18Z" end-time="2026-10-07 19:23:19Z" duration="0.064241" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1008" name="PipelineCutsAlongTracedEdges" fullname="NativeRemesher.Tests.CurveNetworkTests.PipelineCutsAlongTracedEdges" methodname="PipelineCutsAlongTracedEdges" classname="NativeRemesher.Tests.CurveNetworkTests" runstate="Runnable" seed="328779937" result="Passed" start-time="2026-10-07 19:23:19Z" end-time="2026-10-07 19:23:38Z" duration="19.478614" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1007" name="SmoothShapesHaveNoCurves" fullname="NativeRemesher.Tests.CurveNetworkTests.SmoothShapesHaveNoCurves" methodname="SmoothShapesHaveNoCurves" classname="NativeRemesher.Tests.CurveNetworkTests" runstate="Runnable" seed="1364683210" result="Passed" start-time="2026-10-07 19:23:38Z" end-time="2026-10-07 19:23:38Z" duration="0.018562" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[Saving results to: C:/Users/rufat/UnityProject/remesher/Benchmarks/tests-r4-curve.xml
+]]></output>
+            </test-case>
+          </test-suite>
+        </test-suite>
+      </test-suite>
+    </test-suite>
+  </test-suite>
+</test-run>

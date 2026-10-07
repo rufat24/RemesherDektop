@@ -1,0 +1,1241 @@
+<?xml version="1.0" encoding="utf-8"?>
+<test-run id="2" testcasecount="186" result="Skipped:Ignored" total="186" passed="184" failed="0" inconclusive="0" skipped="2" asserts="0" engine-version="3.5.0.0" clr-version="4.0.30319.42000" start-time="2026-10-07 09:08:36Z" end-time="2026-10-07 09:13:40Z" duration="304.0875924">
+  <test-suite type="TestSuite" id="1000" name="QuadremeshHeadless" fullname="QuadremeshHeadless" runstate="Runnable" testcasecount="186" result="Skipped" label="Ignored" start-time="2026-10-07 09:08:36Z" end-time="2026-10-07 09:13:40Z" duration="304.087592" total="186" passed="184" failed="0" inconclusive="0" skipped="2" asserts="0">
+    <properties>
+      <property name="platform" value="EditMode" />
+    </properties>
+    <reason>
+      <message><![CDATA[One or more child tests were ignored]]></message>
+    </reason>
+    <test-suite type="Assembly" id="1211" name="NativeRemesher.Tests.dll" fullname="C:/Users/rufat/UnityProject/remesher/Headless/Library/ScriptAssemblies/NativeRemesher.Tests.dll" runstate="Runnable" testcasecount="186" result="Skipped" label="Ignored" start-time="2026-10-07 09:08:36Z" end-time="2026-10-07 09:13:40Z" duration="304.082197" total="186" passed="184" failed="0" inconclusive="0" skipped="2" asserts="0">
+      <properties>
+        <property name="_PID" value="40100" />
+        <property name="_APPDOMAIN" value="Unity Child Domain" />
+        <property name="platform" value="EditMode" />
+        <property name="EditorOnly" value="True" />
+      </properties>
+      <reason>
+        <message><![CDATA[One or more child tests were ignored]]></message>
+      </reason>
+      <test-suite type="TestSuite" id="1212" name="NativeRemesher" fullname="NativeRemesher" runstate="Runnable" testcasecount="186" result="Skipped" label="Ignored" start-time="2026-10-07 09:08:36Z" end-time="2026-10-07 09:13:40Z" duration="304.081910" total="186" passed="184" failed="0" inconclusive="0" skipped="2" asserts="0">
+        <properties />
+        <reason>
+          <message><![CDATA[One or more child tests were ignored]]></message>
+        </reason>
+        <test-suite type="TestSuite" id="1213" name="Tests" fullname="NativeRemesher.Tests" runstate="Runnable" testcasecount="186" result="Skipped" label="Ignored" start-time="2026-10-07 09:08:36Z" end-time="2026-10-07 09:13:40Z" duration="304.081314" total="186" passed="184" failed="0" inconclusive="0" skipped="2" asserts="0">
+          <properties />
+          <reason>
+            <message><![CDATA[One or more child tests were ignored]]></message>
+          </reason>
+          <test-suite type="TestFixture" id="1001" name="CurvatureDirectionTests" fullname="NativeRemesher.Tests.CurvatureDirectionTests" classname="NativeRemesher.Tests.CurvatureDirectionTests" runstate="Runnable" testcasecount="3" result="Passed" start-time="2026-10-07 09:08:36Z" end-time="2026-10-07 09:08:36Z" duration="0.089251" total="3" passed="3" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1002" name="CylinderGuidesFollowRingsOrAxis" fullname="NativeRemesher.Tests.CurvatureDirectionTests.CylinderGuidesFollowRingsOrAxis" methodname="CylinderGuidesFollowRingsOrAxis" classname="NativeRemesher.Tests.CurvatureDirectionTests" runstate="Runnable" seed="1490773480" result="Passed" start-time="2026-10-07 09:08:36Z" end-time="2026-10-07 09:08:36Z" duration="0.031172" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1004" name="GuidePullsAFlatFieldWhereASoftConstraintDoesNot" fullname="NativeRemesher.Tests.CurvatureDirectionTests.GuidePullsAFlatFieldWhereASoftConstraintDoesNot" methodname="GuidePullsAFlatFieldWhereASoftConstraintDoesNot" classname="NativeRemesher.Tests.CurvatureDirectionTests" runstate="Runnable" seed="394447029" result="Passed" start-time="2026-10-07 09:08:36Z" end-time="2026-10-07 09:08:36Z" duration="0.042040" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1003" name="SphereGetsAlmostNoGuides" fullname="NativeRemesher.Tests.CurvatureDirectionTests.SphereGetsAlmostNoGuides" methodname="SphereGetsAlmostNoGuides" classname="NativeRemesher.Tests.CurvatureDirectionTests" runstate="Runnable" seed="1958243174" result="Passed" start-time="2026-10-07 09:08:36Z" end-time="2026-10-07 09:08:36Z" duration="0.008533" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1005" name="CurveNetworkTests" fullname="NativeRemesher.Tests.CurveNetworkTests" classname="NativeRemesher.Tests.CurveNetworkTests" runstate="Runnable" testcasecount="3" result="Passed" start-time="2026-10-07 09:08:36Z" end-time="2026-10-07 09:08:52Z" duration="15.633479" total="3" passed="3" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1006" name="CubeEdgesAreTheCurves" fullname="NativeRemesher.Tests.CurveNetworkTests.CubeEdgesAreTheCurves" methodname="CubeEdgesAreTheCurves" classname="NativeRemesher.Tests.CurveNetworkTests" runstate="Runnable" seed="963542095" result="Passed" start-time="2026-10-07 09:08:36Z" end-time="2026-10-07 09:08:36Z" duration="0.023861" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1008" name="PipelineCutsAlongTracedEdges" fullname="NativeRemesher.Tests.CurveNetworkTests.PipelineCutsAlongTracedEdges" methodname="PipelineCutsAlongTracedEdges" classname="NativeRemesher.Tests.CurveNetworkTests" runstate="Runnable" seed="651326547" result="Passed" start-time="2026-10-07 09:08:36Z" end-time="2026-10-07 09:08:52Z" duration="15.600723" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1007" name="SmoothShapesHaveNoCurves" fullname="NativeRemesher.Tests.CurveNetworkTests.SmoothShapesHaveNoCurves" methodname="SmoothShapesHaveNoCurves" classname="NativeRemesher.Tests.CurveNetworkTests" runstate="Runnable" seed="686490425" result="Passed" start-time="2026-10-07 09:08:52Z" end-time="2026-10-07 09:08:52Z" duration="0.007462" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1009" name="EdgeSubdivideTests" fullname="NativeRemesher.Tests.EdgeSubdivideTests" classname="NativeRemesher.Tests.EdgeSubdivideTests" runstate="Runnable" testcasecount="8" result="Passed" start-time="2026-10-07 09:08:52Z" end-time="2026-10-07 09:08:55Z" duration="3.114775" total="8" passed="8" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1012" name="ADivergingRefinementIsAbandonedAndTheInputIsReturned" fullname="NativeRemesher.Tests.EdgeSubdivideTests.ADivergingRefinementIsAbandonedAndTheInputIsReturned" methodname="ADivergingRefinementIsAbandonedAndTheInputIsReturned" classname="NativeRemesher.Tests.EdgeSubdivideTests" runstate="Runnable" seed="1287340820" result="Passed" start-time="2026-10-07 09:08:52Z" end-time="2026-10-07 09:08:52Z" duration="0.294615" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1016" name="DiagonalEdgesAreNotSplit" fullname="NativeRemesher.Tests.EdgeSubdivideTests.DiagonalEdgesAreNotSplit" methodname="DiagonalEdgesAreNotSplit" classname="NativeRemesher.Tests.EdgeSubdivideTests" runstate="Runnable" seed="56287922" result="Passed" start-time="2026-10-07 09:08:52Z" end-time="2026-10-07 09:08:52Z" duration="0.000345" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1011" name="EveryEdgeSpanningTwoCellsIsResolved" fullname="NativeRemesher.Tests.EdgeSubdivideTests.EveryEdgeSpanningTwoCellsIsResolved" methodname="EveryEdgeSpanningTwoCellsIsResolved" classname="NativeRemesher.Tests.EdgeSubdivideTests" runstate="Runnable" seed="254198137" result="Passed" start-time="2026-10-07 09:08:52Z" end-time="2026-10-07 09:08:53Z" duration="0.478687" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1013" name="FeatureGraphGrowsWithTheMeshAndKeepsCreasesOnTheCrease" fullname="NativeRemesher.Tests.EdgeSubdivideTests.FeatureGraphGrowsWithTheMeshAndKeepsCreasesOnTheCrease" methodname="FeatureGraphGrowsWithTheMeshAndKeepsCreasesOnTheCrease" classname="NativeRemesher.Tests.EdgeSubdivideTests" runstate="Runnable" seed="502420687" result="Passed" start-time="2026-10-07 09:08:53Z" end-time="2026-10-07 09:08:53Z" duration="0.428969" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1017" name="InsertedVerticesCarryUnitTangentCrosses" fullname="NativeRemesher.Tests.EdgeSubdivideTests.InsertedVerticesCarryUnitTangentCrosses" methodname="InsertedVerticesCarryUnitTangentCrosses" classname="NativeRemesher.Tests.EdgeSubdivideTests" runstate="Runnable" seed="1846926473" result="Passed" start-time="2026-10-07 09:08:53Z" end-time="2026-10-07 09:08:53Z" duration="0.444549" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1010" name="NothingToSplitReturnsTheSameObjectsUntouched" fullname="NativeRemesher.Tests.EdgeSubdivideTests.NothingToSplitReturnsTheSameObjectsUntouched" methodname="NothingToSplitReturnsTheSameObjectsUntouched" classname="NativeRemesher.Tests.EdgeSubdivideTests" runstate="Runnable" seed="918279368" result="Passed" start-time="2026-10-07 09:08:53Z" end-time="2026-10-07 09:08:54Z" duration="0.295991" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1014" name="RefinedMeshStaysManifoldAndConsistentlyWound" fullname="NativeRemesher.Tests.EdgeSubdivideTests.RefinedMeshStaysManifoldAndConsistentlyWound" methodname="RefinedMeshStaysManifoldAndConsistentlyWound" classname="NativeRemesher.Tests.EdgeSubdivideTests" runstate="Runnable" seed="1035570886" result="Passed" start-time="2026-10-07 09:08:54Z" end-time="2026-10-07 09:08:54Z" duration="0.724093" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1015" name="RefinementPreservesEulerCharacteristic" fullname="NativeRemesher.Tests.EdgeSubdivideTests.RefinementPreservesEulerCharacteristic" methodname="RefinementPreservesEulerCharacteristic" classname="NativeRemesher.Tests.EdgeSubdivideTests" runstate="Runnable" seed="763091608" result="Passed" start-time="2026-10-07 09:08:54Z" end-time="2026-10-07 09:08:55Z" duration="0.445672" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1018" name="ExtractionTests" fullname="NativeRemesher.Tests.ExtractionTests" classname="NativeRemesher.Tests.ExtractionTests" runstate="Runnable" testcasecount="13" result="Skipped" label="Ignored" start-time="2026-10-07 09:08:55Z" end-time="2026-10-07 09:11:18Z" duration="142.623338" total="13" passed="11" failed="0" inconclusive="0" skipped="2" asserts="0">
+            <properties />
+            <reason>
+              <message><![CDATA[One or more child tests were ignored]]></message>
+            </reason>
+            <test-case id="1031" name="CoarseTargets_DegradeAndTheEnvelopeSaysSo" fullname="NativeRemesher.Tests.ExtractionTests.CoarseTargets_DegradeAndTheEnvelopeSaysSo" methodname="CoarseTargets_DegradeAndTheEnvelopeSaysSo" classname="NativeRemesher.Tests.ExtractionTests" runstate="Ignored" seed="382568974" result="Skipped" label="Ignored" start-time="2026-10-07 09:08:55Z" end-time="2026-10-07 09:08:55Z" duration="0.000177" asserts="0">
+              <properties>
+                <property name="_SKIPREASON" value="Superseded by PreDecimation_LiftsTheCoarseTargetEnvelope. Pre-decimation is now on by default, so a coarse REQUEST no longer implies a coarse spacing ratio and this test's premise no longer holds." />
+              </properties>
+              <reason>
+                <message><![CDATA[Superseded by PreDecimation_LiftsTheCoarseTargetEnvelope. Pre-decimation is now on by default, so a coarse REQUEST no longer implies a coarse spacing ratio and this test's premise no longer holds.]]></message>
+              </reason>
+            </test-case>
+            <test-case id="1024" name="DegenerateInput_YieldsAnEmptyResultRatherThanNull" fullname="NativeRemesher.Tests.ExtractionTests.DegenerateInput_YieldsAnEmptyResultRatherThanNull" methodname="DegenerateInput_YieldsAnEmptyResultRatherThanNull" classname="NativeRemesher.Tests.ExtractionTests" runstate="Runnable" seed="1883298773" result="Passed" start-time="2026-10-07 09:08:55Z" end-time="2026-10-07 09:08:55Z" duration="0.009296" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[[NativeRemesher] Feature detection constrained 3 of 3 vertices (100 %), above the 35 % cap. Ignoring the constraints: at this density there is no free field left to smooth. Raise the feature angle, or turn detection off for this input.
+]]></output>
+            </test-case>
+            <test-case id="1029" name="FaceCount_TracksTheTargetWithinTwentyFivePercent" fullname="NativeRemesher.Tests.ExtractionTests.FaceCount_TracksTheTargetWithinTwentyFivePercent" methodname="FaceCount_TracksTheTargetWithinTwentyFivePercent" classname="NativeRemesher.Tests.ExtractionTests" runstate="Runnable" seed="510968663" result="Passed" start-time="2026-10-07 09:08:55Z" end-time="2026-10-07 09:09:08Z" duration="13.487779" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1025" name="NoCatastrophicCollapse_AcrossTheFullScaleRange" fullname="NativeRemesher.Tests.ExtractionTests.NoCatastrophicCollapse_AcrossTheFullScaleRange" methodname="NoCatastrophicCollapse_AcrossTheFullScaleRange" classname="NativeRemesher.Tests.ExtractionTests" runstate="Runnable" seed="1526147624" result="Passed" start-time="2026-10-07 09:09:08Z" end-time="2026-10-07 09:10:29Z" duration="80.472116" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1028" name="Output_IsManifoldOnClosedInput" fullname="NativeRemesher.Tests.ExtractionTests.Output_IsManifoldOnClosedInput" methodname="Output_IsManifoldOnClosedInput" classname="NativeRemesher.Tests.ExtractionTests" runstate="Runnable" seed="463814606" result="Passed" start-time="2026-10-07 09:10:29Z" end-time="2026-10-07 09:10:32Z" duration="3.411593" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1023" name="Pipeline_IsDeterministic" fullname="NativeRemesher.Tests.ExtractionTests.Pipeline_IsDeterministic" methodname="Pipeline_IsDeterministic" classname="NativeRemesher.Tests.ExtractionTests" runstate="Runnable" seed="1822273919" result="Passed" start-time="2026-10-07 09:10:32Z" end-time="2026-10-07 09:10:40Z" duration="8.137064" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1019" name="Pipeline_RunsEndToEndAndProducesFaces" fullname="NativeRemesher.Tests.ExtractionTests.Pipeline_RunsEndToEndAndProducesFaces" methodname="Pipeline_RunsEndToEndAndProducesFaces" classname="NativeRemesher.Tests.ExtractionTests" runstate="Runnable" seed="796974037" result="Passed" start-time="2026-10-07 09:10:40Z" end-time="2026-10-07 09:10:48Z" duration="7.923391" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1020" name="Pipeline_SurvivesNonManifoldInput" fullname="NativeRemesher.Tests.ExtractionTests.Pipeline_SurvivesNonManifoldInput" methodname="Pipeline_SurvivesNonManifoldInput" classname="NativeRemesher.Tests.ExtractionTests" runstate="Runnable" seed="524089567" result="Passed" start-time="2026-10-07 09:10:48Z" end-time="2026-10-07 09:10:48Z" duration="0.004688" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[[NativeRemesher] Feature detection constrained 3 of 5 vertices (60 %), above the 35 % cap. Ignoring the constraints: at this density there is no free field left to smooth. Raise the feature angle, or turn detection off for this input.
+]]></output>
+            </test-case>
+            <test-case id="1022" name="Pipeline_SurvivesOpenBoundary" fullname="NativeRemesher.Tests.ExtractionTests.Pipeline_SurvivesOpenBoundary" methodname="Pipeline_SurvivesOpenBoundary" classname="NativeRemesher.Tests.ExtractionTests" runstate="Runnable" seed="1485364064" result="Passed" start-time="2026-10-07 09:10:48Z" end-time="2026-10-07 09:10:51Z" duration="2.761000" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1021" name="Pipeline_SurvivesSelfIntersectingInput" fullname="NativeRemesher.Tests.ExtractionTests.Pipeline_SurvivesSelfIntersectingInput" methodname="Pipeline_SurvivesSelfIntersectingInput" classname="NativeRemesher.Tests.ExtractionTests" runstate="Runnable" seed="262366476" result="Passed" start-time="2026-10-07 09:10:51Z" end-time="2026-10-07 09:10:55Z" duration="3.468494" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1030" name="PreDecimation_LiftsTheCoarseTargetEnvelope" fullname="NativeRemesher.Tests.ExtractionTests.PreDecimation_LiftsTheCoarseTargetEnvelope" methodname="PreDecimation_LiftsTheCoarseTargetEnvelope" classname="NativeRemesher.Tests.ExtractionTests" runstate="Runnable" seed="1268194645" result="Passed" start-time="2026-10-07 09:10:55Z" end-time="2026-10-07 09:11:07Z" duration="12.156684" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1026" name="QuadFraction_ExceedsSeventyPercentOnSmoothClosedMeshes" fullname="NativeRemesher.Tests.ExtractionTests.QuadFraction_ExceedsSeventyPercentOnSmoothClosedMeshes" methodname="QuadFraction_ExceedsSeventyPercentOnSmoothClosedMeshes" classname="NativeRemesher.Tests.ExtractionTests" runstate="Runnable" seed="11356535" result="Passed" start-time="2026-10-07 09:11:07Z" end-time="2026-10-07 09:11:18Z" duration="10.788904" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1027" name="QuadFraction_OnVaryingCurvature_IsRecordedNotYetAtTarget" fullname="NativeRemesher.Tests.ExtractionTests.QuadFraction_OnVaryingCurvature_IsRecordedNotYetAtTarget" methodname="QuadFraction_OnVaryingCurvature_IsRecordedNotYetAtTarget" classname="NativeRemesher.Tests.ExtractionTests" runstate="Ignored" seed="318628022" result="Skipped" label="Ignored" start-time="2026-10-07 09:11:18Z" end-time="2026-10-07 09:11:18Z" duration="0.000002" asserts="0">
+              <properties>
+                <property name="_SKIPREASON" value="Superseded: pre-decimation lifted the bumpy sphere from 63.6% to 85.7%, so it now passes QuadFraction_ExceedsSeventyPercentOnSmoothClosedMeshes and has been folded back into it. Kept for one commit as the record of why that split existed." />
+              </properties>
+              <reason>
+                <message><![CDATA[Superseded: pre-decimation lifted the bumpy sphere from 63.6% to 85.7%, so it now passes QuadFraction_ExceedsSeventyPercentOnSmoothClosedMeshes and has been folded back into it. Kept for one commit as the record of why that split existed.]]></message>
+              </reason>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1032" name="FaceOrientationTests" fullname="NativeRemesher.Tests.FaceOrientationTests" classname="NativeRemesher.Tests.FaceOrientationTests" runstate="Runnable" testcasecount="8" result="Passed" start-time="2026-10-07 09:11:18Z" end-time="2026-10-07 09:11:18Z" duration="0.052304" total="8" passed="8" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1034" name="AComponentTooSmallToReadItsNormalsFollowsTheConsensus" fullname="NativeRemesher.Tests.FaceOrientationTests.AComponentTooSmallToReadItsNormalsFollowsTheConsensus" methodname="AComponentTooSmallToReadItsNormalsFollowsTheConsensus" classname="NativeRemesher.Tests.FaceOrientationTests" runstate="Runnable" seed="1904100359" result="Passed" start-time="2026-10-07 09:11:18Z" end-time="2026-10-07 09:11:18Z" duration="0.001621" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1033" name="ClosedComponentIsOrientedOutwardDespiteLyingNormals" fullname="NativeRemesher.Tests.FaceOrientationTests.ClosedComponentIsOrientedOutwardDespiteLyingNormals" methodname="ClosedComponentIsOrientedOutwardDespiteLyingNormals" classname="NativeRemesher.Tests.FaceOrientationTests" runstate="Runnable" seed="2056966812" result="Passed" start-time="2026-10-07 09:11:18Z" end-time="2026-10-07 09:11:18Z" duration="0.001349" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1040" name="OpenComponentFallsBackToTheNormalVote" fullname="NativeRemesher.Tests.FaceOrientationTests.OpenComponentFallsBackToTheNormalVote" methodname="OpenComponentFallsBackToTheNormalVote" classname="NativeRemesher.Tests.FaceOrientationTests" runstate="Runnable" seed="1124460091" result="Passed" start-time="2026-10-07 09:11:18Z" end-time="2026-10-07 09:11:18Z" duration="0.000313" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1036" name="OppositeWoundDuplicateIsRemoved" fullname="NativeRemesher.Tests.FaceOrientationTests.OppositeWoundDuplicateIsRemoved" methodname="OppositeWoundDuplicateIsRemoved" classname="NativeRemesher.Tests.FaceOrientationTests" runstate="Runnable" seed="530155861" result="Passed" start-time="2026-10-07 09:11:18Z" end-time="2026-10-07 09:11:18Z" duration="0.000173" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1038" name="RepeatedCornerIsCollapsedAndZeroAreaFaceIsDropped" fullname="NativeRemesher.Tests.FaceOrientationTests.RepeatedCornerIsCollapsedAndZeroAreaFaceIsDropped" methodname="RepeatedCornerIsCollapsedAndZeroAreaFaceIsDropped" classname="NativeRemesher.Tests.FaceOrientationTests" runstate="Runnable" seed="1781314646" result="Passed" start-time="2026-10-07 09:11:18Z" end-time="2026-10-07 09:11:18Z" duration="0.000260" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1037" name="RotatedDuplicateIsRemovedAndNotCountedAsOpposite" fullname="NativeRemesher.Tests.FaceOrientationTests.RotatedDuplicateIsRemovedAndNotCountedAsOpposite" methodname="RotatedDuplicateIsRemovedAndNotCountedAsOpposite" classname="NativeRemesher.Tests.FaceOrientationTests" runstate="Runnable" seed="1529833862" result="Passed" start-time="2026-10-07 09:11:18Z" end-time="2026-10-07 09:11:18Z" duration="0.000124" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1039" name="ShadingNormalsFollowTheOutputGeometry" fullname="NativeRemesher.Tests.FaceOrientationTests.ShadingNormalsFollowTheOutputGeometry" methodname="ShadingNormalsFollowTheOutputGeometry" classname="NativeRemesher.Tests.FaceOrientationTests" runstate="Runnable" seed="187877153" result="Passed" start-time="2026-10-07 09:11:18Z" end-time="2026-10-07 09:11:18Z" duration="0.000484" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1035" name="SingleReversedFaceIsMadeConsistent" fullname="NativeRemesher.Tests.FaceOrientationTests.SingleReversedFaceIsMadeConsistent" methodname="SingleReversedFaceIsMadeConsistent" classname="NativeRemesher.Tests.FaceOrientationTests" runstate="Runnable" seed="885282490" result="Passed" start-time="2026-10-07 09:11:18Z" end-time="2026-10-07 09:11:18Z" duration="0.000603" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1041" name="FeatureTests" fullname="NativeRemesher.Tests.FeatureTests" classname="NativeRemesher.Tests.FeatureTests" runstate="Runnable" testcasecount="9" result="Passed" start-time="2026-10-07 09:11:18Z" end-time="2026-10-07 09:11:42Z" duration="24.727426" total="9" passed="9" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1049" name="ConstrainedPlaneCombsToTheConstrainedDirection" fullname="NativeRemesher.Tests.FeatureTests.ConstrainedPlaneCombsToTheConstrainedDirection" methodname="ConstrainedPlaneCombsToTheConstrainedDirection" classname="NativeRemesher.Tests.FeatureTests" runstate="Runnable" seed="956449323" result="Passed" start-time="2026-10-07 09:11:18Z" end-time="2026-10-07 09:11:18Z" duration="0.061738" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1048" name="ConstraintDensityCapRefusesWholesaleRatherThanPartially" fullname="NativeRemesher.Tests.FeatureTests.ConstraintDensityCapRefusesWholesaleRatherThanPartially" methodname="ConstraintDensityCapRefusesWholesaleRatherThanPartially" classname="NativeRemesher.Tests.FeatureTests" runstate="Runnable" seed="56380395" result="Passed" start-time="2026-10-07 09:11:18Z" end-time="2026-10-07 09:11:18Z" duration="0.005176" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[[NativeRemesher] Feature detection constrained 84 of 386 vertices (22 %), above the 1 % cap. Ignoring the constraints: at this density there is no free field left to smooth. Raise the feature angle, or turn detection off for this input.
+]]></output>
+            </test-case>
+            <test-case id="1045" name="CornersGetNoTangentButAreStillMarked" fullname="NativeRemesher.Tests.FeatureTests.CornersGetNoTangentButAreStillMarked" methodname="CornersGetNoTangentButAreStillMarked" classname="NativeRemesher.Tests.FeatureTests" runstate="Runnable" seed="1572390762" result="Passed" start-time="2026-10-07 09:11:18Z" end-time="2026-10-07 09:11:18Z" duration="0.000889" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1046" name="CreaseInteriorTangentsRunAlongTheCrease" fullname="NativeRemesher.Tests.FeatureTests.CreaseInteriorTangentsRunAlongTheCrease" methodname="CreaseInteriorTangentsRunAlongTheCrease" classname="NativeRemesher.Tests.FeatureTests" runstate="Runnable" seed="1187535021" result="Passed" start-time="2026-10-07 09:11:18Z" end-time="2026-10-07 09:11:18Z" duration="0.003178" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1042" name="Cube_DetectsExactlyItsTwelveEdges" fullname="NativeRemesher.Tests.FeatureTests.Cube_DetectsExactlyItsTwelveEdges" methodname="Cube_DetectsExactlyItsTwelveEdges" classname="NativeRemesher.Tests.FeatureTests" runstate="Runnable" seed="2043125210" result="Passed" start-time="2026-10-07 09:11:18Z" end-time="2026-10-07 09:11:18Z" duration="0.001453" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1050" name="FeatureDetectionRecoversCubeShapeFidelity" fullname="NativeRemesher.Tests.FeatureTests.FeatureDetectionRecoversCubeShapeFidelity" methodname="FeatureDetectionRecoversCubeShapeFidelity" classname="NativeRemesher.Tests.FeatureTests" runstate="Runnable" seed="609204974" result="Passed" start-time="2026-10-07 09:11:18Z" end-time="2026-10-07 09:11:42Z" duration="24.638737" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1044" name="OpenDisc_TreatsItsRimAsAFeatureAtAnyAngle" fullname="NativeRemesher.Tests.FeatureTests.OpenDisc_TreatsItsRimAsAFeatureAtAnyAngle" methodname="OpenDisc_TreatsItsRimAsAFeatureAtAnyAngle" classname="NativeRemesher.Tests.FeatureTests" runstate="Runnable" seed="1983310630" result="Passed" start-time="2026-10-07 09:11:42Z" end-time="2026-10-07 09:11:42Z" duration="0.000632" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1047" name="OverSensitiveDetectionSelfLimitsThroughJunctions" fullname="NativeRemesher.Tests.FeatureTests.OverSensitiveDetectionSelfLimitsThroughJunctions" methodname="OverSensitiveDetectionSelfLimitsThroughJunctions" classname="NativeRemesher.Tests.FeatureTests" runstate="Runnable" seed="942763714" result="Passed" start-time="2026-10-07 09:11:42Z" end-time="2026-10-07 09:11:42Z" duration="0.006717" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1043" name="Sphere_DetectsNoCreases" fullname="NativeRemesher.Tests.FeatureTests.Sphere_DetectsNoCreases" methodname="Sphere_DetectsNoCreases" classname="NativeRemesher.Tests.FeatureTests" runstate="Runnable" seed="1907534111" result="Passed" start-time="2026-10-07 09:11:42Z" end-time="2026-10-07 09:11:42Z" duration="0.007433" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1051" name="FieldDiagnosticTests" fullname="NativeRemesher.Tests.FieldDiagnosticTests" classname="NativeRemesher.Tests.FieldDiagnosticTests" runstate="Runnable" testcasecount="7" result="Passed" start-time="2026-10-07 09:11:42Z" end-time="2026-10-07 09:11:45Z" duration="2.895203" total="7" passed="7" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1057" name="EdgeGapHistogram_IsPopulated" fullname="NativeRemesher.Tests.FieldDiagnosticTests.EdgeGapHistogram_IsPopulated" methodname="EdgeGapHistogram_IsPopulated" classname="NativeRemesher.Tests.FieldDiagnosticTests" runstate="Runnable" seed="2100424610" result="Passed" start-time="2026-10-07 09:11:42Z" end-time="2026-10-07 09:11:43Z" duration="0.635482" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1058" name="ErrorRemoved_HandlesTheAlreadyPerfectCase" fullname="NativeRemesher.Tests.FieldDiagnosticTests.ErrorRemoved_HandlesTheAlreadyPerfectCase" methodname="ErrorRemoved_HandlesTheAlreadyPerfectCase" classname="NativeRemesher.Tests.FieldDiagnosticTests" runstate="Runnable" seed="486073606" result="Passed" start-time="2026-10-07 09:11:43Z" end-time="2026-10-07 09:11:43Z" duration="0.000351" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1054" name="FlatSurface_HasNoSingularitiesAndPerfectEnergy" fullname="NativeRemesher.Tests.FieldDiagnosticTests.FlatSurface_HasNoSingularitiesAndPerfectEnergy" methodname="FlatSurface_HasNoSingularitiesAndPerfectEnergy" classname="NativeRemesher.Tests.FieldDiagnosticTests" runstate="Runnable" seed="1707685495" result="Passed" start-time="2026-10-07 09:11:43Z" end-time="2026-10-07 09:11:43Z" duration="0.184887" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1056" name="PositionField_LooksHealthyOnSmoothClosedMeshes" fullname="NativeRemesher.Tests.FieldDiagnosticTests.PositionField_LooksHealthyOnSmoothClosedMeshes" methodname="PositionField_LooksHealthyOnSmoothClosedMeshes" classname="NativeRemesher.Tests.FieldDiagnosticTests" runstate="Runnable" seed="1536781752" result="Passed" start-time="2026-10-07 09:11:43Z" end-time="2026-10-07 09:11:44Z" duration="0.982400" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1055" name="RepresentativeDrift_NeverExceedsTheRawResidual" fullname="NativeRemesher.Tests.FieldDiagnosticTests.RepresentativeDrift_NeverExceedsTheRawResidual" methodname="RepresentativeDrift_NeverExceedsTheRawResidual" classname="NativeRemesher.Tests.FieldDiagnosticTests" runstate="Runnable" seed="1320138768" result="Passed" start-time="2026-10-07 09:11:44Z" end-time="2026-10-07 09:11:45Z" duration="0.438342" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1052" name="SingularityIndexSum_IsEightOnAClosedGenusZeroSurface" fullname="NativeRemesher.Tests.FieldDiagnosticTests.SingularityIndexSum_IsEightOnAClosedGenusZeroSurface" methodname="SingularityIndexSum_IsEightOnAClosedGenusZeroSurface" classname="NativeRemesher.Tests.FieldDiagnosticTests" runstate="Runnable" seed="53622036" result="Passed" start-time="2026-10-07 09:11:45Z" end-time="2026-10-07 09:11:45Z" duration="0.402818" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1053" name="SingularityIndexSum_IsZeroOnATorus" fullname="NativeRemesher.Tests.FieldDiagnosticTests.SingularityIndexSum_IsZeroOnATorus" methodname="SingularityIndexSum_IsZeroOnATorus" classname="NativeRemesher.Tests.FieldDiagnosticTests" runstate="Runnable" seed="2032064843" result="Passed" start-time="2026-10-07 09:11:45Z" end-time="2026-10-07 09:11:45Z" duration="0.247884" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1059" name="GraphColouringTests" fullname="NativeRemesher.Tests.GraphColouringTests" classname="NativeRemesher.Tests.GraphColouringTests" runstate="Runnable" testcasecount="4" result="Passed" start-time="2026-10-07 09:11:45Z" end-time="2026-10-07 09:11:46Z" duration="0.459346" total="4" passed="4" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1062" name="ABoundaryMeshIsColouredToo" fullname="NativeRemesher.Tests.GraphColouringTests.ABoundaryMeshIsColouredToo" methodname="ABoundaryMeshIsColouredToo" classname="NativeRemesher.Tests.GraphColouringTests" runstate="Runnable" seed="708754731" result="Passed" start-time="2026-10-07 09:11:45Z" end-time="2026-10-07 09:11:45Z" duration="0.000896" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1060" name="EveryColourClassIsIndependent" fullname="NativeRemesher.Tests.GraphColouringTests.EveryColourClassIsIndependent" methodname="EveryColourClassIsIndependent" classname="NativeRemesher.Tests.GraphColouringTests" runstate="Runnable" seed="1204231675" result="Passed" start-time="2026-10-07 09:11:45Z" end-time="2026-10-07 09:11:45Z" duration="0.060408" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1061" name="EveryVertexIsColouredExactlyOnce" fullname="NativeRemesher.Tests.GraphColouringTests.EveryVertexIsColouredExactlyOnce" methodname="EveryVertexIsColouredExactlyOnce" classname="NativeRemesher.Tests.GraphColouringTests" runstate="Runnable" seed="927305668" result="Passed" start-time="2026-10-07 09:11:45Z" end-time="2026-10-07 09:11:45Z" duration="0.001905" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1063" name="ParallelSweepsAreDeterministic" fullname="NativeRemesher.Tests.GraphColouringTests.ParallelSweepsAreDeterministic" methodname="ParallelSweepsAreDeterministic" classname="NativeRemesher.Tests.GraphColouringTests" runstate="Runnable" seed="241386070" result="Passed" start-time="2026-10-07 09:11:45Z" end-time="2026-10-07 09:11:46Z" duration="0.394998" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1064" name="HierarchyTests" fullname="NativeRemesher.Tests.HierarchyTests" classname="NativeRemesher.Tests.HierarchyTests" runstate="Runnable" testcasecount="8" result="Passed" start-time="2026-10-07 09:11:46Z" end-time="2026-10-07 09:11:52Z" duration="6.501884" total="8" passed="8" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1068" name="EverySolvedLevelIsFinerThanTheLattice" fullname="NativeRemesher.Tests.HierarchyTests.EverySolvedLevelIsFinerThanTheLattice" methodname="EverySolvedLevelIsFinerThanTheLattice" classname="NativeRemesher.Tests.HierarchyTests" runstate="Runnable" seed="1822125125" result="Passed" start-time="2026-10-07 09:11:46Z" end-time="2026-10-07 09:11:46Z" duration="0.002370" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1065" name="HierarchyCoarsensAndEveryLevelIsColoured" fullname="NativeRemesher.Tests.HierarchyTests.HierarchyCoarsensAndEveryLevelIsColoured" methodname="HierarchyCoarsensAndEveryLevelIsColoured" classname="NativeRemesher.Tests.HierarchyTests" runstate="Runnable" seed="1769790015" result="Passed" start-time="2026-10-07 09:11:46Z" end-time="2026-10-07 09:11:46Z" duration="0.002849" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1066" name="MergeMapsAreConsistentBothWays" fullname="NativeRemesher.Tests.HierarchyTests.MergeMapsAreConsistentBothWays" methodname="MergeMapsAreConsistentBothWays" classname="NativeRemesher.Tests.HierarchyTests" runstate="Runnable" seed="441397689" result="Passed" start-time="2026-10-07 09:11:46Z" end-time="2026-10-07 09:11:46Z" duration="0.009418" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1069" name="PipelineSolvesMultipleLevelsOnACoarseTargetAndOneWhenDisabled" fullname="NativeRemesher.Tests.HierarchyTests.PipelineSolvesMultipleLevelsOnACoarseTargetAndOneWhenDisabled" methodname="PipelineSolvesMultipleLevelsOnACoarseTargetAndOneWhenDisabled" classname="NativeRemesher.Tests.HierarchyTests" runstate="Runnable" seed="2007238993" result="Passed" start-time="2026-10-07 09:11:46Z" end-time="2026-10-07 09:11:52Z" duration="6.465083" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1067" name="PositionDepthFollowsTheLatticeSpacing" fullname="NativeRemesher.Tests.HierarchyTests.PositionDepthFollowsTheLatticeSpacing" methodname="PositionDepthFollowsTheLatticeSpacing" classname="NativeRemesher.Tests.HierarchyTests" runstate="Runnable" seed="7069408" result="Passed" start-time="2026-10-07 09:11:52Z" end-time="2026-10-07 09:11:52Z" duration="0.003952" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1070" name="SuppliedInitialDirectionsAreProjectedAndNormalised" fullname="NativeRemesher.Tests.HierarchyTests.SuppliedInitialDirectionsAreProjectedAndNormalised" methodname="SuppliedInitialDirectionsAreProjectedAndNormalised" classname="NativeRemesher.Tests.HierarchyTests" runstate="Runnable" seed="1974595860" result="Passed" start-time="2026-10-07 09:11:52Z" end-time="2026-10-07 09:11:52Z" duration="0.002555" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1072" name="SuppliedInitialPositionsSeedTheLattice" fullname="NativeRemesher.Tests.HierarchyTests.SuppliedInitialPositionsSeedTheLattice" methodname="SuppliedInitialPositionsSeedTheLattice" classname="NativeRemesher.Tests.HierarchyTests" runstate="Runnable" seed="1267770912" result="Passed" start-time="2026-10-07 09:11:52Z" end-time="2026-10-07 09:11:52Z" duration="0.012296" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1071" name="ZeroSweepsReturnsTheSuppliedFieldUnchanged" fullname="NativeRemesher.Tests.HierarchyTests.ZeroSweepsReturnsTheSuppliedFieldUnchanged" methodname="ZeroSweepsReturnsTheSuppliedFieldUnchanged" classname="NativeRemesher.Tests.HierarchyTests" runstate="Runnable" seed="722048333" result="Passed" start-time="2026-10-07 09:11:52Z" end-time="2026-10-07 09:11:52Z" duration="0.001908" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1073" name="HoleFillerTests" fullname="NativeRemesher.Tests.HoleFillerTests" classname="NativeRemesher.Tests.HoleFillerTests" runstate="Runnable" testcasecount="9" result="Passed" start-time="2026-10-07 09:11:52Z" end-time="2026-10-07 09:11:52Z" duration="0.006805" total="9" passed="9" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1079" name="AFailedWalkDoesNotPoisonEdgesForLaterWalks" fullname="NativeRemesher.Tests.HoleFillerTests.AFailedWalkDoesNotPoisonEdgesForLaterWalks" methodname="AFailedWalkDoesNotPoisonEdgesForLaterWalks" classname="NativeRemesher.Tests.HoleFillerTests" runstate="Runnable" seed="684457786" result="Passed" start-time="2026-10-07 09:11:52Z" end-time="2026-10-07 09:11:52Z" duration="0.001080" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1082" name="ALargeRimIsClosedWithAGridRatherThanAStarOfQuads" fullname="NativeRemesher.Tests.HoleFillerTests.ALargeRimIsClosedWithAGridRatherThanAStarOfQuads" methodname="ALargeRimIsClosedWithAGridRatherThanAStarOfQuads" classname="NativeRemesher.Tests.HoleFillerTests" runstate="Runnable" seed="1710564725" result="Passed" start-time="2026-10-07 09:11:52Z" end-time="2026-10-07 09:11:52Z" duration="0.002292" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1076" name="AnAlreadyClosedSurfaceIsLeftAlone" fullname="NativeRemesher.Tests.HoleFillerTests.AnAlreadyClosedSurfaceIsLeftAlone" methodname="AnAlreadyClosedSurfaceIsLeftAlone" classname="NativeRemesher.Tests.HoleFillerTests" runstate="Runnable" seed="1569473559" result="Passed" start-time="2026-10-07 09:11:52Z" end-time="2026-10-07 09:11:52Z" duration="0.000418" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1080" name="AnEmptyOrNullFaceSetIsHandled" fullname="NativeRemesher.Tests.HoleFillerTests.AnEmptyOrNullFaceSetIsHandled" methodname="AnEmptyOrNullFaceSetIsHandled" classname="NativeRemesher.Tests.HoleFillerTests" runstate="Runnable" seed="240770895" result="Passed" start-time="2026-10-07 09:11:52Z" end-time="2026-10-07 09:11:52Z" duration="0.000213" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1074" name="CappingASimpleLoopRaisesEulerByExactlyOne" fullname="NativeRemesher.Tests.HoleFillerTests.CappingASimpleLoopRaisesEulerByExactlyOne" methodname="CappingASimpleLoopRaisesEulerByExactlyOne" classname="NativeRemesher.Tests.HoleFillerTests" runstate="Runnable" seed="268348710" result="Passed" start-time="2026-10-07 09:11:52Z" end-time="2026-10-07 09:11:52Z" duration="0.000572" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1077" name="OpenInputIsNotCappedShut" fullname="NativeRemesher.Tests.HoleFillerTests.OpenInputIsNotCappedShut" methodname="OpenInputIsNotCappedShut" classname="NativeRemesher.Tests.HoleFillerTests" runstate="Runnable" seed="1445822082" result="Passed" start-time="2026-10-07 09:11:52Z" end-time="2026-10-07 09:11:52Z" duration="0.000163" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1081" name="PackedEdgeKeysDoNotCollideOnTheDefaultLongHash" fullname="NativeRemesher.Tests.HoleFillerTests.PackedEdgeKeysDoNotCollideOnTheDefaultLongHash" methodname="PackedEdgeKeysDoNotCollideOnTheDefaultLongHash" classname="NativeRemesher.Tests.HoleFillerTests" runstate="Runnable" seed="215011192" result="Passed" start-time="2026-10-07 09:11:52Z" end-time="2026-10-07 09:11:52Z" duration="0.000238" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1075" name="TheCapWindsOppositeToTheFaceThatOwnsTheEdge" fullname="NativeRemesher.Tests.HoleFillerTests.TheCapWindsOppositeToTheFaceThatOwnsTheEdge" methodname="TheCapWindsOppositeToTheFaceThatOwnsTheEdge" classname="NativeRemesher.Tests.HoleFillerTests" runstate="Runnable" seed="1822411211" result="Passed" start-time="2026-10-07 09:11:52Z" end-time="2026-10-07 09:11:52Z" duration="0.000292" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1078" name="TwoSeparateHolesAreBothCapped" fullname="NativeRemesher.Tests.HoleFillerTests.TwoSeparateHolesAreBothCapped" methodname="TwoSeparateHolesAreBothCapped" classname="NativeRemesher.Tests.HoleFillerTests" runstate="Runnable" seed="1547492818" result="Passed" start-time="2026-10-07 09:11:52Z" end-time="2026-10-07 09:11:52Z" duration="0.000243" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1083" name="IntegerGridTests" fullname="NativeRemesher.Tests.IntegerGridTests" classname="NativeRemesher.Tests.IntegerGridTests" runstate="Runnable" testcasecount="8" result="Passed" start-time="2026-10-07 09:11:52Z" end-time="2026-10-07 09:12:20Z" duration="28.054478" total="8" passed="8" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1085" name="DisjointOrientTree_KeepsMergedFramesConsistent" fullname="NativeRemesher.Tests.IntegerGridTests.DisjointOrientTree_KeepsMergedFramesConsistent" methodname="DisjointOrientTree_KeepsMergedFramesConsistent" classname="NativeRemesher.Tests.IntegerGridTests" runstate="Runnable" seed="410562041" result="Passed" start-time="2026-10-07 09:11:52Z" end-time="2026-10-07 09:11:52Z" duration="0.000152" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1088" name="Icosphere_LandsNearTheEulerFloor" fullname="NativeRemesher.Tests.IntegerGridTests.Icosphere_LandsNearTheEulerFloor" methodname="Icosphere_LandsNearTheEulerFloor" classname="NativeRemesher.Tests.IntegerGridTests" runstate="Runnable" seed="1829633333" result="Passed" start-time="2026-10-07 09:11:52Z" end-time="2026-10-07 09:11:56Z" duration="4.128266" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1089" name="IsDeterministic" fullname="NativeRemesher.Tests.IntegerGridTests.IsDeterministic" methodname="IsDeterministic" classname="NativeRemesher.Tests.IntegerGridTests" runstate="Runnable" seed="1669428885" result="Passed" start-time="2026-10-07 09:11:56Z" end-time="2026-10-07 09:12:02Z" duration="5.765020" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1084" name="Rshift90_IsAQuarterTurnPerStep" fullname="NativeRemesher.Tests.IntegerGridTests.Rshift90_IsAQuarterTurnPerStep" methodname="Rshift90_IsAQuarterTurnPerStep" classname="NativeRemesher.Tests.IntegerGridTests" runstate="Runnable" seed="501203526" result="Passed" start-time="2026-10-07 09:12:02Z" end-time="2026-10-07 09:12:02Z" duration="0.000513" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1091" name="SurvivesNonManifoldInput" fullname="NativeRemesher.Tests.IntegerGridTests.SurvivesNonManifoldInput" methodname="SurvivesNonManifoldInput" classname="NativeRemesher.Tests.IntegerGridTests" runstate="Runnable" seed="1108928739" result="Passed" start-time="2026-10-07 09:12:02Z" end-time="2026-10-07 09:12:02Z" duration="0.001378" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[[NativeRemesher] Feature detection constrained 3 of 5 vertices (60 %), above the 35 % cap. Ignoring the constraints: at this density there is no free field left to smooth. Raise the feature angle, or turn detection off for this input.
+]]></output>
+            </test-case>
+            <test-case id="1090" name="SurvivesOpenBoundary" fullname="NativeRemesher.Tests.IntegerGridTests.SurvivesOpenBoundary" methodname="SurvivesOpenBoundary" classname="NativeRemesher.Tests.IntegerGridTests" runstate="Runnable" seed="559794935" result="Passed" start-time="2026-10-07 09:12:02Z" end-time="2026-10-07 09:12:10Z" duration="7.646733" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1087" name="Torus_FlowRoutesEveryUnit" fullname="NativeRemesher.Tests.IntegerGridTests.Torus_FlowRoutesEveryUnit" methodname="Torus_FlowRoutesEveryUnit" classname="NativeRemesher.Tests.IntegerGridTests" runstate="Runnable" seed="747696739" result="Passed" start-time="2026-10-07 09:12:10Z" end-time="2026-10-07 09:12:15Z" duration="5.334022" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1086" name="Torus_IsPureQuadNearTheEulerFloor" fullname="NativeRemesher.Tests.IntegerGridTests.Torus_IsPureQuadNearTheEulerFloor" methodname="Torus_IsPureQuadNearTheEulerFloor" classname="NativeRemesher.Tests.IntegerGridTests" runstate="Runnable" seed="1491381112" result="Passed" start-time="2026-10-07 09:12:15Z" end-time="2026-10-07 09:12:20Z" duration="5.177195" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1092" name="LatticeDirectionTests" fullname="NativeRemesher.Tests.LatticeDirectionTests" classname="NativeRemesher.Tests.LatticeDirectionTests" runstate="Runnable" testcasecount="5" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.002979" total="5" passed="5" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1095" name="FitFrameRecoversTheRingsOwnSquare" fullname="NativeRemesher.Tests.LatticeDirectionTests.FitFrameRecoversTheRingsOwnSquare" methodname="FitFrameRecoversTheRingsOwnSquare" classname="NativeRemesher.Tests.LatticeDirectionTests" runstate="Runnable" seed="1507176836" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000474" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1096" name="IncoherentRingKeepsTheFieldFrame" fullname="NativeRemesher.Tests.LatticeDirectionTests.IncoherentRingKeepsTheFieldFrame" methodname="IncoherentRingKeepsTheFieldFrame" classname="NativeRemesher.Tests.LatticeDirectionTests" runstate="Runnable" seed="2093551479" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000240" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1097" name="RepairLeavesASoundRingAlone" fullname="NativeRemesher.Tests.LatticeDirectionTests.RepairLeavesASoundRingAlone" methodname="RepairLeavesASoundRingAlone" classname="NativeRemesher.Tests.LatticeDirectionTests" runstate="Runnable" seed="2025854150" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000905" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1093" name="SquareRingOccupiesAllFourDirections" fullname="NativeRemesher.Tests.LatticeDirectionTests.SquareRingOccupiesAllFourDirections" methodname="SquareRingOccupiesAllFourDirections" classname="NativeRemesher.Tests.LatticeDirectionTests" runstate="Runnable" seed="266537770" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000121" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1094" name="TwoNeighboursInOneDirectionAreContestedAndLeaveAVacancy" fullname="NativeRemesher.Tests.LatticeDirectionTests.TwoNeighboursInOneDirectionAreContestedAndLeaveAVacancy" methodname="TwoNeighboursInOneDirectionAreContestedAndLeaveAVacancy" classname="NativeRemesher.Tests.LatticeDirectionTests" runstate="Runnable" seed="1405263541" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000118" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1098" name="LatticeTests" fullname="NativeRemesher.Tests.LatticeTests" classname="NativeRemesher.Tests.LatticeTests" runstate="Runnable" testcasecount="11" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.010962" total="11" passed="11" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1105" name="Classify_CoversTheFullIntegerNeighbourhood" fullname="NativeRemesher.Tests.LatticeTests.Classify_CoversTheFullIntegerNeighbourhood" methodname="Classify_CoversTheFullIntegerNeighbourhood" classname="NativeRemesher.Tests.LatticeTests" runstate="Runnable" seed="335369858" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000547" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1107" name="Compat_FindsTheJointMinimumNotIndependentRounding" fullname="NativeRemesher.Tests.LatticeTests.Compat_FindsTheJointMinimumNotIndependentRounding" methodname="Compat_FindsTheJointMinimumNotIndependentRounding" classname="NativeRemesher.Tests.LatticeTests" runstate="Runnable" seed="1432476500" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.002379" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1106" name="CompatIndex_AgreesWithCompat" fullname="NativeRemesher.Tests.LatticeTests.CompatIndex_AgreesWithCompat" methodname="CompatIndex_AgreesWithCompat" classname="NativeRemesher.Tests.LatticeTests" runstate="Runnable" seed="274807571" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.004990" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1103" name="Diagonal_ClassifiesAsDiscard" fullname="NativeRemesher.Tests.LatticeTests.Diagonal_ClassifiesAsDiscard" methodname="Diagonal_ClassifiesAsDiscard" classname="NativeRemesher.Tests.LatticeTests" runstate="Runnable" seed="53361195" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000226" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1108" name="FloorIndex_AgreesWithFloorToLattice" fullname="NativeRemesher.Tests.LatticeTests.FloorIndex_AgreesWithFloorToLattice" methodname="FloorIndex_AgreesWithFloorToLattice" classname="NativeRemesher.Tests.LatticeTests" runstate="Runnable" seed="2089566716" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000305" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1101" name="OneStepAlongQ_ClassifiesAsEdge" fullname="NativeRemesher.Tests.LatticeTests.OneStepAlongQ_ClassifiesAsEdge" methodname="OneStepAlongQ_ClassifiesAsEdge" classname="NativeRemesher.Tests.LatticeTests" runstate="Runnable" seed="1364442237" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000103" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1102" name="OneStepAlongT_ClassifiesAsEdge" fullname="NativeRemesher.Tests.LatticeTests.OneStepAlongT_ClassifiesAsEdge" methodname="OneStepAlongT_ClassifiesAsEdge" classname="NativeRemesher.Tests.LatticeTests" runstate="Runnable" seed="42217205" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000092" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1099" name="Rotate90_MatchesTheReferenceConvention" fullname="NativeRemesher.Tests.LatticeTests.Rotate90_MatchesTheReferenceConvention" methodname="Rotate90_MatchesTheReferenceConvention" classname="NativeRemesher.Tests.LatticeTests" runstate="Runnable" seed="1266895250" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000489" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1109" name="RoundToLattice_LandsWithinHalfACellOfTheTarget" fullname="NativeRemesher.Tests.LatticeTests.RoundToLattice_LandsWithinHalfACellOfTheTarget" methodname="RoundToLattice_LandsWithinHalfACellOfTheTarget" classname="NativeRemesher.Tests.LatticeTests" runstate="Runnable" seed="137619564" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000495" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1100" name="SameLatticePoint_ClassifiesAsCollapse" fullname="NativeRemesher.Tests.LatticeTests.SameLatticePoint_ClassifiesAsCollapse" methodname="SameLatticePoint_ClassifiesAsCollapse" classname="NativeRemesher.Tests.LatticeTests" runstate="Runnable" seed="1671078551" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000100" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1104" name="TwoStepsApart_ClassifiesAsDiscard" fullname="NativeRemesher.Tests.LatticeTests.TwoStepsApart_ClassifiesAsDiscard" methodname="TwoStepsApart_ClassifiesAsDiscard" classname="NativeRemesher.Tests.LatticeTests" runstate="Runnable" seed="1841126667" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000090" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1110" name="MeshMathTests" fullname="NativeRemesher.Tests.MeshMathTests" classname="NativeRemesher.Tests.MeshMathTests" runstate="Runnable" testcasecount="9" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.002655" total="9" passed="9" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1115" name="CosAngleBetweenIsScaleInvariant" fullname="NativeRemesher.Tests.MeshMathTests.CosAngleBetweenIsScaleInvariant" methodname="CosAngleBetweenIsScaleInvariant" classname="NativeRemesher.Tests.MeshMathTests" runstate="Runnable" seed="15003866" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000247" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1116" name="CosAngleBetweenMatchesTheAngleAtAnyScale" fullname="NativeRemesher.Tests.MeshMathTests.CosAngleBetweenMatchesTheAngleAtAnyScale" methodname="CosAngleBetweenMatchesTheAngleAtAnyScale" classname="NativeRemesher.Tests.MeshMathTests" runstate="Runnable" seed="465309732" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000131" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1117" name="CosAngleBetweenReportsNoRotationForADegenerateSide" fullname="NativeRemesher.Tests.MeshMathTests.CosAngleBetweenReportsNoRotationForADegenerateSide" methodname="CosAngleBetweenReportsNoRotationForADegenerateSide" classname="NativeRemesher.Tests.MeshMathTests" runstate="Runnable" seed="2064969792" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000069" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1119" name="SafeFaceNormalFallsBackOnACollinearTriangle" fullname="NativeRemesher.Tests.MeshMathTests.SafeFaceNormalFallsBackOnACollinearTriangle" methodname="SafeFaceNormalFallsBackOnACollinearTriangle" classname="NativeRemesher.Tests.MeshMathTests" runstate="Runnable" seed="112802445" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000190" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1118" name="SafeFaceNormalWorksOnAScanScaleTriangle" fullname="NativeRemesher.Tests.MeshMathTests.SafeFaceNormalWorksOnAScanScaleTriangle" methodname="SafeFaceNormalWorksOnAScanScaleTriangle" classname="NativeRemesher.Tests.MeshMathTests" runstate="Runnable" seed="979499678" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000667" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1114" name="SafeNormalizeFallsBackOnlyOnAGenuineZero" fullname="NativeRemesher.Tests.MeshMathTests.SafeNormalizeFallsBackOnlyOnAGenuineZero" methodname="SafeNormalizeFallsBackOnlyOnAGenuineZero" classname="NativeRemesher.Tests.MeshMathTests" runstate="Runnable" seed="808926653" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000138" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1113" name="SafeNormalizeSurvivesFloatUnderflowOfTheSquaredLength" fullname="NativeRemesher.Tests.MeshMathTests.SafeNormalizeSurvivesFloatUnderflowOfTheSquaredLength" methodname="SafeNormalizeSurvivesFloatUnderflowOfTheSquaredLength" classname="NativeRemesher.Tests.MeshMathTests" runstate="Runnable" seed="1205023835" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000134" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1112" name="SafeNormalizeSurvivesWhatUnityZeroes" fullname="NativeRemesher.Tests.MeshMathTests.SafeNormalizeSurvivesWhatUnityZeroes" methodname="SafeNormalizeSurvivesWhatUnityZeroes" classname="NativeRemesher.Tests.MeshMathTests" runstate="Runnable" seed="864285812" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000097" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1111" name="UnityNormalizedCollapsesSmallVectorsToZero" fullname="NativeRemesher.Tests.MeshMathTests.UnityNormalizedCollapsesSmallVectorsToZero" methodname="UnityNormalizedCollapsesSmallVectorsToZero" classname="NativeRemesher.Tests.MeshMathTests" runstate="Runnable" seed="2081837453" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000161" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1120" name="MinCostFlowTests" fullname="NativeRemesher.Tests.MinCostFlowTests" classname="NativeRemesher.Tests.MinCostFlowTests" runstate="Runnable" testcasecount="8" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.002440" total="8" passed="8" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1124" name="AGreedyFirstPathIsRerouted" fullname="NativeRemesher.Tests.MinCostFlowTests.AGreedyFirstPathIsRerouted" methodname="AGreedyFirstPathIsRerouted" classname="NativeRemesher.Tests.MinCostFlowTests" runstate="Runnable" seed="414602222" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000838" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1123" name="AnUnreachableSinkPushesNothing" fullname="NativeRemesher.Tests.MinCostFlowTests.AnUnreachableSinkPushesNothing" methodname="AnUnreachableSinkPushesNothing" classname="NativeRemesher.Tests.MinCostFlowTests" runstate="Runnable" seed="2035524699" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000085" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1125" name="ArcCapacityIsAHintNotALimit" fullname="NativeRemesher.Tests.MinCostFlowTests.ArcCapacityIsAHintNotALimit" methodname="ArcCapacityIsAHintNotALimit" classname="NativeRemesher.Tests.MinCostFlowTests" runstate="Runnable" seed="932359300" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000075" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1126" name="BalancedSupplyAndDemandIsFullyRouted" fullname="NativeRemesher.Tests.MinCostFlowTests.BalancedSupplyAndDemandIsFullyRouted" methodname="BalancedSupplyAndDemandIsFullyRouted" classname="NativeRemesher.Tests.MinCostFlowTests" runstate="Runnable" seed="1518371872" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000083" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1121" name="CheapestRouteIsFilledFirst" fullname="NativeRemesher.Tests.MinCostFlowTests.CheapestRouteIsFilledFirst" methodname="CheapestRouteIsFilledFirst" classname="NativeRemesher.Tests.MinCostFlowTests" runstate="Runnable" seed="428162702" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000077" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1122" name="FlowIsBoundedByTheNarrowestArc" fullname="NativeRemesher.Tests.MinCostFlowTests.FlowIsBoundedByTheNarrowestArc" methodname="FlowIsBoundedByTheNarrowestArc" classname="NativeRemesher.Tests.MinCostFlowTests" runstate="Runnable" seed="333525115" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000079" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1128" name="RoutingOneUnitAtATimeCostsTheSameAsRoutingThemTogether" fullname="NativeRemesher.Tests.MinCostFlowTests.RoutingOneUnitAtATimeCostsTheSameAsRoutingThemTogether" methodname="RoutingOneUnitAtATimeCostsTheSameAsRoutingThemTogether" classname="NativeRemesher.Tests.MinCostFlowTests" runstate="Runnable" seed="1377734201" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000156" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1127" name="TotalCostDoesNotDependOnArcOrder" fullname="NativeRemesher.Tests.MinCostFlowTests.TotalCostDoesNotDependOnArcOrder" methodname="TotalCostDoesNotDependOnArcOrder" classname="NativeRemesher.Tests.MinCostFlowTests" runstate="Runnable" seed="344134624" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000362" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1129" name="OrientationFieldTests" fullname="NativeRemesher.Tests.OrientationFieldTests" classname="NativeRemesher.Tests.OrientationFieldTests" runstate="Runnable" testcasecount="5" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:21Z" duration="0.342909" total="5" passed="5" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1133" name="Compat4_IsSymmetricAndPicksBestRepresentative" fullname="NativeRemesher.Tests.OrientationFieldTests.Compat4_IsSymmetricAndPicksBestRepresentative" methodname="Compat4_IsSymmetricAndPicksBestRepresentative" classname="NativeRemesher.Tests.OrientationFieldTests" runstate="Runnable" seed="150393067" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000403" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1134" name="Compat4_TreatsAllFourRotationsAsEquivalent" fullname="NativeRemesher.Tests.OrientationFieldTests.Compat4_TreatsAllFourRotationsAsEquivalent" methodname="Compat4_TreatsAllFourRotationsAsEquivalent" classname="NativeRemesher.Tests.OrientationFieldTests" runstate="Runnable" seed="409443286" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000184" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1132" name="Directions_AreUnitLengthAndTangent" fullname="NativeRemesher.Tests.OrientationFieldTests.Directions_AreUnitLengthAndTangent" methodname="Directions_AreUnitLengthAndTangent" classname="NativeRemesher.Tests.OrientationFieldTests" runstate="Runnable" seed="1074968024" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.051800" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1130" name="Plane_CombsToGloballyParallel" fullname="NativeRemesher.Tests.OrientationFieldTests.Plane_CombsToGloballyParallel" methodname="Plane_CombsToGloballyParallel" classname="NativeRemesher.Tests.OrientationFieldTests" runstate="Runnable" seed="730458743" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:20Z" duration="0.000908" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1131" name="Sphere_RemovesMostOfTheErrorFromNoise" fullname="NativeRemesher.Tests.OrientationFieldTests.Sphere_RemovesMostOfTheErrorFromNoise" methodname="Sphere_RemovesMostOfTheErrorFromNoise" classname="NativeRemesher.Tests.OrientationFieldTests" runstate="Runnable" seed="1613912451" result="Passed" start-time="2026-10-07 09:12:20Z" end-time="2026-10-07 09:12:21Z" duration="0.288905" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1135" name="PreDecimateTests" fullname="NativeRemesher.Tests.PreDecimateTests" classname="NativeRemesher.Tests.PreDecimateTests" runstate="Runnable" testcasecount="11" result="Passed" start-time="2026-10-07 09:12:21Z" end-time="2026-10-07 09:12:23Z" duration="2.102265" total="11" passed="11" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1142" name="BudgetAboveInputIsANoOp" fullname="NativeRemesher.Tests.PreDecimateTests.BudgetAboveInputIsANoOp" methodname="BudgetAboveInputIsANoOp" classname="NativeRemesher.Tests.PreDecimateTests" runstate="Runnable" seed="538160503" result="Passed" start-time="2026-10-07 09:12:21Z" end-time="2026-10-07 09:12:21Z" duration="0.000738" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1141" name="CubeDecimationIsNearlyLossless" fullname="NativeRemesher.Tests.PreDecimateTests.CubeDecimationIsNearlyLossless" methodname="CubeDecimationIsNearlyLossless" classname="NativeRemesher.Tests.PreDecimateTests" runstate="Runnable" seed="519164511" result="Passed" start-time="2026-10-07 09:12:21Z" end-time="2026-10-07 09:12:21Z" duration="0.787020" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1145" name="DecimationCostGrowsRoughlyWithTheInput" fullname="NativeRemesher.Tests.PreDecimateTests.DecimationCostGrowsRoughlyWithTheInput" methodname="DecimationCostGrowsRoughlyWithTheInput" classname="NativeRemesher.Tests.PreDecimateTests" runstate="Runnable" seed="1147810682" result="Passed" start-time="2026-10-07 09:12:21Z" end-time="2026-10-07 09:12:22Z" duration="0.427743" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1146" name="DecimationIsScaleInvariant" fullname="NativeRemesher.Tests.PreDecimateTests.DecimationIsScaleInvariant" methodname="DecimationIsScaleInvariant" classname="NativeRemesher.Tests.PreDecimateTests" runstate="Runnable" seed="441337280" result="Passed" start-time="2026-10-07 09:12:22Z" end-time="2026-10-07 09:12:22Z" duration="0.025194" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1144" name="IsDeterministic" fullname="NativeRemesher.Tests.PreDecimateTests.IsDeterministic" methodname="IsDeterministic" classname="NativeRemesher.Tests.PreDecimateTests" runstate="Runnable" seed="614755724" result="Passed" start-time="2026-10-07 09:12:22Z" end-time="2026-10-07 09:12:22Z" duration="0.008542" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1137" name="OutputStaysManifoldAndClosed" fullname="NativeRemesher.Tests.PreDecimateTests.OutputStaysManifoldAndClosed" methodname="OutputStaysManifoldAndClosed" classname="NativeRemesher.Tests.PreDecimateTests" runstate="Runnable" seed="990036267" result="Passed" start-time="2026-10-07 09:12:22Z" end-time="2026-10-07 09:12:22Z" duration="0.017612" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1139" name="PreservesAnOpenBoundary" fullname="NativeRemesher.Tests.PreDecimateTests.PreservesAnOpenBoundary" methodname="PreservesAnOpenBoundary" classname="NativeRemesher.Tests.PreDecimateTests" runstate="Runnable" seed="2065674020" result="Passed" start-time="2026-10-07 09:12:22Z" end-time="2026-10-07 09:12:22Z" duration="0.011444" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1140" name="PreservesCubeCorners" fullname="NativeRemesher.Tests.PreDecimateTests.PreservesCubeCorners" methodname="PreservesCubeCorners" classname="NativeRemesher.Tests.PreDecimateTests" runstate="Runnable" seed="356073451" result="Passed" start-time="2026-10-07 09:12:22Z" end-time="2026-10-07 09:12:22Z" duration="0.028957" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1138" name="PreservesShapeWithinTolerance" fullname="NativeRemesher.Tests.PreDecimateTests.PreservesShapeWithinTolerance" methodname="PreservesShapeWithinTolerance" classname="NativeRemesher.Tests.PreDecimateTests" runstate="Runnable" seed="580248049" result="Passed" start-time="2026-10-07 09:12:22Z" end-time="2026-10-07 09:12:23Z" duration="0.771486" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1136" name="ReachesTheTriangleBudget" fullname="NativeRemesher.Tests.PreDecimateTests.ReachesTheTriangleBudget" methodname="ReachesTheTriangleBudget" classname="NativeRemesher.Tests.PreDecimateTests" runstate="Runnable" seed="2118160612" result="Passed" start-time="2026-10-07 09:12:23Z" end-time="2026-10-07 09:12:23Z" duration="0.021178" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1143" name="SurvivesDegenerateAndNonManifoldInput" fullname="NativeRemesher.Tests.PreDecimateTests.SurvivesDegenerateAndNonManifoldInput" methodname="SurvivesDegenerateAndNonManifoldInput" classname="NativeRemesher.Tests.PreDecimateTests" runstate="Runnable" seed="879220342" result="Passed" start-time="2026-10-07 09:12:23Z" end-time="2026-10-07 09:12:23Z" duration="0.000547" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1147" name="ProfileTests" fullname="NativeRemesher.Tests.ProfileTests" classname="NativeRemesher.Tests.ProfileTests" runstate="Runnable" testcasecount="10" result="Passed" start-time="2026-10-07 09:12:23Z" end-time="2026-10-07 09:13:12Z" duration="49.507398" total="10" passed="10" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1153" name="AModelledInputAutoSelectsTheProfileThatKeepsItsCreases" fullname="NativeRemesher.Tests.ProfileTests.AModelledInputAutoSelectsTheProfileThatKeepsItsCreases" methodname="AModelledInputAutoSelectsTheProfileThatKeepsItsCreases" classname="NativeRemesher.Tests.ProfileTests" runstate="Runnable" seed="1771502743" result="Passed" start-time="2026-10-07 09:12:23Z" end-time="2026-10-07 09:12:25Z" duration="2.673104" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1154" name="ANoisyInputAutoSelectsAProfileThatDeclaresNoCreases" fullname="NativeRemesher.Tests.ProfileTests.ANoisyInputAutoSelectsAProfileThatDeclaresNoCreases" methodname="ANoisyInputAutoSelectsAProfileThatDeclaresNoCreases" classname="NativeRemesher.Tests.ProfileTests" runstate="Runnable" seed="1185661994" result="Passed" start-time="2026-10-07 09:12:25Z" end-time="2026-10-07 09:12:27Z" duration="1.402085" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1151" name="AutoSelectionIsAThresholdOnTheProbeFraction" fullname="NativeRemesher.Tests.ProfileTests.AutoSelectionIsAThresholdOnTheProbeFraction" methodname="AutoSelectionIsAThresholdOnTheProbeFraction" classname="NativeRemesher.Tests.ProfileTests" runstate="Runnable" seed="1113261571" result="Passed" start-time="2026-10-07 09:12:27Z" end-time="2026-10-07 09:12:27Z" duration="0.000315" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1152" name="AutoSelectionIsOffUnlessAskedFor" fullname="NativeRemesher.Tests.ProfileTests.AutoSelectionIsOffUnlessAskedFor" methodname="AutoSelectionIsOffUnlessAskedFor" classname="NativeRemesher.Tests.ProfileTests" runstate="Runnable" seed="1273297806" result="Passed" start-time="2026-10-07 09:12:27Z" end-time="2026-10-07 09:12:35Z" duration="8.028042" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1148" name="EveryProfileValidatesAndDescribesItself" fullname="NativeRemesher.Tests.ProfileTests.EveryProfileValidatesAndDescribesItself" methodname="EveryProfileValidatesAndDescribesItself" classname="NativeRemesher.Tests.ProfileTests" runstate="Runnable" seed="910626941" result="Passed" start-time="2026-10-07 09:12:35Z" end-time="2026-10-07 09:12:35Z" duration="0.000843" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1150" name="HardSurfaceUsesALowerFeatureThresholdThanGeneral" fullname="NativeRemesher.Tests.ProfileTests.HardSurfaceUsesALowerFeatureThresholdThanGeneral" methodname="HardSurfaceUsesALowerFeatureThresholdThanGeneral" classname="NativeRemesher.Tests.ProfileTests" runstate="Runnable" seed="1879029864" result="Passed" start-time="2026-10-07 09:12:35Z" end-time="2026-10-07 09:12:35Z" duration="0.000096" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1156" name="OutputMeshIsNamedFromTheOriginalNotTheDecimatedIntermediate" fullname="NativeRemesher.Tests.ProfileTests.OutputMeshIsNamedFromTheOriginalNotTheDecimatedIntermediate" methodname="OutputMeshIsNamedFromTheOriginalNotTheDecimatedIntermediate" classname="NativeRemesher.Tests.ProfileTests" runstate="Runnable" seed="210753672" result="Passed" start-time="2026-10-07 09:12:35Z" end-time="2026-10-07 09:12:38Z" duration="2.951325" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1155" name="PipelineRunsUnderEveryProfile" fullname="NativeRemesher.Tests.ProfileTests.PipelineRunsUnderEveryProfile" methodname="PipelineRunsUnderEveryProfile" classname="NativeRemesher.Tests.ProfileTests" runstate="Runnable" seed="1644170163" result="Passed" start-time="2026-10-07 09:12:38Z" end-time="2026-10-07 09:13:03Z" duration="25.127243" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1157" name="PreDecimationNoLongerBuysQualityOnceTheHierarchyCarriesTheCoarsening" fullname="NativeRemesher.Tests.ProfileTests.PreDecimationNoLongerBuysQualityOnceTheHierarchyCarriesTheCoarsening" methodname="PreDecimationNoLongerBuysQualityOnceTheHierarchyCarriesTheCoarsening" classname="NativeRemesher.Tests.ProfileTests" runstate="Runnable" seed="383520897" result="Passed" start-time="2026-10-07 09:13:03Z" end-time="2026-10-07 09:13:12Z" duration="9.322113" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1149" name="ScanAndOrganicProfilesDisableFeatureDetection" fullname="NativeRemesher.Tests.ProfileTests.ScanAndOrganicProfilesDisableFeatureDetection" methodname="ScanAndOrganicProfilesDisableFeatureDetection" classname="NativeRemesher.Tests.ProfileTests" runstate="Runnable" seed="742263840" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.000233" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1158" name="ScaleFieldTests" fullname="NativeRemesher.Tests.ScaleFieldTests" classname="NativeRemesher.Tests.ScaleFieldTests" runstate="Runnable" testcasecount="7" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.033563" total="7" passed="7" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1165" name="ADegenerateOrEmptyInputIsHandledWithoutThrowing" fullname="NativeRemesher.Tests.ScaleFieldTests.ADegenerateOrEmptyInputIsHandledWithoutThrowing" methodname="ADegenerateOrEmptyInputIsHandledWithoutThrowing" classname="NativeRemesher.Tests.ScaleFieldTests" runstate="Runnable" seed="1181532394" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.001785" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1161" name="AShapeOfConstantCurvatureIsNotGraded" fullname="NativeRemesher.Tests.ScaleFieldTests.AShapeOfConstantCurvatureIsNotGraded" methodname="AShapeOfConstantCurvatureIsNotGraded" classname="NativeRemesher.Tests.ScaleFieldTests" runstate="Runnable" seed="1530527041" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.003375" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1162" name="NoEdgeCarriesMoreThanTheGradationRatio" fullname="NativeRemesher.Tests.ScaleFieldTests.NoEdgeCarriesMoreThanTheGradationRatio" methodname="NoEdgeCarriesMoreThanTheGradationRatio" classname="NativeRemesher.Tests.ScaleFieldTests" runstate="Runnable" seed="1757999583" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.007812" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1160" name="SpacingIsSmallerWhereTheSurfaceCurvesMore" fullname="NativeRemesher.Tests.ScaleFieldTests.SpacingIsSmallerWhereTheSurfaceCurvesMore" methodname="SpacingIsSmallerWhereTheSurfaceCurvesMore" classname="NativeRemesher.Tests.ScaleFieldTests" runstate="Runnable" seed="1904308721" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.001927" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1164" name="TheFaceCountStaysNearTheRequestWhenGrading" fullname="NativeRemesher.Tests.ScaleFieldTests.TheFaceCountStaysNearTheRequestWhenGrading" methodname="TheFaceCountStaysNearTheRequestWhenGrading" classname="NativeRemesher.Tests.ScaleFieldTests" runstate="Runnable" seed="1703504790" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.003052" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1163" name="TheSpreadIsBoundedByMaxRatio" fullname="NativeRemesher.Tests.ScaleFieldTests.TheSpreadIsBoundedByMaxRatio" methodname="TheSpreadIsBoundedByMaxRatio" classname="NativeRemesher.Tests.ScaleFieldTests" runstate="Runnable" seed="1171024489" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.010676" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1159" name="ZeroAdaptivityIsExactlyUniformSizing" fullname="NativeRemesher.Tests.ScaleFieldTests.ZeroAdaptivityIsExactlyUniformSizing" methodname="ZeroAdaptivityIsExactlyUniformSizing" classname="NativeRemesher.Tests.ScaleFieldTests" runstate="Runnable" seed="923142629" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.003693" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1166" name="SurfaceRelaxationTests" fullname="NativeRemesher.Tests.SurfaceRelaxationTests" classname="NativeRemesher.Tests.SurfaceRelaxationTests" runstate="Runnable" testcasecount="10" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.047751" total="10" passed="10" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1173" name="ACreaseIsNotSmoothedAwayWhenTheProfileHasFeatures" fullname="NativeRemesher.Tests.SurfaceRelaxationTests.ACreaseIsNotSmoothedAwayWhenTheProfileHasFeatures" methodname="ACreaseIsNotSmoothedAwayWhenTheProfileHasFeatures" classname="NativeRemesher.Tests.SurfaceRelaxationTests" runstate="Runnable" seed="899696264" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.001048" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1171" name="AnAlreadyRelaxedMeshIsLeftAlone" fullname="NativeRemesher.Tests.SurfaceRelaxationTests.AnAlreadyRelaxedMeshIsLeftAlone" methodname="AnAlreadyRelaxedMeshIsLeftAlone" classname="NativeRemesher.Tests.SurfaceRelaxationTests" runstate="Runnable" seed="756958943" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.005305" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1167" name="ASpikeIsPulledBackOntoTheSurface" fullname="NativeRemesher.Tests.SurfaceRelaxationTests.ASpikeIsPulledBackOntoTheSurface" methodname="ASpikeIsPulledBackOntoTheSurface" classname="NativeRemesher.Tests.SurfaceRelaxationTests" runstate="Runnable" seed="1531672336" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.004618" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1168" name="ItDoesNotMoveTheMeshOffTheSurface" fullname="NativeRemesher.Tests.SurfaceRelaxationTests.ItDoesNotMoveTheMeshOffTheSurface" methodname="ItDoesNotMoveTheMeshOffTheSurface" classname="NativeRemesher.Tests.SurfaceRelaxationTests" runstate="Runnable" seed="36157356" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.007277" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1170" name="NoFaceEndsUpFacingTheOtherWay" fullname="NativeRemesher.Tests.SurfaceRelaxationTests.NoFaceEndsUpFacingTheOtherWay" methodname="NoFaceEndsUpFacingTheOtherWay" classname="NativeRemesher.Tests.SurfaceRelaxationTests" runstate="Runnable" seed="703106206" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.004765" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1176" name="NoSurfaceOrNoMeshIsHandledWithoutThrowing" fullname="NativeRemesher.Tests.SurfaceRelaxationTests.NoSurfaceOrNoMeshIsHandledWithoutThrowing" methodname="NoSurfaceOrNoMeshIsHandledWithoutThrowing" classname="NativeRemesher.Tests.SurfaceRelaxationTests" runstate="Runnable" seed="1582496857" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.004000" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1175" name="NoVertexTravelsFurtherThanTheDriftCap" fullname="NativeRemesher.Tests.SurfaceRelaxationTests.NoVertexTravelsFurtherThanTheDriftCap" methodname="NoVertexTravelsFurtherThanTheDriftCap" classname="NativeRemesher.Tests.SurfaceRelaxationTests" runstate="Runnable" seed="1151297432" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.008181" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1172" name="RunningItAgainChangesAlmostNothing" fullname="NativeRemesher.Tests.SurfaceRelaxationTests.RunningItAgainChangesAlmostNothing" methodname="RunningItAgainChangesAlmostNothing" classname="NativeRemesher.Tests.SurfaceRelaxationTests" runstate="Runnable" seed="1299346901" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.005105" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1169" name="TheRimDoesNotCreepInwards" fullname="NativeRemesher.Tests.SurfaceRelaxationTests.TheRimDoesNotCreepInwards" methodname="TheRimDoesNotCreepInwards" classname="NativeRemesher.Tests.SurfaceRelaxationTests" runstate="Runnable" seed="596989964" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.005156" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1174" name="TheSameCreaseIsSmoothedWhenTheProfileHasNoFeatures" fullname="NativeRemesher.Tests.SurfaceRelaxationTests.TheSameCreaseIsSmoothedWhenTheProfileHasNoFeatures" methodname="TheSameCreaseIsSmoothedWhenTheProfileHasNoFeatures" classname="NativeRemesher.Tests.SurfaceRelaxationTests" runstate="Runnable" seed="101890447" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.001083" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1177" name="TopologyTests" fullname="NativeRemesher.Tests.TopologyTests" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" testcasecount="17" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:13Z" duration="0.842218" total="17" passed="17" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1186" name="Adjacency_IsDeterministicAcrossBuilds" fullname="NativeRemesher.Tests.TopologyTests.Adjacency_IsDeterministicAcrossBuilds" methodname="Adjacency_IsDeterministicAcrossBuilds" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" seed="1028364043" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.004570" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1180" name="Adjacency_IsSymmetricAndHasNoSelfLoops" fullname="NativeRemesher.Tests.TopologyTests.Adjacency_IsSymmetricAndHasNoSelfLoops" methodname="Adjacency_IsSymmetricAndHasNoSelfLoops" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" seed="314435150" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.016134" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1181" name="Adjacency_RowsAreInCyclicFanOrder" fullname="NativeRemesher.Tests.TopologyTests.Adjacency_RowsAreInCyclicFanOrder" methodname="Adjacency_RowsAreInCyclicFanOrder" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" seed="1056742569" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.006356" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1183" name="ClosedMesh_HasNoBoundaryOrNonManifoldEdges" fullname="NativeRemesher.Tests.TopologyTests.ClosedMesh_HasNoBoundaryOrNonManifoldEdges" methodname="ClosedMesh_HasNoBoundaryOrNonManifoldEdges" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" seed="1607145636" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.001394" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1194" name="DegenerateInput_DoesNotThrow" fullname="NativeRemesher.Tests.TopologyTests.DegenerateInput_DoesNotThrow" methodname="DegenerateInput_DoesNotThrow" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" seed="1293022089" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.000586" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1182" name="HalfEdge_TwinIsAnInvolution" fullname="NativeRemesher.Tests.TopologyTests.HalfEdge_TwinIsAnInvolution" methodname="HalfEdge_TwinIsAnInvolution" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" seed="386633288" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.016536" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1178" name="Icosphere_HasSaneTopology" fullname="NativeRemesher.Tests.TopologyTests.Icosphere_HasSaneTopology" methodname="Icosphere_HasSaneTopology" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" seed="18348687" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.004241" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1191" name="MaxQuadCountForInput_IsBelowInputTriangleCount" fullname="NativeRemesher.Tests.TopologyTests.MaxQuadCountForInput_IsBelowInputTriangleCount" methodname="MaxQuadCountForInput_IsBelowInputTriangleCount" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" seed="1813238399" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.002510" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1193" name="NonManifoldHeavyInputDoesNotBlowUp" fullname="NativeRemesher.Tests.TopologyTests.NonManifoldHeavyInputDoesNotBlowUp" methodname="NonManifoldHeavyInputDoesNotBlowUp" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" seed="30889274" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.017566" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1185" name="NonManifoldInput_IsFlaggedRatherThanLoopingForever" fullname="NativeRemesher.Tests.TopologyTests.NonManifoldInput_IsFlaggedRatherThanLoopingForever" methodname="NonManifoldInput_IsFlaggedRatherThanLoopingForever" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" seed="507380216" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.000556" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1187" name="Normals_AreUnitLength" fullname="NativeRemesher.Tests.TopologyTests.Normals_AreUnitLength" methodname="Normals_AreUnitLength" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" seed="1869600810" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.004890" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1184" name="OpenDisc_FlagsExactlyItsRimAsBoundary" fullname="NativeRemesher.Tests.TopologyTests.OpenDisc_FlagsExactlyItsRimAsBoundary" methodname="OpenDisc_FlagsExactlyItsRimAsBoundary" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" seed="1882048655" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.002216" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1190" name="OpenDisc_HasABoundary" fullname="NativeRemesher.Tests.TopologyTests.OpenDisc_HasABoundary" methodname="OpenDisc_HasABoundary" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" seed="1783390156" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.000648" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1189" name="SourceToWelded_AgreesWithPositions" fullname="NativeRemesher.Tests.TopologyTests.SourceToWelded_AgreesWithPositions" methodname="SourceToWelded_AgreesWithPositions" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" seed="928505110" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.000618" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1188" name="SourceToWelded_MapsEveryVertexIntoRange" fullname="NativeRemesher.Tests.TopologyTests.SourceToWelded_MapsEveryVertexIntoRange" methodname="SourceToWelded_MapsEveryVertexIntoRange" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" seed="199333096" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.000461" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1179" name="SubdividedCube_WeldsToClosedSurface" fullname="NativeRemesher.Tests.TopologyTests.SubdividedCube_WeldsToClosedSurface" methodname="SubdividedCube_WeldsToClosedSurface" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" seed="1770513281" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:12Z" duration="0.000640" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1192" name="TopologyBuildIsLinearEnoughForAMillionTriangles" fullname="NativeRemesher.Tests.TopologyTests.TopologyBuildIsLinearEnoughForAMillionTriangles" methodname="TopologyBuildIsLinearEnoughForAMillionTriangles" classname="NativeRemesher.Tests.TopologyTests" runstate="Runnable" seed="1522321715" result="Passed" start-time="2026-10-07 09:13:12Z" end-time="2026-10-07 09:13:13Z" duration="0.760579" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[[Scale] topology for 1,310,720 tris in 607 ms
+]]></output>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1195" name="TrianglePairingTests" fullname="NativeRemesher.Tests.TrianglePairingTests" classname="NativeRemesher.Tests.TrianglePairingTests" runstate="Runnable" testcasecount="8" result="Passed" start-time="2026-10-07 09:13:13Z" end-time="2026-10-07 09:13:13Z" duration="0.005404" total="8" passed="8" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1196" name="AHexagonPatchBecomesTwoQuads" fullname="NativeRemesher.Tests.TrianglePairingTests.AHexagonPatchBecomesTwoQuads" methodname="AHexagonPatchBecomesTwoQuads" classname="NativeRemesher.Tests.TrianglePairingTests" runstate="Runnable" seed="772520013" result="Passed" start-time="2026-10-07 09:13:13Z" end-time="2026-10-07 09:13:13Z" duration="0.000862" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1198" name="ALoneTriangleIsLeftAlone" fullname="NativeRemesher.Tests.TrianglePairingTests.ALoneTriangleIsLeftAlone" methodname="ALoneTriangleIsLeftAlone" classname="NativeRemesher.Tests.TrianglePairingTests" runstate="Runnable" seed="664807430" result="Passed" start-time="2026-10-07 09:13:13Z" end-time="2026-10-07 09:13:13Z" duration="0.000260" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1203" name="AnEmptyOrTriangleFreeMeshIsHandledWithoutThrowing" fullname="NativeRemesher.Tests.TrianglePairingTests.AnEmptyOrTriangleFreeMeshIsHandledWithoutThrowing" methodname="AnEmptyOrTriangleFreeMeshIsHandledWithoutThrowing" classname="NativeRemesher.Tests.TrianglePairingTests" runstate="Runnable" seed="374559563" result="Passed" start-time="2026-10-07 09:13:13Z" end-time="2026-10-07 09:13:13Z" duration="0.000193" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1200" name="ARetilingIsRefusedWhenEveryDiagonalAlreadyExists" fullname="NativeRemesher.Tests.TrianglePairingTests.ARetilingIsRefusedWhenEveryDiagonalAlreadyExists" methodname="ARetilingIsRefusedWhenEveryDiagonalAlreadyExists" classname="NativeRemesher.Tests.TrianglePairingTests" runstate="Runnable" seed="662477659" result="Passed" start-time="2026-10-07 09:13:13Z" end-time="2026-10-07 09:13:13Z" duration="0.000573" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1197" name="ARingOfFacesIsNotRetiledAsThoughItHadOneBoundary" fullname="NativeRemesher.Tests.TrianglePairingTests.ARingOfFacesIsNotRetiledAsThoughItHadOneBoundary" methodname="ARingOfFacesIsNotRetiledAsThoughItHadOneBoundary" classname="NativeRemesher.Tests.TrianglePairingTests" runstate="Runnable" seed="1476489864" result="Passed" start-time="2026-10-07 09:13:13Z" end-time="2026-10-07 09:13:13Z" duration="0.001916" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1199" name="NoEdgeEndsUpSharedByThreeFaces" fullname="NativeRemesher.Tests.TrianglePairingTests.NoEdgeEndsUpSharedByThreeFaces" methodname="NoEdgeEndsUpSharedByThreeFaces" classname="NativeRemesher.Tests.TrianglePairingTests" runstate="Runnable" seed="1630194976" result="Passed" start-time="2026-10-07 09:13:13Z" end-time="2026-10-07 09:13:13Z" duration="0.000110" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1202" name="RunningItTwiceChangesNothingTheSecondTime" fullname="NativeRemesher.Tests.TrianglePairingTests.RunningItTwiceChangesNothingTheSecondTime" methodname="RunningItTwiceChangesNothingTheSecondTime" classname="NativeRemesher.Tests.TrianglePairingTests" runstate="Runnable" seed="967930454" result="Passed" start-time="2026-10-07 09:13:13Z" end-time="2026-10-07 09:13:13Z" duration="0.000137" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1201" name="TheOutputKeepsTheInputWinding" fullname="NativeRemesher.Tests.TrianglePairingTests.TheOutputKeepsTheInputWinding" methodname="TheOutputKeepsTheInputWinding" classname="NativeRemesher.Tests.TrianglePairingTests" runstate="Runnable" seed="1824222946" result="Passed" start-time="2026-10-07 09:13:13Z" end-time="2026-10-07 09:13:13Z" duration="0.000259" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1204" name="UvTransferTests" fullname="NativeRemesher.Tests.UvTransferTests" classname="NativeRemesher.Tests.UvTransferTests" runstate="Runnable" testcasecount="5" result="Passed" start-time="2026-10-07 09:13:13Z" end-time="2026-10-07 09:13:40Z" duration="27.019872" total="5" passed="5" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1205" name="ChartsSplitAtTheSeamOnly" fullname="NativeRemesher.Tests.UvTransferTests.ChartsSplitAtTheSeamOnly" methodname="ChartsSplitAtTheSeamOnly" classname="NativeRemesher.Tests.UvTransferTests" runstate="Runnable" seed="440499869" result="Passed" start-time="2026-10-07 09:13:13Z" end-time="2026-10-07 09:13:13Z" duration="0.002288" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1206" name="FaceUvsNeverSpanTheSeam" fullname="NativeRemesher.Tests.UvTransferTests.FaceUvsNeverSpanTheSeam" methodname="FaceUvsNeverSpanTheSeam" classname="NativeRemesher.Tests.UvTransferTests" runstate="Runnable" seed="694635985" result="Passed" start-time="2026-10-07 09:13:13Z" end-time="2026-10-07 09:13:13Z" duration="0.014177" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1207" name="MeshIsSplitAtSeamsAndCarriesTheCornerUvs" fullname="NativeRemesher.Tests.UvTransferTests.MeshIsSplitAtSeamsAndCarriesTheCornerUvs" methodname="MeshIsSplitAtSeamsAndCarriesTheCornerUvs" classname="NativeRemesher.Tests.UvTransferTests" runstate="Runnable" seed="376087186" result="Passed" start-time="2026-10-07 09:13:13Z" end-time="2026-10-07 09:13:13Z" duration="0.005017" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-suite type="ParameterizedMethod" id="1210" name="PipelineOutputHasNoFaceAcrossTheSeam" fullname="NativeRemesher.Tests.UvTransferTests.PipelineOutputHasNoFaceAcrossTheSeam" classname="NativeRemesher.Tests.UvTransferTests" runstate="Runnable" testcasecount="2" result="Passed" start-time="2026-10-07 09:13:13Z" end-time="2026-10-07 09:13:40Z" duration="26.997734" total="2" passed="2" failed="0" inconclusive="0" skipped="0" asserts="0">
+              <properties />
+              <test-case id="1208" name="PipelineOutputHasNoFaceAcrossTheSeam(Collapse)" fullname="NativeRemesher.Tests.UvTransferTests.PipelineOutputHasNoFaceAcrossTheSeam(Collapse)" methodname="PipelineOutputHasNoFaceAcrossTheSeam" classname="NativeRemesher.Tests.UvTransferTests" runstate="Runnable" seed="701321657" result="Passed" start-time="2026-10-07 09:13:13Z" end-time="2026-10-07 09:13:23Z" duration="10.070068" asserts="0">
+                <properties>
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1209" name="PipelineOutputHasNoFaceAcrossTheSeam(IntegerGrid)" fullname="NativeRemesher.Tests.UvTransferTests.PipelineOutputHasNoFaceAcrossTheSeam(IntegerGrid)" methodname="PipelineOutputHasNoFaceAcrossTheSeam" classname="NativeRemesher.Tests.UvTransferTests" runstate="Runnable" seed="363448418" result="Passed" start-time="2026-10-07 09:13:23Z" end-time="2026-10-07 09:13:40Z" duration="16.927077" asserts="0">
+                <properties>
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <output><![CDATA[Saving results to: C:/Users/rufat/UnityProject/remesher/tests4.xml
+]]></output>
+              </test-case>
+            </test-suite>
+          </test-suite>
+        </test-suite>
+      </test-suite>
+    </test-suite>
+  </test-suite>
+</test-run>

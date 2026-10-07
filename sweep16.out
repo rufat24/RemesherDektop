@@ -1,0 +1,3 @@
+t75_head   MEAN head,IntegerGrid over 3: irregular 8.86 % open 41.3 pieces 1.33 hausdorff 0.01936 chamfer 0.00126 ridge 0.00464 |       curve network: 53 curves (4 closed, 8 joins), 2522 vertices, 759 cells long, 17 corner vertices, 14045 thin 
+t75_body   MEAN body,IntegerGrid over 3: irregular 3.04 % open 2.0 pieces 1.00 hausdorff 0.01053 chamfer 0.00063 ridge 0.00167 |       curve network: 26 curves (1 closed, 2 joins), 971 vertices, 298 cells long, 6 corner vertices, 3431 thin 
+t50_head   MEAN head,IntegerGrid over 3: irregular 8.73 % open 46.7 pieces 1.33 hausdorff 0.02341 chamfer 0.00125 ridge 0.00428 |       curve network: 65 curves (5 closed, 17 joins), 3074 vertices, 928 cells long, 17 corner vertices, 8018 thin 

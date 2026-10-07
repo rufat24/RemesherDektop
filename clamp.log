@@ -1,0 +1,533 @@
+[Licensing::Module] Trying to connect to existing licensing client channel...
+Built from '6000.0/respin/6000.0.58f2-44b8bf3a32' branch; Version is '6000.0.58f2 (92dee566b325) revision 9625317'; Using compiler version '193933523'; Build Type 'Release'
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-rufat" at "2026-09-18T18:53:33.3402104Z"
+OS: 'Windows 11  (10.0.26200) 64bit CoreSingleLanguage' Language: 'en' Physical Memory: 64897 MB
+BatchMode: 1, IsHumanControllingUs: 0, StartBugReporterOnCrash: 0, Is64bit: 1
+Date: 2026-09-18T18:53:33Z
+
+COMMAND LINE ARGUMENTS:
+C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Unity.exe
+-batchmode
+-nographics
+-quit
+-projectPath
+Headless
+-executeMethod
+NativeRemesher.Benchmark.IntegerGridAudit.Run
+-logFile
+C:/Users/rufat/UnityProject/remesher/clamp.log
+Successfully changed project path to: C:/Users/rufat/UnityProject/remesher/Headless
+C:/Users/rufat/UnityProject/remesher/Headless
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=33554432"
+    "memorysetup-bucket-allocator-block-count=8"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=33554432"
+    "memorysetup-profiler-bucket-allocator-block-count=8"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=16777216"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=33554432"
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+Player connection [25612]  Target information:
+
+Player connection [25612]  * "[IP] 192.168.100.65 [Port] 55505 [Flags] 2 [Guid] 2438174958 [EditorId] 2438174958 [Version] 1048832 [Id] WindowsEditor(7,Rufat) [Debug] 1 [PackageName] WindowsEditor [ProjectName] Editor" 
+
+Player connection [25612]  * "[IP] 192.168.100.67 [Port] 55505 [Flags] 2 [Guid] 2438174958 [EditorId] 2438174958 [Version] 1048832 [Id] WindowsEditor(7,Rufat) [Debug] 1 [PackageName] WindowsEditor [ProjectName] Editor" 
+
+Player connection [25612] Host joined multi-casting on [225.0.0.222:54997]...
+Player connection [25612] Host joined alternative multi-casting on [225.0.0.222:34997]...
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+[Licensing::Client] Code 10 while verifying Licensing Client signature (process Id: 39808, path: "C:/Program Files/Unity Hub/UnityLicensingClient_V1/Unity.Licensing.Client.exe")
+[Licensing::Module] LicensingClient has failed validation; ignoring
+[Licensing::Client] Handshaking with LicensingClient:
+  Version:                 1.17.4+4293ba1
+  Session Id:              82c3a57abaac4f89bed9dacdc3e5e553
+  Correlation Id:          8dc4277c2dd4869d5a679de7a9d47c8d
+  External correlation Id: 827713561826124241
+  Machine Id:              OK7HIIc0hscU3zYy5uDl92BkRP8=
+[Licensing::Module] Successfully connected to LicensingClient on channel: "LicenseClient-rufat" (connect: 0.00s, validation: 0.00s, handshake: 0.04s)
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-rufat-notifications" at "2026-09-18T18:53:33.3765343Z"
+[Licensing::Module] Error: Access token is unavailable; failed to update
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] License group:
+  Id: 18966622505151-UnityPersXXXX
+  Product: Unity Personal
+  Type: Assigned
+  Expiration: Unlimited
+[Licensing::Client] Successfully updated license, isAsync: True, time: 0.00
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] Licensing Background thread has ended after 0.04s
+[Package Manager] Connected to IPC stream "Upm-18812" after 0.2 seconds.
+Library Redirect Path: Library/
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+Refreshing native plugins compatible for Editor in 0.00 ms, found 0 plugins.
+Preloading 0 native plugins for Editor in 0.00 ms.
+Initialize engine version: 6000.0.58f2 (92dee566b325)
+[Subsystems] Discovering subsystems at path C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/Resources/UnitySubsystems
+[Subsystems] Discovering subsystems at path C:/Users/rufat/UnityProject/remesher/Headless/Assets
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Initialize mono
+Mono path[0] = 'C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/Managed'
+Mono path[1] = 'C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/MonoBleedingEdge/lib/mono/unityjit-win32'
+Mono config path = 'C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/MonoBleedingEdge/etc'
+Using monoOptions --debugger-agent=transport=dt_socket,embedding=1,server=y,suspend=n,address=127.0.0.1:56812
+Using cacheserver namespaces - metadata:defaultmetadata, artifacts:defaultartifacts
+Using cacheserver namespaces - metadata:defaultmetadata, artifacts:defaultartifacts
+ImportWorker Server TCP listen port: 0
+AcceleratorClientConnectionCallback - disconnected - :0
+Begin MonoManager ReloadAssembly
+Registering precompiled unity dll's ...
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/PlaybackEngines/WindowsStandaloneSupport/UnityEditor.WindowsStandalone.Extensions.dll
+[Licensing::Client] Successfully resolved entitlement details
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/PlaybackEngines/AndroidPlayer/UnityEditor.Android.Extensions.dll
+Registered in 0.005037 seconds.
+- Loaded All Assemblies, in  0.244 seconds
+Native extension for Android target not found
+Android Extension - Scanning For ADB Devices 176 ms
+Native extension for WindowsStandalone target not found
+Mono: successfully reloaded assembly
+- Finished resetting the current domain, in  0.384 seconds
+Domain Reload Profiling: 626ms
+	BeginReloadAssembly (87ms)
+		ExecutionOrderSort (0ms)
+		DisableScriptedObjects (0ms)
+		BackupInstance (0ms)
+		ReleaseScriptingObjects (0ms)
+		CreateAndSetChildDomain (1ms)
+	RebuildCommonClasses (22ms)
+	RebuildNativeTypeToScriptingClass (7ms)
+	initialDomainReloadingComplete (33ms)
+	LoadAllAssembliesAndSetupDomain (93ms)
+		LoadAssemblies (86ms)
+		RebuildTransferFunctionScriptingTraits (0ms)
+		AnalyzeDomain (91ms)
+			TypeCache.Refresh (89ms)
+				TypeCache.ScanAssembly (80ms)
+			BuildScriptInfoCaches (0ms)
+			ResolveRequiredComponents (0ms)
+	FinalizeReload (384ms)
+		ReleaseScriptCaches (0ms)
+		RebuildScriptCaches (0ms)
+		SetupLoadedEditorAssemblies (365ms)
+			LogAssemblyErrors (0ms)
+			InitializePlatformSupportModulesInManaged (226ms)
+			SetLoadedEditorAssemblies (2ms)
+			BeforeProcessingInitializeOnLoad (33ms)
+			ProcessInitializeOnLoadAttributes (69ms)
+			ProcessInitializeOnLoadMethodAttributes (34ms)
+			AfterProcessingInitializeOnLoad (0ms)
+			EditorAssembliesLoaded (0ms)
+		ExecutionOrderSort2 (0ms)
+		AwakeInstancesAfterBackupRestoration (0ms)
+[Licensing::Client] Successfully resolved entitlement details
+Application.AssetDatabase Initial Refresh Start
+Package Manager log level set to [2]
+[Package Manager] Restoring resolved packages state from cache
+[Licensing::Client] Successfully resolved entitlement details
+[Package Manager] Registered 4 packages:
+  Built-in packages:
+    com.unity.test-framework@1.5.1 (location: C:\Users\rufat\UnityProject\remesher\Headless\Library\PackageCache\com.unity.test-framework@1f954279c37e)
+    com.unity.modules.imgui@1.0.0 (location: C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Data\Resources\PackageManager\BuiltInPackages\com.unity.modules.imgui)
+    com.unity.modules.jsonserialize@1.0.0 (location: C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Data\Resources\PackageManager\BuiltInPackages\com.unity.modules.jsonserialize)
+    com.unity.ext.nunit@2.0.5 (location: C:\Users\rufat\UnityProject\remesher\Headless\Library\PackageCache\com.unity.ext.nunit@031a54704bff)
+[Subsystems] No new subsystems found in resolved package list.
+[Package Manager] Done registering packages in 0.00 seconds
+[Package Manager] Done resolving packages in 0.48 seconds
+[Package Manager] Registered 4 packages:
+  Built-in packages:
+    com.unity.test-framework@1.5.1 (location: C:\Users\rufat\UnityProject\remesher\Headless\Library\PackageCache\com.unity.test-framework@1f954279c37e)
+    com.unity.modules.imgui@1.0.0 (location: C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Data\Resources\PackageManager\BuiltInPackages\com.unity.modules.imgui)
+    com.unity.modules.jsonserialize@1.0.0 (location: C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Data\Resources\PackageManager\BuiltInPackages\com.unity.modules.jsonserialize)
+    com.unity.ext.nunit@2.0.5 (location: C:\Users\rufat\UnityProject\remesher\Headless\Library\PackageCache\com.unity.ext.nunit@031a54704bff)
+[Subsystems] No new subsystems found in resolved package list.
+[Package Manager] Done registering packages in 0.00 seconds
+[ScriptCompilation] Requested script compilation because: Assetdatabase observed changes in script compilation related files
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:80
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Production
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: C:\Users\rufat\UnityProject\remesher\Headless\
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/Ping application/grpc -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'gRPC - /UnityILPP.PostProcessing/Ping'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'gRPC - /UnityILPP.PostProcessing/Ping'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/Ping application/grpc - - 200 - application/grpc 24.2734ms
+Starting: C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Data\bee_backend.exe --ipc --defer-dag-verification --dagfile="Library/Bee/1900b0aE.dag" --continue-on-failure --profile="Library/Bee/backend1.traceevents" ScriptAssemblies
+WorkingDir: C:/Users/rufat/UnityProject/remesher/Headless
+DisplayProgressbar: Compiling Scripts
+ExitCode: 0 Duration: 0s832ms
+[167/176    0s] Csc Library/Bee/artifacts/1900b0aE.dag/NativeRemesher.Runtime.dll (+2 others)
+[168/176    0s] CopyFiles Library/ScriptAssemblies/NativeRemesher.Runtime.pdb
+[169/176    0s] CopyFiles Library/ScriptAssemblies/NativeRemesher.Runtime.dll
+[170/176    0s] Csc Library/Bee/artifacts/1900b0aE.dag/NativeRemesher.Benchmark.dll (+2 others)
+[171/176    0s] CopyFiles Library/ScriptAssemblies/NativeRemesher.Benchmark.pdb
+[172/176    0s] Csc Library/Bee/artifacts/1900b0aE.dag/NativeRemesher.Tests.dll (+2 others)
+[173/176    0s] CopyFiles Library/ScriptAssemblies/NativeRemesher.Tests.pdb
+[174/176    0s] CopyFiles Library/ScriptAssemblies/NativeRemesher.Benchmark.dll
+[175/176    0s] CopyFiles Library/ScriptAssemblies/NativeRemesher.Tests.dll
+*** Tundra build success (0.81 seconds), 9 items updated, 176 evaluated
+AssetDatabase: script compilation time: 1.089756s
+Begin MonoManager ReloadAssembly
+- Loaded All Assemblies, in  0.833 seconds
+Start importing Assets/NativeRemesher/Benchmark using Guid(a9387141c366d2c40bb43a2ada2c2ce1) (DefaultImporter) -> (artifact id: '445c5ef5e6f538d156cd956aa4bc5ff1') in 0.0095159 seconds
+Start importing Assets/NativeRemesher/Runtime using Guid(d982c1b8841c46f42b1b9801c6690708) (DefaultImporter) -> (artifact id: '731a93f28197a50c5241e05bfcdacf4b') in 0.0016242 seconds
+Start importing Assets/NativeRemesher/Tests using Guid(9bdc6977626f4234c947d60863fb40d6) (DefaultImporter) -> (artifact id: 'b3d1716aaaa50440d894d68d0cb4431a') in 0.0014907 seconds
+Refreshing native plugins compatible for Editor in 0.00 ms, found 0 plugins.
+Native extension for Android target not found
+Native extension for WindowsStandalone target not found
+Mono: successfully reloaded assembly
+- Finished resetting the current domain, in  0.211 seconds
+Domain Reload Profiling: 1042ms
+	BeginReloadAssembly (233ms)
+		ExecutionOrderSort (0ms)
+		DisableScriptedObjects (10ms)
+		BackupInstance (0ms)
+		ReleaseScriptingObjects (0ms)
+		CreateAndSetChildDomain (133ms)
+	RebuildCommonClasses (21ms)
+	RebuildNativeTypeToScriptingClass (7ms)
+	initialDomainReloadingComplete (15ms)
+	LoadAllAssembliesAndSetupDomain (556ms)
+		LoadAssemblies (600ms)
+		RebuildTransferFunctionScriptingTraits (0ms)
+		AnalyzeDomain (17ms)
+			TypeCache.Refresh (13ms)
+				TypeCache.ScanAssembly (9ms)
+			BuildScriptInfoCaches (2ms)
+			ResolveRequiredComponents (0ms)
+	FinalizeReload (211ms)
+		ReleaseScriptCaches (0ms)
+		RebuildScriptCaches (0ms)
+		SetupLoadedEditorAssemblies (150ms)
+			LogAssemblyErrors (0ms)
+			InitializePlatformSupportModulesInManaged (14ms)
+			SetLoadedEditorAssemblies (1ms)
+			BeforeProcessingInitializeOnLoad (56ms)
+			ProcessInitializeOnLoadAttributes (62ms)
+			ProcessInitializeOnLoadMethodAttributes (12ms)
+			AfterProcessingInitializeOnLoad (4ms)
+			EditorAssembliesLoaded (0ms)
+		ExecutionOrderSort2 (0ms)
+		AwakeInstancesAfterBackupRestoration (7ms)
+Refreshing native plugins compatible for Editor in 0.00 ms, found 0 plugins.
+Preloading 0 native plugins for Editor in 0.00 ms.
+Asset Pipeline Refresh (id=3f828ef047f6f404ba0dac92c0170c81): Total: 2.770 seconds - Initiated by InitialRefreshV2(ForceSynchronousImport)
+	Summary:
+		Imports: total=3 (actual=3, local cache=0, cache server=0)
+		Asset DB Process Time: managed=1 ms, native=313 ms
+		Asset DB Callback time: managed=37 ms, native=486 ms
+		Scripting: domain reloads=1, domain reload time=833 ms, compile time=1091 ms, other=6 ms
+		Project Asset Count: scripts=90, non-scripts=11
+		Asset File Changes: new=1, changed=5, moved=0, deleted=1
+		Scan Filter Count: 0
+	InvokeCustomDependenciesCallbacks: 0.001ms
+	InvokePackagesCallback: 486.162ms
+	ApplyChangesToAssetFolders: 0.239ms
+	Scan: 37.033ms
+	OnSourceAssetsModified: 0.497ms
+	CategorizeAssetsWithTransientArtifact: 1.893ms
+	ProcessAssetsWithTransientArtifactChanges: 2.946ms
+	UnregisterDeletedAssets: 0.001ms
+	CategorizeAssets: 0.409ms
+	ImportOutOfDateAssets: 228.505ms (-879.020ms without children)
+		ImportManagerImport: 16.209ms (3.149ms without children)
+			ImportInProcess: 13.050ms
+			UpdateCategorizedAssets: 0.011ms
+		CompileScripts: 1091.037ms
+		ReloadNativeAssets: 0.001ms
+		UnloadImportedAssets: 0.174ms
+		ReloadImportedAssets: 0.000ms
+		EnsureUptoDateAssetsAreRegisteredWithGuidPM: 0.013ms
+		InitializingProgressBar: 0.000ms
+		PostProcessAllAssetNotificationsAddChangedAssets: 0.000ms
+		OnDemandSchedulerStart: 0.090ms
+	PostProcessAllAssets: 38.111ms
+	Hotreload: 0.734ms
+	GatherAllCurrentPrimaryArtifactRevisions: 0.000ms
+	UnloadStreamsBegin: 0.239ms
+	PersistCurrentRevisions: 0.003ms
+	UnloadStreamsEnd: 0.001ms
+	GenerateScriptTypeHashes: 0.003ms
+	Untracked: 1973.327ms
+
+Application.AssetDatabase Initial Refresh End
+Scanning for USB devices : 1.500ms
+Initializing Unity extensions:
+[MODES] ModeService[none].Initialize
+[MODES] ModeService[none].LoadModes
+[MODES] Loading mode Default (0) for mode-current-id-QuadremeshHeadless
+Unloading 3 Unused Serialized files (Serialized files now loaded: 0)
+Unloading 483 unused Assets / (1.0 MB). Loaded Objects now: 985.
+Memory consumption went from 86.9 MB to 85.9 MB.
+Total: 3.265100 ms (FindLiveObjects: 0.055600 ms CreateObjectMapping: 0.012300 ms MarkObjects: 2.710000 ms  DeleteObjects: 0.486600 ms)
+
+
+=== IntegerGridAudit ===
+collapse (ships) against integerGridMap, GameAsset profile, face count held by the spacing probe.
+  case,extractor,floor,faces,quadFrac,tris,ngons,interior,irregular,v3,v5,vHigher,bndEdges,hausdorff,chamfer,fieldSing,ms
+  torus,collapse,0,1830,0.9716,52,0,1804,366,174,162,30,0,0.00974,0.00057,0,3606
+  torus,integer,0,2044,1.0000,0,0,2044,0,0,0,0,0,0.00206,0.00045,0,3693
+      igm:      in v=8192 f=16384 e=24576 sing=0 sharp=0 unsat=90->0 valve=0+0 flow: supply=45 routed=45 iters=1 cap=2 cost=2109 arcs=49152 | clamped=0 subdiv=391+0 oor=0 onFlip=1 capped=0 stillLong=0 flips=92->0 (2 passes) | levels=7 compact=2044 out=2044 flippedTris=0 degen=0 unpaired=0 holeQuads=0 v2=0 nmSplit=0 hiVal=0 | ms build=163 cons=15 flow=94 subdiv=26 flip=31 extract=23 total=354
+  icosphere_80k,collapse,8,1908,0.9822,34,0,1893,339,169,142,28,0,0.00142,0.00042,8,5779
+  icosphere_80k,integer,8,2130,1.0000,0,0,2132,118,63,55,0,0,0.00400,0.00046,8,6616
+      igm:      in v=10002 f=20000 e=30000 sing=8 sharp=0 unsat=241->0 valve=2+0 flow: supply=124 routed=124 iters=1 cap=2 cost=4073 arcs=59772 | clamped=3 subdiv=0+401 oor=0 onFlip=29810 capped=0 stillLong=35 ABANDONED flips=843->59 (7 passes) | levels=9 compact=2121 out=2132 flippedTris=113 degen=0 unpaired=0 holeQuads=0 v2=2 nmSplit=5 hiVal=18 | ms build=206 cons=20 flow=253 subdiv=134 flip=136 extract=30 total=782
+split#29976 e0=239849 f0=79949 f1=2185 v0=2991 v1=39976 v0p=39974 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000531727681
+split#29977 e0=6464 f0=2154 f1=79950 v0=2991 v1=39977 v0p=173 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000531727681
+split#29978 e0=6557 f0=2185 f1=79952 v0=173 v1=39978 v0p=2991 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000531728379
+split#29979 e0=239867 f0=79955 f1=2154 v0=173 v1=39979 v0p=39977 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000531728379
+split#29980 e0=239873 f0=79957 f1=2185 v0=2991 v1=39980 v0p=39978 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000531727681
+split#29981 e0=6464 f0=2154 f1=79958 v0=2991 v1=39981 v0p=173 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000531727681
+split#29982 e0=6557 f0=2185 f1=79960 v0=173 v1=39982 v0p=2991 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000531728379
+split#29983 e0=239891 f0=79963 f1=2154 v0=173 v1=39983 v0p=39981 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000531728379
+split#29984 e0=239897 f0=79965 f1=2185 v0=2991 v1=39984 v0p=39982 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000531727681
+split#29985 e0=6464 f0=2154 f1=79966 v0=2991 v1=39985 v0p=173 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000531727681
+split#29986 e0=6557 f0=2185 f1=79968 v0=173 v1=39986 v0p=2991 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000531728379
+split#29987 e0=239915 f0=79971 f1=2154 v0=173 v1=39987 v0p=39985 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000531728379
+split#29988 e0=239921 f0=79973 f1=2185 v0=2991 v1=39988 v0p=39986 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000531727681
+split#29989 e0=6464 f0=2154 f1=79974 v0=2991 v1=39989 v0p=173 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000531727681
+split#29990 e0=6557 f0=2185 f1=79976 v0=173 v1=39990 v0p=2991 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000531728379
+split#29991 e0=239939 f0=79979 f1=2154 v0=173 v1=39991 v0p=39989 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000531728379
+split#29992 e0=239945 f0=79981 f1=2185 v0=2991 v1=39992 v0p=39990 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000531727681
+split#29993 e0=6464 f0=2154 f1=79982 v0=2991 v1=39993 v0p=173 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000531727681
+split#29994 e0=6557 f0=2185 f1=79984 v0=173 v1=39994 v0p=2991 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000531728379
+split#29995 e0=239963 f0=79987 f1=2154 v0=173 v1=39995 v0p=39993 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000531728379
+split#29996 e0=239969 f0=79989 f1=2185 v0=2991 v1=39996 v0p=39994 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000531727681
+split#29997 e0=6464 f0=2154 f1=79990 v0=2991 v1=39997 v0p=173 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000531727681
+split#29998 e0=6557 f0=2185 f1=79992 v0=173 v1=39998 v0p=2991 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000531728379
+split#29999 e0=239987 f0=79995 f1=2154 v0=173 v1=39999 v0p=39997 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000531728379
+  cylinder_capped,collapse,8,1281,0.9938,8,0,1279,94,49,38,7,0,0.01501,0.00029,8,1650
+  cylinder_capped,integer,8,285,1.0000,0,0,136,17,8,8,1,290,0.21423,0.04089,8,1636
+      igm:      in v=4514 f=9024 e=13536 sing=8 sharp=384 unsat=70->0 valve=13+22 flow: supply=56 routed=56 iters=1 cap=2 cost=3793 arcs=26736 | clamped=0 subdiv=0+0 oor=0 onFlip=26660 capped=0 stillLong=1349 ABANDONED flips=1475->227 (10 passes) | levels=11 compact=352 out=426 flippedTris=227 degen=0 unpaired=0 holeQuads=21 v2=19 nmSplit=119 hiVal=9 | ms build=91 cons=7 flow=55 subdiv=105 flip=100 extract=11 total=373
+split#13512 e0=15170 f0=5056 f1=36044 v0=2528 v1=18024 v0p=2529 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000330413837
+split#13513 e0=29480 f0=9826 f1=36046 v0=2529 v1=18025 v0p=2433 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000771605643
+split#13514 e0=108149 f0=36049 f1=5056 v0=2529 v1=18026 v0p=18024 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000330413837
+split#13515 e0=108155 f0=36051 f1=9826 v0=2433 v1=18027 v0p=18025 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000771607447
+split#13516 e0=15170 f0=5056 f1=36052 v0=2528 v1=18028 v0p=2529 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000330413837
+split#13517 e0=29480 f0=9826 f1=36054 v0=2529 v1=18029 v0p=2433 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000771605643
+split#13518 e0=108173 f0=36057 f1=5056 v0=2529 v1=18030 v0p=18028 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000330413837
+split#13519 e0=108179 f0=36059 f1=9826 v0=2433 v1=18031 v0p=18029 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000771607447
+split#13520 e0=15170 f0=5056 f1=36060 v0=2528 v1=18032 v0p=2529 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000330413837
+split#13521 e0=29480 f0=9826 f1=36062 v0=2529 v1=18033 v0p=2433 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000771605643
+split#13522 e0=108197 f0=36065 f1=5056 v0=2529 v1=18034 v0p=18032 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000330413837
+split#13523 e0=108203 f0=36067 f1=9826 v0=2433 v1=18035 v0p=18033 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000771607447
+split#13524 e0=15170 f0=5056 f1=36068 v0=2528 v1=18036 v0p=2529 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000330413837
+split#13525 e0=29480 f0=9826 f1=36070 v0=2529 v1=18037 v0p=2433 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000771605643
+split#13526 e0=108221 f0=36073 f1=5056 v0=2529 v1=18038 v0p=18036 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000330413837
+split#13527 e0=108227 f0=36075 f1=9826 v0=2433 v1=18039 v0p=18037 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000771607447
+split#13528 e0=15170 f0=5056 f1=36076 v0=2528 v1=18040 v0p=2529 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000330413837
+split#13529 e0=29480 f0=9826 f1=36078 v0=2529 v1=18041 v0p=2433 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000771605643
+split#13530 e0=108245 f0=36081 f1=5056 v0=2529 v1=18042 v0p=18040 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000330413837
+split#13531 e0=108251 f0=36083 f1=9826 v0=2433 v1=18043 v0p=18041 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000771607447
+split#13532 e0=15170 f0=5056 f1=36084 v0=2528 v1=18044 v0p=2529 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000330413837
+split#13533 e0=29480 f0=9826 f1=36086 v0=2529 v1=18045 v0p=2433 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000771605643
+split#13534 e0=108269 f0=36089 f1=5056 v0=2529 v1=18046 v0p=18044 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000330413837
+split#13535 e0=108275 f0=36091 f1=9826 v0=2433 v1=18047 v0p=18045 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000771607447
+  cube_subdiv,collapse,8,1098,0.9927,8,0,990,130,78,28,24,224,0.23127,0.01084,0,5752
+  cube_subdiv,integer,8,916,1.0000,0,0,899,244,124,119,1,22,0.03915,0.00022,0,6390
+      igm:      in v=10002 f=20000 e=30000 sing=10 sharp=852 unsat=566->16 valve=16+1 flow: supply=12 routed=2 iters=10 cap=11 cost=197 arcs=59225 | clamped=1623 subdiv=0+3760 oor=0 onFlip=28640 capped=0 stillLong=675 ABANDONED flips=629->95 (6 passes) | levels=12 compact=910 out=921 flippedTris=522 degen=0 unpaired=4 holeQuads=4 v2=21 nmSplit=12 hiVal=35 | ms build=200 cons=18 flow=821 subdiv=149 flip=99 extract=30 total=1319
+split#29976 e0=239849 f0=79949 f1=6441 v0=3308 v1=39976 v0p=39974 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0278862808
+split#29977 e0=239855 f0=79951 f1=8659 v0=4342 v1=39977 v0p=39975 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0206065457
+split#29978 e0=19325 f0=6441 f1=79952 v0=10319 v1=39978 v0p=3308 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.027886292
+split#29979 e0=25979 f0=8659 f1=79954 v0=4457 v1=39979 v0p=4342 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.0206065457
+split#29980 e0=239873 f0=79957 f1=6441 v0=3308 v1=39980 v0p=39978 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0278862808
+split#29981 e0=239879 f0=79959 f1=8659 v0=4342 v1=39981 v0p=39979 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0206065457
+split#29982 e0=19325 f0=6441 f1=79960 v0=10319 v1=39982 v0p=3308 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.027886292
+split#29983 e0=25979 f0=8659 f1=79962 v0=4457 v1=39983 v0p=4342 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.0206065457
+split#29984 e0=239897 f0=79965 f1=6441 v0=3308 v1=39984 v0p=39982 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0278862808
+split#29985 e0=239903 f0=79967 f1=8659 v0=4342 v1=39985 v0p=39983 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0206065457
+split#29986 e0=19325 f0=6441 f1=79968 v0=10319 v1=39986 v0p=3308 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.027886292
+split#29987 e0=25979 f0=8659 f1=79970 v0=4457 v1=39987 v0p=4342 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.0206065457
+split#29988 e0=239921 f0=79973 f1=6441 v0=3308 v1=39988 v0p=39986 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0278862808
+split#29989 e0=239927 f0=79975 f1=8659 v0=4342 v1=39989 v0p=39987 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0206065457
+split#29990 e0=19325 f0=6441 f1=79976 v0=10319 v1=39990 v0p=3308 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.027886292
+split#29991 e0=25979 f0=8659 f1=79978 v0=4457 v1=39991 v0p=4342 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.0206065457
+split#29992 e0=239945 f0=79981 f1=6441 v0=3308 v1=39992 v0p=39990 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0278862808
+split#29993 e0=239951 f0=79983 f1=8659 v0=4342 v1=39993 v0p=39991 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0206065457
+split#29994 e0=19325 f0=6441 f1=79984 v0=10319 v1=39994 v0p=3308 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.027886292
+split#29995 e0=25979 f0=8659 f1=79986 v0=4457 v1=39995 v0p=4342 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.0206065457
+split#29996 e0=239969 f0=79989 f1=6441 v0=3308 v1=39996 v0p=39994 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0278862808
+split#29997 e0=239975 f0=79991 f1=8659 v0=4342 v1=39997 v0p=39995 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0206065457
+split#29998 e0=19325 f0=6441 f1=79992 v0=10319 v1=39998 v0p=3308 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.027886292
+split#29999 e0=25979 f0=8659 f1=79994 v0=4457 v1=39999 v0p=4342 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.0206065457
+  sphere_bumpy,collapse,8,2009,0.9791,42,0,1990,209,94,103,12,0,0.00173,0.00033,8,5419
+  sphere_bumpy,integer,8,2099,1.0000,0,0,2101,8,8,0,0,0,0.00225,0.00033,8,5544
+      igm:      in v=10002 f=20000 e=30000 sing=8 sharp=0 unsat=188->0 valve=3+0 flow: supply=100 routed=100 iters=1 cap=2 cost=3245 arcs=59256 | clamped=4 subdiv=364+0 oor=0 onFlip=46 capped=0 stillLong=0 flips=435->1 (3 passes) | levels=8 compact=2102 out=2101 flippedTris=0 degen=0 unpaired=0 holeQuads=0 v2=0 nmSplit=0 hiVal=0 | ms build=208 cons=18 flow=227 subdiv=33 flip=62 extract=28 total=579
+  disc_open,collapse,0,437,0.9725,12,0,396,104,57,38,9,72,0.02558,0.00025,4,1037
+  disc_open,integer,0,468,1.0000,0,0,433,4,4,0,0,72,0.00122,0.00000,4,1030
+      igm:      in v=2305 f=4512 e=6816 sing=4 sharp=96 unsat=87->0 valve=10+0 flow: supply=52 routed=52 iters=1 cap=2 cost=2072 arcs=13432 | clamped=11 subdiv=230+5 oor=0 onFlip=80 capped=0 stillLong=0 flips=205->7 (4 passes) | levels=8 compact=511 out=505 flippedTris=6 degen=0 unpaired=0 holeQuads=0 v2=3 nmSplit=0 hiVal=0 | ms build=45 cons=3 flow=35 subdiv=9 flip=22 extract=7 total=124
+=== end IntegerGridAudit ===
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:Log (object)
+NativeRemesher.Benchmark.IntegerGridAudit:Run () (at Assets/NativeRemesher/Benchmark/IntegerGridAudit.cs:148)
+
+(Filename: Assets/NativeRemesher/Benchmark/IntegerGridAudit.cs Line: 148)
+
+
+=== IntegerGridAudit ===
+collapse (ships) against integerGridMap, GameAsset profile, face count held by the spacing probe.
+  case,extractor,floor,faces,quadFrac,tris,ngons,interior,irregular,v3,v5,vHigher,bndEdges,hausdorff,chamfer,fieldSing,ms
+  torus,collapse,0,1830,0.9716,52,0,1804,366,174,162,30,0,0.00974,0.00057,0,3606
+  torus,integer,0,2044,1.0000,0,0,2044,0,0,0,0,0,0.00206,0.00045,0,3693
+      igm:      in v=8192 f=16384 e=24576 sing=0 sharp=0 unsat=90->0 valve=0+0 flow: supply=45 routed=45 iters=1 cap=2 cost=2109 arcs=49152 | clamped=0 subdiv=391+0 oor=0 onFlip=1 capped=0 stillLong=0 flips=92->0 (2 passes) | levels=7 compact=2044 out=2044 flippedTris=0 degen=0 unpaired=0 holeQuads=0 v2=0 nmSplit=0 hiVal=0 | ms build=163 cons=15 flow=94 subdiv=26 flip=31 extract=23 total=354
+  icosphere_80k,collapse,8,1908,0.9822,34,0,1893,339,169,142,28,0,0.00142,0.00042,8,5779
+  icosphere_80k,integer,8,2130,1.0000,0,0,2132,118,63,55,0,0,0.00400,0.00046,8,6616
+      igm:      in v=10002 f=20000 e=30000 sing=8 sharp=0 unsat=241->0 valve=2+0 flow: supply=124 routed=124 iters=1 cap=2 cost=4073 arcs=59772 | clamped=3 subdiv=0+401 oor=0 onFlip=29810 capped=0 stillLong=35 ABANDONED flips=843->59 (7 passes) | levels=9 compact=2121 out=2132 flippedTris=113 degen=0 unpaired=0 holeQuads=0 v2=2 nmSplit=5 hiVal=18 | ms build=206 cons=20 flow=253 subdiv=134 flip=136 extract=30 total=782
+split#29976 e0=239849 f0=79949 f1=2185 v0=2991 v1=39976 v0p=39974 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000531727681
+split#29977 e0=6464 f0=2154 f1=79950 v0=2991 v1=39977 v0p=173 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000531727681
+split#29978 e0=6557 f0=2185 f1=79952 v0=173 v1=39978 v0p=2991 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000531728379
+split#29979 e0=239867 f0=79955 f1=2154 v0=173 v1=39979 v0p=39977 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000531728379
+split#29980 e0=239873 f0=79957 f1=2185 v0=2991 v1=39980 v0p=39978 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000531727681
+split#29981 e0=6464 f0=2154 f1=79958 v0=2991 v1=39981 v0p=173 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000531727681
+split#29982 e0=6557 f0=2185 f1=79960 v0=173 v1=39982 v0p=2991 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000531728379
+split#29983 e0=239891 f0=79963 f1=2154 v0=173 v1=39983 v0p=39981 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000531728379
+split#29984 e0=239897 f0=79965 f1=2185 v0=2991 v1=39984 v0p=39982 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000531727681
+split#29985 e0=6464 f0=2154 f1=79966 v0=2991 v1=39985 v0p=173 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000531727681
+split#29986 e0=6557 f0=2185 f1=79968 v0=173 v1=39986 v0p=2991 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000531728379
+split#29987 e0=239915 f0=79971 f1=2154 v0=173 v1=39987 v0p=39985 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000531728379
+split#29988 e0=239921 f0=79973 f1=2185 v0=2991 v1=39988 v0p=39986 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000531727681
+split#29989 e0=6464 f0=2154 f1=79974 v0=2991 v1=39989 v0p=173 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000531727681
+split#29990 e0=6557 f0=2185 f1=79976 v0=173 v1=39990 v0p=2991 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000531728379
+split#29991 e0=239939 f0=79979 f1=2154 v0=173 v1=39991 v0p=39989 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000531728379
+split#29992 e0=239945 f0=79981 f1=2185 v0=2991 v1=39992 v0p=39990 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000531727681
+split#29993 e0=6464 f0=2154 f1=79982 v0=2991 v1=39993 v0p=173 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000531727681
+split#29994 e0=6557 f0=2185 f1=79984 v0=173 v1=39994 v0p=2991 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000531728379
+split#29995 e0=239963 f0=79987 f1=2154 v0=173 v1=39995 v0p=39993 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000531728379
+split#29996 e0=239969 f0=79989 f1=2185 v0=2991 v1=39996 v0p=39994 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000531727681
+split#29997 e0=6464 f0=2154 f1=79990 v0=2991 v1=39997 v0p=173 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000531727681
+split#29998 e0=6557 f0=2185 f1=79992 v0=173 v1=39998 v0p=2991 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000531728379
+split#29999 e0=239987 f0=79995 f1=2154 v0=173 v1=39999 v0p=39997 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000531728379
+  cylinder_capped,collapse,8,1281,0.9938,8,0,1279,94,49,38,7,0,0.01501,0.00029,8,1650
+  cylinder_capped,integer,8,285,1.0000,0,0,136,17,8,8,1,290,0.21423,0.04089,8,1636
+      igm:      in v=4514 f=9024 e=13536 sing=8 sharp=384 unsat=70->0 valve=13+22 flow: supply=56 routed=56 iters=1 cap=2 cost=3793 arcs=26736 | clamped=0 subdiv=0+0 oor=0 onFlip=26660 capped=0 stillLong=1349 ABANDONED flips=1475->227 (10 passes) | levels=11 compact=352 out=426 flippedTris=227 degen=0 unpaired=0 holeQuads=21 v2=19 nmSplit=119 hiVal=9 | ms build=91 cons=7 flow=55 subdiv=105 flip=100 extract=11 total=373
+split#13512 e0=15170 f0=5056 f1=36044 v0=2528 v1=18024 v0p=2529 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000330413837
+split#13513 e0=29480 f0=9826 f1=36046 v0=2529 v1=18025 v0p=2433 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000771605643
+split#13514 e0=108149 f0=36049 f1=5056 v0=2529 v1=18026 v0p=18024 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000330413837
+split#13515 e0=108155 f0=36051 f1=9826 v0=2433 v1=18027 v0p=18025 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000771607447
+split#13516 e0=15170 f0=5056 f1=36052 v0=2528 v1=18028 v0p=2529 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000330413837
+split#13517 e0=29480 f0=9826 f1=36054 v0=2529 v1=18029 v0p=2433 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000771605643
+split#13518 e0=108173 f0=36057 f1=5056 v0=2529 v1=18030 v0p=18028 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000330413837
+split#13519 e0=108179 f0=36059 f1=9826 v0=2433 v1=18031 v0p=18029 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000771607447
+split#13520 e0=15170 f0=5056 f1=36060 v0=2528 v1=18032 v0p=2529 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000330413837
+split#13521 e0=29480 f0=9826 f1=36062 v0=2529 v1=18033 v0p=2433 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000771605643
+split#13522 e0=108197 f0=36065 f1=5056 v0=2529 v1=18034 v0p=18032 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000330413837
+split#13523 e0=108203 f0=36067 f1=9826 v0=2433 v1=18035 v0p=18033 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000771607447
+split#13524 e0=15170 f0=5056 f1=36068 v0=2528 v1=18036 v0p=2529 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000330413837
+split#13525 e0=29480 f0=9826 f1=36070 v0=2529 v1=18037 v0p=2433 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000771605643
+split#13526 e0=108221 f0=36073 f1=5056 v0=2529 v1=18038 v0p=18036 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000330413837
+split#13527 e0=108227 f0=36075 f1=9826 v0=2433 v1=18039 v0p=18037 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000771607447
+split#13528 e0=15170 f0=5056 f1=36076 v0=2528 v1=18040 v0p=2529 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000330413837
+split#13529 e0=29480 f0=9826 f1=36078 v0=2529 v1=18041 v0p=2433 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000771605643
+split#13530 e0=108245 f0=36081 f1=5056 v0=2529 v1=18042 v0p=18040 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000330413837
+split#13531 e0=108251 f0=36083 f1=9826 v0=2433 v1=18043 v0p=18041 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000771607447
+split#13532 e0=15170 f0=5056 f1=36084 v0=2528 v1=18044 v0p=2529 D01=(-1, -2) D1p=(-1, 0) Dp0=(2, 2) Ds10=(1, 2) Ds0p=(0, -1) Dsp1=(-1, -1) twist=2 len=0.000330413837
+split#13533 e0=29480 f0=9826 f1=36086 v0=2529 v1=18045 v0p=2433 D01=(1, 2) D1p=(1, 0) Dp0=(-2, -2) Ds10=(-1, -2) Ds0p=(0, 1) Dsp1=(1, 1) twist=2 len=0.000771605643
+split#13534 e0=108269 f0=36089 f1=5056 v0=2529 v1=18046 v0p=18044 D01=(2, 1) D1p=(-1, -1) Dp0=(-1, 0) Ds10=(-2, -1) Ds0p=(2, 2) Dsp1=(0, -1) twist=2 len=0.000330413837
+split#13535 e0=108275 f0=36091 f1=9826 v0=2433 v1=18047 v0p=18045 D01=(-2, -1) D1p=(1, 1) Dp0=(1, 0) Ds10=(2, 1) Ds0p=(-2, -2) Dsp1=(0, 1) twist=2 len=0.000771607447
+  cube_subdiv,collapse,8,1098,0.9927,8,0,990,130,78,28,24,224,0.23127,0.01084,0,5752
+  cube_subdiv,integer,8,916,1.0000,0,0,899,244,124,119,1,22,0.03915,0.00022,0,6390
+      igm:      in v=10002 f=20000 e=30000 sing=10 sharp=852 unsat=566->16 valve=16+1 flow: supply=12 routed=2 iters=10 cap=11 cost=197 arcs=59225 | clamped=1623 subdiv=0+3760 oor=0 onFlip=28640 capped=0 stillLong=675 ABANDONED flips=629->95 (6 passes) | levels=12 compact=910 out=921 flippedTris=522 degen=0 unpaired=4 holeQuads=4 v2=21 nmSplit=12 hiVal=35 | ms build=200 cons=18 flow=821 subdiv=149 flip=99 extract=30 total=1319
+split#29976 e0=239849 f0=79949 f1=6441 v0=3308 v1=39976 v0p=39974 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0278862808
+split#29977 e0=239855 f0=79951 f1=8659 v0=4342 v1=39977 v0p=39975 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0206065457
+split#29978 e0=19325 f0=6441 f1=79952 v0=10319 v1=39978 v0p=3308 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.027886292
+split#29979 e0=25979 f0=8659 f1=79954 v0=4457 v1=39979 v0p=4342 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.0206065457
+split#29980 e0=239873 f0=79957 f1=6441 v0=3308 v1=39980 v0p=39978 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0278862808
+split#29981 e0=239879 f0=79959 f1=8659 v0=4342 v1=39981 v0p=39979 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0206065457
+split#29982 e0=19325 f0=6441 f1=79960 v0=10319 v1=39982 v0p=3308 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.027886292
+split#29983 e0=25979 f0=8659 f1=79962 v0=4457 v1=39983 v0p=4342 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.0206065457
+split#29984 e0=239897 f0=79965 f1=6441 v0=3308 v1=39984 v0p=39982 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0278862808
+split#29985 e0=239903 f0=79967 f1=8659 v0=4342 v1=39985 v0p=39983 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0206065457
+split#29986 e0=19325 f0=6441 f1=79968 v0=10319 v1=39986 v0p=3308 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.027886292
+split#29987 e0=25979 f0=8659 f1=79970 v0=4457 v1=39987 v0p=4342 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.0206065457
+split#29988 e0=239921 f0=79973 f1=6441 v0=3308 v1=39988 v0p=39986 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0278862808
+split#29989 e0=239927 f0=79975 f1=8659 v0=4342 v1=39989 v0p=39987 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0206065457
+split#29990 e0=19325 f0=6441 f1=79976 v0=10319 v1=39990 v0p=3308 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.027886292
+split#29991 e0=25979 f0=8659 f1=79978 v0=4457 v1=39991 v0p=4342 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.0206065457
+split#29992 e0=239945 f0=79981 f1=6441 v0=3308 v1=39992 v0p=39990 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0278862808
+split#29993 e0=239951 f0=79983 f1=8659 v0=4342 v1=39993 v0p=39991 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0206065457
+split#29994 e0=19325 f0=6441 f1=79984 v0=10319 v1=39994 v0p=3308 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.027886292
+split#29995 e0=25979 f0=8659 f1=79986 v0=4457 v1=39995 v0p=4342 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.0206065457
+split#29996 e0=239969 f0=79989 f1=6441 v0=3308 v1=39996 v0p=39994 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0278862808
+split#29997 e0=239975 f0=79991 f1=8659 v0=4342 v1=39997 v0p=39995 D01=(-1, 2) D1p=(1, -1) Dp0=(0, -1) Ds10=(1, -2) Ds0p=(-2, 2) Dsp1=(1, 0) twist=2 len=0.0206065457
+split#29998 e0=19325 f0=6441 f1=79992 v0=10319 v1=39998 v0p=3308 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.027886292
+split#29999 e0=25979 f0=8659 f1=79994 v0=4457 v1=39999 v0p=4342 D01=(2, -1) D1p=(0, -1) Dp0=(-2, 2) Ds10=(-2, 1) Ds0p=(1, 0) Dsp1=(1, -1) twist=2 len=0.0206065457
+  sphere_bumpy,collapse,8,2009,0.9791,42,0,1990,209,94,103,12,0,0.00173,0.00033,8,5419
+  sphere_bumpy,integer,8,2099,1.0000,0,0,2101,8,8,0,0,0,0.00225,0.00033,8,5544
+      igm:      in v=10002 f=20000 e=30000 sing=8 sharp=0 unsat=188->0 valve=3+0 flow: supply=100 routed=100 iters=1 cap=2 cost=3245 arcs=59256 | clamped=4 subdiv=364+0 oor=0 onFlip=46 capped=0 stillLong=0 flips=435->1 (3 passes) | levels=8 compact=2102 out=2101 flippedTris=0 degen=0 unpaired=0 holeQuads=0 v2=0 nmSplit=0 hiVal=0 | ms build=208 cons=18 flow=227 subdiv=33 flip=62 extract=28 total=579
+  disc_open,collapse,0,437,0.9725,12,0,396,104,57,38,9,72,0.02558,0.00025,4,1037
+  disc_open,integer,0,468,1.0000,0,0,433,4,4,0,0,72,0.00122,0.00000,4,1030
+      igm:      in v=2305 f=4512 e=6816 sing=4 sharp=96 unsat=87->0 valve=10+0 flow: supply=52 routed=52 iters=1 cap=2 cost=2072 arcs=13432 | clamped=11 subdiv=230+5 oor=0 onFlip=80 capped=0 stillLong=0 flips=205->7 (4 passes) | levels=8 compact=511 out=505 flippedTris=6 degen=0 unpaired=0 holeQuads=0 v2=3 nmSplit=0 hiVal=0 | ms build=45 cons=3 flow=35 subdiv=9 flip=22 extract=7 total=124
+=== end IntegerGridAudit ===
+
+Batchmode quit successfully invoked - shutting down!
+Killing ADB server in 0.0422601 seconds.
+[Physics::Module] Cleanup current backned.
+[Physics::Module] Id: 0xf2b8ea05
+Input System module state changed to: ShutdownInProgress.
+Input System polling thread exited.
+Input System module state changed to: Shutdown.
+[Licensing::IpcConnector] LicenseClient-rufat-notifications channel disconnected successfully.
+[Licensing::IpcConnector] LicenseClient-rufat channel disconnected successfully.
+AcceleratorClientConnectionCallback - disconnected - :0
+Cleanup mono
+abort_threads: Failed aborting id: 00000000000090D4, mono_thread_manage will ignore it
+
+abort_threads: Failed aborting id: 0000000000006638, mono_thread_manage will ignore it
+
+abort_threads: Failed aborting id: 00000000000090D4, mono_thread_manage will ignore it
+
+abort_threads: Failed aborting id: 0000000000006638, mono_thread_manage will ignore it
+
+abort_threads: Failed aborting id: 00000000000090D4, mono_thread_manage will ignore it
+
+abort_threads: Failed aborting id: 0000000000006638, mono_thread_manage will ignore it
+
+debugger-agent: Unable to listen on 3544
+Exiting batchmode successfully now!
+Exiting without the bug reporter. Application will terminate with return code 0

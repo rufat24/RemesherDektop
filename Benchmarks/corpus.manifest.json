@@ -1,0 +1,68 @@
+{
+  "_comment": [
+    "Tier 2 benchmark corpus. The MESHES ARE NEVER COMMITTED — only this manifest is, so the",
+    "repository stays asset-free and a clone stays small. The harness skips Tier 2 with a warning",
+    "when the folder is absent, so CI stays green without it.",
+    "",
+    "Default location: <project>/../QuadremeshCorpus",
+    "Override with the NATIVEREMESHER_CORPUS environment variable.",
+    "",
+    "Only .obj files in the top level of that folder are picked up (see MeshCorpus.External).",
+    "Drop the files in with exactly the 'file' names below.",
+    "",
+    "Tier 1 (procedural) needs none of this and always runs. Tier 2 exists because procedural",
+    "meshes are clean in ways real content is not: they have no scanner noise, no CAD",
+    "tessellation artefacts, no inconsistent normals, and no unhelpful topology. A remesher that",
+    "only ever sees Tier 1 will be tuned for a world that does not exist."
+  ],
+
+  "manifestVersion": 1,
+
+  "meshes": [
+    {
+      "file": "bunny.obj",
+      "name": "Stanford Bunny",
+      "source": "http://graphics.stanford.edu/data/3Dscanrep/",
+      "expectedTriangles": 69451,
+      "sha256": "",
+      "domain": "organic",
+      "why": "The standard organic reference. Closed, moderate genus, well-behaved."
+    },
+    {
+      "file": "armadillo.obj",
+      "name": "Stanford Armadillo",
+      "source": "http://graphics.stanford.edu/data/3Dscanrep/",
+      "expectedTriangles": 345944,
+      "sha256": "",
+      "domain": "organic",
+      "why": "Organic with fine extremities — tests whether thin features survive coarsening."
+    },
+    {
+      "file": "fandisk.obj",
+      "name": "Fandisk",
+      "source": "https://github.com/alecjacobson/common-3d-test-models",
+      "expectedTriangles": 12946,
+      "sha256": "",
+      "domain": "hard-surface",
+      "why": "THE hard-surface benchmark. Sharp creases and flat panels meeting at known angles. This is the mesh that shows whether feature detection is doing anything."
+    },
+    {
+      "file": "rockerarm.obj",
+      "name": "Rocker Arm",
+      "source": "https://github.com/alecjacobson/common-3d-test-models",
+      "expectedTriangles": 40177,
+      "sha256": "",
+      "domain": "hard-surface",
+      "why": "Mechanical part: fillets, holes, mixed curvature. Closer to real prop work than fandisk."
+    },
+    {
+      "file": "scan_noisy.obj",
+      "name": "Photogrammetry scan (any)",
+      "source": "user-supplied, e.g. ODM output",
+      "expectedTriangles": 0,
+      "sha256": "",
+      "domain": "photogrammetry",
+      "why": "Placeholder for a real scan. Dense, noisy, no clean features, possibly non-manifold. The photogrammetry profile is tuned against this and nothing else is a substitute."
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+th1_head   MEAN head,IntegerGrid over 3: irregular 8.75 % open 41.3 pieces 1.00 hausdorff 0.02037 chamfer 0.00134 ridge 0.00683 |       curve network: 10 curves (0 closed, 0 joins), 377 vertices, 112 cells long, 0 corner vertices, 33295 thin 
+th1_body   MEAN body,IntegerGrid over 3: irregular 2.89 % open 2.0 pieces 1.00 hausdorff 0.01107 chamfer 0.00069 ridge 0.00238 |       curve network: 5 curves (0 closed, 1 joins), 274 vertices, 86 cells long, 3 corner vertices, 23331 thin 

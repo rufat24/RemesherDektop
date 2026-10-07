@@ -1,0 +1,370 @@
+[Licensing::Module] Trying to connect to existing licensing client channel...
+Built from '6000.0/respin/6000.0.58f2-44b8bf3a32' branch; Version is '6000.0.58f2 (92dee566b325) revision 9625317'; Using compiler version '193933523'; Build Type 'Release'
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-rufat" at "2026-09-23T22:05:33.1192879Z"
+OS: 'Windows 11  (10.0.26200) 64bit CoreSingleLanguage' Language: 'en' Physical Memory: 64897 MB
+BatchMode: 1, IsHumanControllingUs: 0, StartBugReporterOnCrash: 0, Is64bit: 1
+Date: 2026-09-23T22:05:33Z
+
+COMMAND LINE ARGUMENTS:
+C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Unity.exe
+-batchmode
+-nographics
+-projectPath
+Headless
+-executeMethod
+NativeRemesher.Benchmark.EditorParity.Run
+-asset
+head
+-extractor
+IntegerGrid
+-targets
+4600,5000,5400
+-tag
+_t50_head
+-curves
+-curveThin
+0.5
+-quit
+-logFile
+sw_t50_head.log
+Successfully changed project path to: C:/Users/rufat/UnityProject/remesher/Headless
+C:/Users/rufat/UnityProject/remesher/Headless
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=33554432"
+    "memorysetup-bucket-allocator-block-count=8"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=33554432"
+    "memorysetup-profiler-bucket-allocator-block-count=8"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=16777216"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=33554432"
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+Player connection [46956]  Target information:
+
+Player connection [46956]  * "[IP] 192.168.100.65 [Port] 55505 [Flags] 2 [Guid] 1410417895 [EditorId] 1410417895 [Version] 1048832 [Id] WindowsEditor(7,Rufat) [Debug] 1 [PackageName] WindowsEditor [ProjectName] Editor" 
+
+Player connection [46956] Host joined multi-casting on [225.0.0.222:54997]...
+Player connection [46956] Host joined alternative multi-casting on [225.0.0.222:34997]...
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+[Licensing::Client] Code 10 while verifying Licensing Client signature (process Id: 30836, path: "C:/Program Files/Unity Hub/UnityLicensingClient_V1/Unity.Licensing.Client.exe")
+[Licensing::Module] LicensingClient has failed validation; ignoring
+[Licensing::Client] Handshaking with LicensingClient:
+  Version:                 1.18.3+d7ffd15
+  Session Id:              4ebd270504d540d9aa1f93d2a96c87e7
+  Correlation Id:          f8a8bff1a822c7841ca4fb8c2f16d463
+  External correlation Id: 5255607194267017841
+  Machine Id:              OK7HIIc0hscU3zYy5uDl92BkRP8=
+[Licensing::Module] Successfully connected to LicensingClient on channel: "LicenseClient-rufat" (connect: 0.00s, validation: 0.00s, handshake: 0.04s)
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-rufat-notifications" at "2026-09-23T22:05:33.1565798Z"
+[Licensing::Module] Error: Access token is unavailable; failed to update
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] License group:
+  Id: 18966622505151-UnityPersXXXX
+  Product: Unity Personal
+  Type: Assigned
+  Expiration: Unlimited
+[Licensing::Client] Successfully updated license, isAsync: True, time: 0.00
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] Licensing Background thread has ended after 0.04s
+[Package Manager] Connected to IPC stream "Upm-26280" after 0.2 seconds.
+Library Redirect Path: Library/
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+Refreshing native plugins compatible for Editor in 0.00 ms, found 0 plugins.
+Preloading 0 native plugins for Editor in 0.00 ms.
+Initialize engine version: 6000.0.58f2 (92dee566b325)
+[Subsystems] Discovering subsystems at path C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/Resources/UnitySubsystems
+[Subsystems] Discovering subsystems at path C:/Users/rufat/UnityProject/remesher/Headless/Assets
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Initialize mono
+Mono path[0] = 'C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/Managed'
+Mono path[1] = 'C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/MonoBleedingEdge/lib/mono/unityjit-win32'
+Mono config path = 'C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/MonoBleedingEdge/etc'
+Using monoOptions --debugger-agent=transport=dt_socket,embedding=1,server=y,suspend=n,address=127.0.0.1:56280
+Using cacheserver namespaces - metadata:defaultmetadata, artifacts:defaultartifacts
+Using cacheserver namespaces - metadata:defaultmetadata, artifacts:defaultartifacts
+ImportWorker Server TCP listen port: 0
+AcceleratorClientConnectionCallback - disconnected - :0
+Begin MonoManager ReloadAssembly
+Registering precompiled unity dll's ...
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/PlaybackEngines/WindowsStandaloneSupport/UnityEditor.WindowsStandalone.Extensions.dll
+[Licensing::Client] Successfully resolved entitlement details
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/PlaybackEngines/AndroidPlayer/UnityEditor.Android.Extensions.dll
+Registered in 0.003976 seconds.
+- Loaded All Assemblies, in  0.244 seconds
+Native extension for Android target not found
+Android Extension - Scanning For ADB Devices 2158 ms
+Native extension for WindowsStandalone target not found
+Mono: successfully reloaded assembly
+- Finished resetting the current domain, in  2.394 seconds
+Domain Reload Profiling: 2636ms
+	BeginReloadAssembly (85ms)
+		ExecutionOrderSort (0ms)
+		DisableScriptedObjects (0ms)
+		BackupInstance (0ms)
+		ReleaseScriptingObjects (0ms)
+		CreateAndSetChildDomain (1ms)
+	RebuildCommonClasses (21ms)
+	RebuildNativeTypeToScriptingClass (6ms)
+	initialDomainReloadingComplete (32ms)
+	LoadAllAssembliesAndSetupDomain (97ms)
+		LoadAssemblies (83ms)
+		RebuildTransferFunctionScriptingTraits (0ms)
+		AnalyzeDomain (94ms)
+			TypeCache.Refresh (93ms)
+				TypeCache.ScanAssembly (83ms)
+			BuildScriptInfoCaches (0ms)
+			ResolveRequiredComponents (0ms)
+	FinalizeReload (2394ms)
+		ReleaseScriptCaches (0ms)
+		RebuildScriptCaches (0ms)
+		SetupLoadedEditorAssemblies (2371ms)
+			LogAssemblyErrors (0ms)
+			InitializePlatformSupportModulesInManaged (2210ms)
+			SetLoadedEditorAssemblies (2ms)
+			BeforeProcessingInitializeOnLoad (36ms)
+			ProcessInitializeOnLoadAttributes (82ms)
+			ProcessInitializeOnLoadMethodAttributes (42ms)
+			AfterProcessingInitializeOnLoad (0ms)
+			EditorAssembliesLoaded (0ms)
+		ExecutionOrderSort2 (0ms)
+		AwakeInstancesAfterBackupRestoration (0ms)
+[Licensing::Client] Successfully resolved entitlement details
+Application.AssetDatabase Initial Refresh Start
+Package Manager log level set to [2]
+[Package Manager] Restoring resolved packages state from cache
+[Licensing::Client] Successfully resolved entitlement details
+[Package Manager] Registered 4 packages:
+  Built-in packages:
+    com.unity.test-framework@1.5.1 (location: C:\Users\rufat\UnityProject\remesher\Headless\Library\PackageCache\com.unity.test-framework@1f954279c37e)
+    com.unity.modules.imgui@1.0.0 (location: C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Data\Resources\PackageManager\BuiltInPackages\com.unity.modules.imgui)
+    com.unity.modules.jsonserialize@1.0.0 (location: C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Data\Resources\PackageManager\BuiltInPackages\com.unity.modules.jsonserialize)
+    com.unity.ext.nunit@2.0.5 (location: C:\Users\rufat\UnityProject\remesher\Headless\Library\PackageCache\com.unity.ext.nunit@031a54704bff)
+[Subsystems] No new subsystems found in resolved package list.
+[Package Manager] Done registering packages in 0.00 seconds
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:80
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Production
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: C:\Users\rufat\UnityProject\remesher\Headless\
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/Ping application/grpc -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'gRPC - /UnityILPP.PostProcessing/Ping'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'gRPC - /UnityILPP.PostProcessing/Ping'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/Ping application/grpc - - 200 - application/grpc 26.8656ms
+Starting: C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Data\bee_backend.exe --ipc --defer-dag-verification --dagfile="Library/Bee/1900b0aE.dag" --continue-on-failure --profile="Library/Bee/backend1.traceevents" ScriptAssemblies
+WorkingDir: C:/Users/rufat/UnityProject/remesher/Headless
+DisplayProgressbar: Compiling Scripts
+ExitCode: 0 Duration: 0s57ms
+*** Tundra build success (0.03 seconds), 0 items updated, 176 evaluated
+AssetDatabase: script compilation time: 0.326660s
+Begin MonoManager ReloadAssembly
+- Loaded All Assemblies, in  0.383 seconds
+Refreshing native plugins compatible for Editor in 0.00 ms, found 0 plugins.
+Native extension for Android target not found
+Native extension for WindowsStandalone target not found
+Mono: successfully reloaded assembly
+- Finished resetting the current domain, in  0.251 seconds
+Domain Reload Profiling: 632ms
+	BeginReloadAssembly (243ms)
+		ExecutionOrderSort (0ms)
+		DisableScriptedObjects (9ms)
+		BackupInstance (0ms)
+		ReleaseScriptingObjects (0ms)
+		CreateAndSetChildDomain (139ms)
+	RebuildCommonClasses (24ms)
+	RebuildNativeTypeToScriptingClass (7ms)
+	initialDomainReloadingComplete (18ms)
+	LoadAllAssembliesAndSetupDomain (89ms)
+		LoadAssemblies (141ms)
+		RebuildTransferFunctionScriptingTraits (0ms)
+		AnalyzeDomain (19ms)
+			TypeCache.Refresh (15ms)
+				TypeCache.ScanAssembly (10ms)
+			BuildScriptInfoCaches (2ms)
+			ResolveRequiredComponents (0ms)
+	FinalizeReload (251ms)
+		ReleaseScriptCaches (0ms)
+		RebuildScriptCaches (0ms)
+		SetupLoadedEditorAssemblies (176ms)
+			LogAssemblyErrors (0ms)
+			InitializePlatformSupportModulesInManaged (17ms)
+			SetLoadedEditorAssemblies (1ms)
+			BeforeProcessingInitializeOnLoad (62ms)
+			ProcessInitializeOnLoadAttributes (75ms)
+			ProcessInitializeOnLoadMethodAttributes (16ms)
+			AfterProcessingInitializeOnLoad (4ms)
+			EditorAssembliesLoaded (0ms)
+		ExecutionOrderSort2 (0ms)
+		AwakeInstancesAfterBackupRestoration (7ms)
+Asset Pipeline Refresh (id=9d61bc5b8c0838b4a826eeb18be640e2): Total: 1.056 seconds - Initiated by InitialRefreshV2(ForceSynchronousImport)
+	Summary:
+		Imports: total=0 (actual=0, local cache=0, cache server=0)
+		Asset DB Process Time: managed=0 ms, native=323 ms
+		Asset DB Callback time: managed=9 ms, native=3 ms
+		Scripting: domain reloads=1, domain reload time=383 ms, compile time=328 ms, other=8 ms
+		Project Asset Count: scripts=91, non-scripts=13
+		Asset File Changes: new=0, changed=0, moved=0, deleted=0
+		Scan Filter Count: 0
+	InvokeCustomDependenciesCallbacks: 0.001ms
+	InvokePackagesCallback: 4.969ms
+	ApplyChangesToAssetFolders: 0.455ms
+	Scan: 15.938ms
+	OnSourceAssetsModified: 0.001ms
+	CategorizeAssetsWithTransientArtifact: 1.824ms
+	ProcessAssetsWithTransientArtifactChanges: 3.872ms
+	CategorizeAssets: 0.467ms
+	ImportOutOfDateAssets: 251.622ms (-76.565ms without children)
+		CompileScripts: 327.966ms
+		ReloadNativeAssets: 0.001ms
+		UnloadImportedAssets: 0.085ms
+		EnsureUptoDateAssetsAreRegisteredWithGuidPM: 0.017ms
+		InitializingProgressBar: 0.000ms
+		PostProcessAllAssetNotificationsAddChangedAssets: 0.000ms
+		OnDemandSchedulerStart: 0.117ms
+	PostProcessAllAssets: 9.521ms
+	GatherAllCurrentPrimaryArtifactRevisions: 0.000ms
+	UnloadStreamsBegin: 0.210ms
+	PersistCurrentRevisions: 0.003ms
+	UnloadStreamsEnd: 0.001ms
+	GenerateScriptTypeHashes: 0.003ms
+	Untracked: 767.347ms
+
+Application.AssetDatabase Initial Refresh End
+Scanning for USB devices : 2.295ms
+Initializing Unity extensions:
+[MODES] ModeService[none].Initialize
+[MODES] ModeService[none].LoadModes
+[MODES] Loading mode Default (0) for mode-current-id-QuadremeshHeadless
+Unloading 3 Unused Serialized files (Serialized files now loaded: 0)
+Unloading 492 unused Assets / (1.0 MB). Loaded Objects now: 992.
+Memory consumption went from 86.1 MB to 85.0 MB.
+Total: 3.751600 ms (FindLiveObjects: 0.064900 ms CreateObjectMapping: 0.016800 ms MarkObjects: 3.164100 ms  DeleteObjects: 0.505200 ms)
+
+
+=== EditorParity (window path: full-res FBX, GameAsset seed, Auto Profile) ===
+  asset,extractor,chosenProfile,inputTris,faces,quadFrac,interior,irregular,v3,v5,vHigher,bndEdges,components,hausdorff,chamfer,ms
+  head,IntegerGrid,Photogrammetry,1500000,4280,1.0000,4194,392,139,253,0,78,1,0.02962,0.00149,52517 ridge=0.00458
+      probe: preRefine=41.1 % onRefined=16.6 % used=41.1 % threshold=15 %
+      refine: f=46000->175390 splits=64695 scale=0.02965 target=0.01483 maxEdge=0.13499->0.01483 (297 ms)
+      curve network: 70 curves (4 closed, 18 joins), 3030 vertices, 914 cells long, 19 corner vertices, 7045 thin; 9543 seeds, 1642 too short; 3 tensor sweeps (94 ms)
+      field normals smoothed over 1 sweeps
+      local refine: f=175390->175390 splits=0 scale=0.01376 target=0.00688 maxEdge=0.01483->0.01483 worstCells=0.92 field=spacing mean 0.03406 min 0.01376 max 0.05504 spread 4.00x over 87,613 vertices
+      igm:      in v=87613 f=175390 e=263085 sing=604 sharp=5964 unsat=1581->0 valve=38+1 flow: supply=3 routed=3 iters=2 cap=3 cost=1258 arcs=513590 | crease: v=3103 chains=84 cells=984 pinned=29322 place=884 refused=59 maxMove=0.1072 | pos: n=8578 nnz=97030 cg=40 move=0.01792 proj=0.00228 | clamped=0 subdiv=3380+1995 oor=14 onFlip=965 capped=0 foldRefused=16 cycleRefused=46 stillLong=0 flips=2810->194 (8 passes) | levels=12 compact=4289 out=4278 flippedTris=228 degen=0 unpaired=52 holeQuads=18 v2=67 nmSplit=103 hiVal=87 debris=1/2f | ms build=1860 cons=181 flow=21772 subdiv=264 flip=1196 pos=88 extract=188 total=25580
+  head,IntegerGrid,Photogrammetry,1500000,5189,1.0000,5131,434,152,281,1,34,2,0.01902,0.00116,48237 ridge=0.00413
+      probe: preRefine=39.8 % onRefined=16.0 % used=39.8 % threshold=15 %
+      refine: f=50000->190890 splits=70445 scale=0.02845 target=0.01422 maxEdge=0.13499->0.01422 (298 ms)
+      curve network: 65 curves (5 closed, 17 joins), 3074 vertices, 928 cells long, 17 corner vertices, 8018 thin; 10213 seeds, 1775 too short; 3 tensor sweeps (78 ms)
+      field normals smoothed over 1 sweeps
+      local refine: f=190890->190890 splits=0 scale=0.01319 target=0.00660 maxEdge=0.01422->0.01422 worstCells=0.95 field=spacing mean 0.03276 min 0.01319 max 0.05277 spread 4.00x over 95,363 vertices
+      igm:      in v=95363 f=190890 e=286335 sing=632 sharp=6062 unsat=1625->0 valve=14+9 flow: supply=914 routed=914 iters=1 cap=2 cost=23138 arcs=559714 | crease: v=3114 chains=66 cells=956 pinned=24591 place=903 refused=12 maxMove=0.0897 | pos: n=10310 nnz=122588 cg=40 move=0.01602 proj=0.00144 | clamped=0 subdiv=2580+411 oor=4 onFlip=374 capped=0 foldRefused=3 cycleRefused=15 stillLong=0 flips=2075->101 (6 passes) | levels=12 compact=5155 out=5165 flippedTris=101 degen=0 unpaired=18 holeQuads=6 v2=49 nmSplit=70 hiVal=89 debris=0/0f | ms build=2006 cons=199 flow=18258 subdiv=278 flip=973 pos=94 extract=200 total=22040
+  head,IntegerGrid,Photogrammetry,1500000,5742,1.0000,5685,477,164,313,0,28,1,0.02161,0.00111,56801 ridge=0.00412
+      probe: preRefine=38.9 % onRefined=15.5 % used=38.9 % threshold=15 %
+      refine: f=54000->206476 splits=76238 scale=0.02738 target=0.01369 maxEdge=0.13144->0.01369 (321 ms)
+      curve network: 71 curves (5 closed, 6 joins), 3380 vertices, 1015 cells long, 24 corner vertices, 8575 thin; 11120 seeds, 1974 too short; 3 tensor sweeps (86 ms)
+      field normals smoothed over 1 sweeps
+      local refine: f=206476->206476 splits=0 scale=0.01435 target=0.00717 maxEdge=0.01369->0.01369 worstCells=0.90 field=spacing mean 0.03159 min 0.01435 max 0.05085 spread 3.54x over 103,156 vertices
+      igm:      in v=103156 f=206476 e=309714 sing=710 sharp=6640 unsat=1764->0 valve=25+1 flow: supply=1006 routed=1006 iters=1 cap=2 cost=26225 arcs=604556 | crease: v=3441 chains=88 cells=1113 pinned=27508 place=1006 refused=40 maxMove=0.0850 | pos: n=11510 nnz=135460 cg=40 move=0.01505 proj=0.00143 | clamped=0 subdiv=3240+471 oor=4 onFlip=535 capped=0 foldRefused=3 cycleRefused=15 stillLong=0 flips=2214->127 (5 passes) | levels=12 compact=5755 out=5735 flippedTris=141 degen=0 unpaired=24 holeQuads=7 v2=52 nmSplit=106 hiVal=89 debris=3/11f | ms build=2227 cons=233 flow=24604 subdiv=305 flip=888 pos=99 extract=222 total=28618
+  MEAN head,IntegerGrid over 3: irregular 8.73 % open 46.7 pieces 1.33 hausdorff 0.02341 chamfer 0.00125 ridge 0.00428
+=== end EditorParity ===
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:Log (object)
+NativeRemesher.Benchmark.EditorParity:Run () (at Assets/NativeRemesher/Benchmark/EditorParity.cs:272)
+
+(Filename: Assets/NativeRemesher/Benchmark/EditorParity.cs Line: 272)
+
+
+=== EditorParity (window path: full-res FBX, GameAsset seed, Auto Profile) ===
+  asset,extractor,chosenProfile,inputTris,faces,quadFrac,interior,irregular,v3,v5,vHigher,bndEdges,components,hausdorff,chamfer,ms
+  head,IntegerGrid,Photogrammetry,1500000,4280,1.0000,4194,392,139,253,0,78,1,0.02962,0.00149,52517 ridge=0.00458
+      probe: preRefine=41.1 % onRefined=16.6 % used=41.1 % threshold=15 %
+      refine: f=46000->175390 splits=64695 scale=0.02965 target=0.01483 maxEdge=0.13499->0.01483 (297 ms)
+      curve network: 70 curves (4 closed, 18 joins), 3030 vertices, 914 cells long, 19 corner vertices, 7045 thin; 9543 seeds, 1642 too short; 3 tensor sweeps (94 ms)
+      field normals smoothed over 1 sweeps
+      local refine: f=175390->175390 splits=0 scale=0.01376 target=0.00688 maxEdge=0.01483->0.01483 worstCells=0.92 field=spacing mean 0.03406 min 0.01376 max 0.05504 spread 4.00x over 87,613 vertices
+      igm:      in v=87613 f=175390 e=263085 sing=604 sharp=5964 unsat=1581->0 valve=38+1 flow: supply=3 routed=3 iters=2 cap=3 cost=1258 arcs=513590 | crease: v=3103 chains=84 cells=984 pinned=29322 place=884 refused=59 maxMove=0.1072 | pos: n=8578 nnz=97030 cg=40 move=0.01792 proj=0.00228 | clamped=0 subdiv=3380+1995 oor=14 onFlip=965 capped=0 foldRefused=16 cycleRefused=46 stillLong=0 flips=2810->194 (8 passes) | levels=12 compact=4289 out=4278 flippedTris=228 degen=0 unpaired=52 holeQuads=18 v2=67 nmSplit=103 hiVal=87 debris=1/2f | ms build=1860 cons=181 flow=21772 subdiv=264 flip=1196 pos=88 extract=188 total=25580
+  head,IntegerGrid,Photogrammetry,1500000,5189,1.0000,5131,434,152,281,1,34,2,0.01902,0.00116,48237 ridge=0.00413
+      probe: preRefine=39.8 % onRefined=16.0 % used=39.8 % threshold=15 %
+      refine: f=50000->190890 splits=70445 scale=0.02845 target=0.01422 maxEdge=0.13499->0.01422 (298 ms)
+      curve network: 65 curves (5 closed, 17 joins), 3074 vertices, 928 cells long, 17 corner vertices, 8018 thin; 10213 seeds, 1775 too short; 3 tensor sweeps (78 ms)
+      field normals smoothed over 1 sweeps
+      local refine: f=190890->190890 splits=0 scale=0.01319 target=0.00660 maxEdge=0.01422->0.01422 worstCells=0.95 field=spacing mean 0.03276 min 0.01319 max 0.05277 spread 4.00x over 95,363 vertices
+      igm:      in v=95363 f=190890 e=286335 sing=632 sharp=6062 unsat=1625->0 valve=14+9 flow: supply=914 routed=914 iters=1 cap=2 cost=23138 arcs=559714 | crease: v=3114 chains=66 cells=956 pinned=24591 place=903 refused=12 maxMove=0.0897 | pos: n=10310 nnz=122588 cg=40 move=0.01602 proj=0.00144 | clamped=0 subdiv=2580+411 oor=4 onFlip=374 capped=0 foldRefused=3 cycleRefused=15 stillLong=0 flips=2075->101 (6 passes) | levels=12 compact=5155 out=5165 flippedTris=101 degen=0 unpaired=18 holeQuads=6 v2=49 nmSplit=70 hiVal=89 debris=0/0f | ms build=2006 cons=199 flow=18258 subdiv=278 flip=973 pos=94 extract=200 total=22040
+  head,IntegerGrid,Photogrammetry,1500000,5742,1.0000,5685,477,164,313,0,28,1,0.02161,0.00111,56801 ridge=0.00412
+      probe: preRefine=38.9 % onRefined=15.5 % used=38.9 % threshold=15 %
+      refine: f=54000->206476 splits=76238 scale=0.02738 target=0.01369 maxEdge=0.13144->0.01369 (321 ms)
+      curve network: 71 curves (5 closed, 6 joins), 3380 vertices, 1015 cells long, 24 corner vertices, 8575 thin; 11120 seeds, 1974 too short; 3 tensor sweeps (86 ms)
+      field normals smoothed over 1 sweeps
+      local refine: f=206476->206476 splits=0 scale=0.01435 target=0.00717 maxEdge=0.01369->0.01369 worstCells=0.90 field=spacing mean 0.03159 min 0.01435 max 0.05085 spread 3.54x over 103,156 vertices
+      igm:      in v=103156 f=206476 e=309714 sing=710 sharp=6640 unsat=1764->0 valve=25+1 flow: supply=1006 routed=1006 iters=1 cap=2 cost=26225 arcs=604556 | crease: v=3441 chains=88 cells=1113 pinned=27508 place=1006 refused=40 maxMove=0.0850 | pos: n=11510 nnz=135460 cg=40 move=0.01505 proj=0.00143 | clamped=0 subdiv=3240+471 oor=4 onFlip=535 capped=0 foldRefused=3 cycleRefused=15 stillLong=0 flips=2214->127 (5 passes) | levels=12 compact=5755 out=5735 flippedTris=141 degen=0 unpaired=24 holeQuads=7 v2=52 nmSplit=106 hiVal=89 debris=3/11f | ms build=2227 cons=233 flow=24604 subdiv=305 flip=888 pos=99 extract=222 total=28618
+  MEAN head,IntegerGrid over 3: irregular 8.73 % open 46.7 pieces 1.33 hausdorff 0.02341 chamfer 0.00125 ridge 0.00428
+=== end EditorParity ===
+
+Batchmode quit successfully invoked - shutting down!
+Killing ADB server in 0.0432443 seconds.
+[Physics::Module] Cleanup current backned.
+[Physics::Module] Id: 0xf2b8ea05
+Input System module state changed to: ShutdownInProgress.
+Input System polling thread exited.
+Input System module state changed to: Shutdown.
+[Licensing::IpcConnector] LicenseClient-rufat-notifications channel disconnected successfully.
+[Licensing::IpcConnector] LicenseClient-rufat channel disconnected successfully.
+AcceleratorClientConnectionCallback - disconnected - :0
+Cleanup mono
+abort_threads: Failed aborting id: 0000000000006958, mono_thread_manage will ignore it
+
+abort_threads: Failed aborting id: 000000000000B858, mono_thread_manage will ignore it
+
+abort_threads: Failed aborting id: 0000000000006958, mono_thread_manage will ignore it
+
+abort_threads: Failed aborting id: 000000000000B858, mono_thread_manage will ignore it
+
+debugger-agent: Unable to listen on 3416
+Exiting batchmode successfully now!
+Exiting without the bug reporter. Application will terminate with return code 0

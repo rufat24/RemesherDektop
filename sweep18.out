@@ -1,0 +1,13 @@
+== hi_head
+  head,IntegerGrid,Photogrammetry,1500000,10037,0.9994,9985,767,290,475,2,4,2,0.01070,0.00080,143810 ridge=0.00473
+  head,IntegerGrid,Photogrammetry,1500000,7828,0.9976,7788,605,218,380,7,0,1,0.01859,0.00098,99030 ridge=0.00562
+      holes: boundaryEdges=21 capped=6 split=0 quadrangulated=0(+0quads) grid=0(+0quads +0ears +0verts rej=0 largest=0) hubLargest=0 ngonCaps=0 fanned=0 added=0 abandoned=3(dead=3 long=0 offSurface=0 
+      holes: boundaryEdges=68 capped=20 split=0 quadrangulated=0(+0quads) grid=0(+0quads +0ears +0verts rej=0 largest=0) hubLargest=0 ngonCaps=1 fanned=0 added=0 abandoned=0(dead=0 long=0 offSurface=0
+      pairing: trianglePairing: 18 -> 18 triangles (0 removed), 0 of 2 pairs applied in 1 rounds [], refused 0 loop + 0 interior + 2 quality (nonConvex 2, backwards 0, dupEdge 0, threshold 0), 0 neede
+      pairing: trianglePairing: 6 -> 6 triangles (0 removed), 0 of 0 pairs applied in 1 rounds [], refused 0 loop + 0 interior + 0 quality (nonConvex 0, backwards 0, dupEdge 0, threshold 0), 0 needed 
+  MEAN head,IntegerGrid over 2: irregular 7.72 % open 2.0 pieces 1.50 hausdorff 0.01465 chamfer 0.00089 ridge 0.00518
+== hi_body
+  body,IntegerGrid,Photogrammetry,1500000,10303,1.0000,10303,262,131,131,0,0,1,0.00999,0.00042,102687 ridge=0.00186
+      holes: boundaryEdges=0 capped=0 split=0 quadrangulated=0(+0quads) grid=0(+0quads +0ears +0verts rej=0 largest=0) hubLargest=0 ngonCaps=0 fanned=0 added=0 abandoned=0(dead=0 long=0 offSurface=0 l
+      pairing: trianglePairing: 0 -> 0 triangles (0 removed), 0 of 0 pairs applied in 1 rounds [], refused 0 loop + 0 interior + 0 quality (nonConvex 0, backwards 0, dupEdge 0, threshold 0), 0 needed 
+SWEEP18_DONE

@@ -1,0 +1,26 @@
+# Normalise line endings so a Windows checkout does not report every file as modified,
+# and so diffs are stable across machines.
+* text=auto eol=lf
+
+# Unity YAML assets and meta files
+*.meta        text eol=lf
+*.asset       text eol=lf
+*.unity       text eol=lf
+*.prefab      text eol=lf
+*.asmdef      text eol=lf
+*.inputactions text eol=lf
+
+*.cs          text eol=lf diff=csharp
+*.md          text eol=lf
+*.json        text eol=lf
+*.csv         text eol=lf
+
+# Binary — never touch, never diff
+*.fbx         binary
+*.obj         binary
+*.png         binary
+*.jpg         binary
+*.tga         binary
+*.dll         binary
+*.exe         binary
+*.wlt         binary

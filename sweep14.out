@@ -1,0 +1,5 @@
+base14_body   MEAN body,IntegerGrid over 3: irregular 2.85 % open 0.0 pieces 1.00 hausdorff 0.01013 chamfer 0.00067 ridge 0.00265 
+cvd_body   MEAN body,IntegerGrid over 3: irregular 3.42 % open 2.0 pieces 1.00 hausdorff 0.01097 chamfer 0.00063 ridge 0.00153 
+base14_head   MEAN head,IntegerGrid over 3: irregular 8.78 % open 42.7 pieces 1.33 hausdorff 0.01848 chamfer 0.00130 ridge 0.00707 
+cvd_head   MEAN head,IntegerGrid over 3: irregular 9.20 % open 88.7 pieces 1.33 hausdorff 0.02191 chamfer 0.00138 ridge 0.00371 
+SWEEP14_DONE

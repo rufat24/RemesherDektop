@@ -1,0 +1,4 @@
+ns1   head,IntegerGrid,Photogrammetry,1500000,5232,1.0000,5157,681,285,396,0,72,3,0.03432,0.00152,72505 sing=1644 smoothed over 12 sweeps 
+ns1h   head,IntegerGrid,Photogrammetry,1500000,4675,1.0000,4604,591,232,358,1,58,3,0.04089,0.00150,63614 sing=1784 smoothed over 12 sweeps 
+ns2h   head,IntegerGrid,Photogrammetry,1500000,4789,1.0000,4686,787,355,430,2,122,4,0.01950,0.00140,73557 sing=2848 smoothed over 49 sweeps 
+ns05h   head,IntegerGrid,Photogrammetry,1500000,4569,1.0000,4514,401,149,250,2,40,2,0.02348,0.00137,51136 sing=804 smoothed over 3 sweeps 

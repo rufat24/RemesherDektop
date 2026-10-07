@@ -1,0 +1,17 @@
+== lp_head
+  head,IntegerGrid,Photogrammetry,1500000,4500,0.9991,4468,410,142,266,2,0,1,0.01583,0.00134,47470 ridge=0.00730
+  head,IntegerGrid,Photogrammetry,1500000,4885,0.9973,4846,487,165,317,5,0,1,0.02251,0.00132,58016 ridge=0.00707
+  head,IntegerGrid,Photogrammetry,1500000,5178,0.9988,5140,462,167,295,0,4,1,0.02273,0.00133,54428 ridge=0.00710
+      pairing2: trianglePairing: 14 -> 12 triangles (2 removed), 1 of 13 pairs applied in 2 rounds [n3:1], refused 0 loo
+      pairing2: trianglePairing: 6 -> 4 triangles (2 removed), 1 of 3 pairs applied in 2 rounds [n3:1], refused 0 loop +
+      pairing2: trianglePairing: 6 -> 6 triangles (0 removed), 0 of 2 pairs applied in 1 rounds [], refused 0 loop + 0 i
+      6 capsNM=0
+  MEAN head,IntegerGrid over 3: irregular 9.40 % open 1.3 pieces 1.00 hausdorff 0.02036 chamfer 0.00133 ridge 0.00716
+== lphi_head
+  head,IntegerGrid,Photogrammetry,1500000,10037,0.9994,9985,767,290,475,2,4,2,0.01070,0.00080,141568 ridge=0.00473
+  head,IntegerGrid,Photogrammetry,1500000,7827,0.9978,7788,608,221,379,8,0,1,0.01859,0.00098,97425 ridge=0.00562
+      pairing2: trianglePairing: 18 -> 16 triangles (2 removed), 1 of 14 pairs applied in 2 rounds [n2:1], refused 0 loo
+      pairing2: trianglePairing: 6 -> 6 triangles (0 removed), 0 of 3 pairs applied in 1 rounds [], refused 0 loop + 0 i
+      4 capsNM=0
+  MEAN head,IntegerGrid over 2: irregular 7.74 % open 2.0 pieces 1.50 hausdorff 0.01465 chamfer 0.00089 ridge 0.00518
+SWEEP19_DONE

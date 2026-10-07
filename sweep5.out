@@ -1,0 +1,4 @@
+m_base   MEAN head,IntegerGrid over 3: irregular 13.45 % open 54.7 pieces 1.00 hausdorff 0.01905 chamfer 0.00137 sing=sing=1018 sing=1064 sing=1128  
+m_h6f20   MEAN head,IntegerGrid over 3: irregular 11.18 % open 31.3 pieces 2.00 hausdorff 0.02022 chamfer 0.00140 sing=sing=836 sing=872 sing=904  
+m_ns05h   MEAN head,IntegerGrid over 3: irregular 9.00 % open 56.0 pieces 4.00 hausdorff 0.02815 chamfer 0.00141 sing=sing=760 sing=774 sing=804  
+m_ns025h   MEAN head,IntegerGrid over 3: irregular 8.68 % open 46.7 pieces 1.00 hausdorff 0.02178 chamfer 0.00136 sing=sing=576 sing=602 sing=664  

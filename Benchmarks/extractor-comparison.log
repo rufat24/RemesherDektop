@@ -1,0 +1,512 @@
+[Licensing::Module] Trying to connect to existing licensing client channel...
+Built from '6000.0/respin/6000.0.58f2-44b8bf3a32' branch; Version is '6000.0.58f2 (92dee566b325) revision 9625317'; Using compiler version '193933523'; Build Type 'Release'
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-user" at "2026-09-09T12:27:50.6758599Z"
+OS: 'Windows 11  (10.0.26200) 64bit Professional' Language: 'en' Physical Memory: 32456 MB
+BatchMode: 1, IsHumanControllingUs: 0, StartBugReporterOnCrash: 0, Is64bit: 1
+Date: 2026-09-09T12:27:50Z
+
+COMMAND LINE ARGUMENTS:
+C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Unity.exe
+-batchmode
+-nographics
+-projectPath
+.
+-quit
+-logFile
+chk.log
+-executeMethod
+NativeRemesher2.Benchmark.ExtractorComparison.Run
+Successfully changed project path to: C:/Users/user/Quadremesh/Headless
+C:/Users/user/Quadremesh/Headless
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=33554432"
+    "memorysetup-bucket-allocator-block-count=8"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=33554432"
+    "memorysetup-profiler-bucket-allocator-block-count=8"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=16777216"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=33554432"
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+Player connection [24264]  Target information:
+
+Player connection [24264]  * "[IP] 10.0.0.39 [Port] 55505 [Flags] 2 [Guid] 1416116524 [EditorId] 1416116524 [Version] 1048832 [Id] WindowsEditor(7,WIN-1TBN24BHT0F) [Debug] 1 [PackageName] WindowsEditor [ProjectName] Editor" 
+
+Player connection [24264]  * "[IP] 192.168.146.1 [Port] 55505 [Flags] 2 [Guid] 1416116524 [EditorId] 1416116524 [Version] 1048832 [Id] WindowsEditor(7,WIN-1TBN24BHT0F) [Debug] 1 [PackageName] WindowsEditor [ProjectName] Editor" 
+
+Player connection [24264]  * "[IP] 192.168.8.1 [Port] 55505 [Flags] 2 [Guid] 1416116524 [EditorId] 1416116524 [Version] 1048832 [Id] WindowsEditor(7,WIN-1TBN24BHT0F) [Debug] 1 [PackageName] WindowsEditor [ProjectName] Editor" 
+
+Player connection [24264]  * "[IP] 169.254.116.182 [Port] 55505 [Flags] 2 [Guid] 1416116524 [EditorId] 1416116524 [Version] 1048832 [Id] WindowsEditor(7,WIN-1TBN24BHT0F) [Debug] 1 [PackageName] WindowsEditor [ProjectName] Editor" 
+
+Player connection [24264] Host joined multi-casting on [225.0.0.222:54997]...
+Player connection [24264] Host joined alternative multi-casting on [225.0.0.222:34997]...
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+[Licensing::Client] Code 10 while verifying Licensing Client signature (process Id: 24368, path: "C:/Program Files/Unity Hub/UnityLicensingClient_V1/Unity.Licensing.Client.exe")
+[Licensing::Module] LicensingClient has failed validation; ignoring
+[Licensing::Client] Handshaking with LicensingClient:
+  Version:                 1.17.4+4293ba1
+  Session Id:              ee63d9da138040e887532fee86067339
+  Correlation Id:          195a39dd0cbf59cf469df8f2227a95c6
+  External correlation Id: 5720534128770567914
+  Machine Id:              bmFy0SLb1XrH0V/lS4HevCYZIps=
+[Licensing::Module] Successfully connected to LicensingClient on channel: "LicenseClient-user" (connect: 0.00s, validation: 0.00s, handshake: 0.04s)
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-user-notifications" at "2026-09-09T12:27:50.7147195Z"
+[Licensing::Module] Error: Access token is unavailable; failed to update
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] License group:
+  Id: F4-WHSU-SR5W-2G6V-CH85-XXXX
+  Product: Unity Personal
+  Type: ULF
+  Expiration: Unlimited
+[Licensing::Module] License group:
+  Id: 18966622505151-UnityPersXXXX
+  Product: Unity Personal
+  Type: Assigned
+  Expiration: Unlimited
+[Licensing::Client] Successfully updated license, isAsync: True, time: 0.00
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] License group:
+  Id: F4-WHSU-SR5W-2G6V-CH85-XXXX
+  Product: Unity Personal
+  Type: ULF
+  Expiration: Unlimited
+[Licensing::Module] License group:
+  Id: 18966622505151-UnityPersXXXX
+  Product: Unity Personal
+  Type: Assigned
+  Expiration: Unlimited
+[Licensing::Module] Licensing Background thread has ended after 0.04s
+[Package Manager] Connected to IPC stream "Upm-24964" after 0.2 seconds.
+Library Redirect Path: Library/
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+Refreshing native plugins compatible for Editor in 0.00 ms, found 0 plugins.
+Preloading 0 native plugins for Editor in 0.00 ms.
+Initialize engine version: 6000.0.58f2 (92dee566b325)
+[Subsystems] Discovering subsystems at path C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/Resources/UnitySubsystems
+[Subsystems] Discovering subsystems at path C:/Users/user/Quadremesh/Headless/Assets
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Initialize mono
+Mono path[0] = 'C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/Managed'
+Mono path[1] = 'C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/MonoBleedingEdge/lib/mono/unityjit-win32'
+Mono config path = 'C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/MonoBleedingEdge/etc'
+Using monoOptions --debugger-agent=transport=dt_socket,embedding=1,server=y,suspend=n,address=127.0.0.1:56964
+Using cacheserver namespaces - metadata:defaultmetadata, artifacts:defaultartifacts
+Using cacheserver namespaces - metadata:defaultmetadata, artifacts:defaultartifacts
+ImportWorker Server TCP listen port: 0
+AcceleratorClientConnectionCallback - disconnected - :0
+Begin MonoManager ReloadAssembly
+Registering precompiled unity dll's ...
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/PlaybackEngines/WindowsStandaloneSupport/UnityEditor.WindowsStandalone.Extensions.dll
+Registered in 0.001941 seconds.
+- Loaded All Assemblies, in  0.257 seconds
+Native extension for WindowsStandalone target not found
+Mono: successfully reloaded assembly
+- Finished resetting the current domain, in  0.209 seconds
+Domain Reload Profiling: 465ms
+	BeginReloadAssembly (81ms)
+		ExecutionOrderSort (0ms)
+		DisableScriptedObjects (0ms)
+		BackupInstance (0ms)
+		ReleaseScriptingObjects (0ms)
+		CreateAndSetChildDomain (1ms)
+	RebuildCommonClasses (23ms)
+	RebuildNativeTypeToScriptingClass (8ms)
+	initialDomainReloadingComplete (33ms)
+	LoadAllAssembliesAndSetupDomain (111ms)
+		LoadAssemblies (79ms)
+		RebuildTransferFunctionScriptingTraits (0ms)
+		AnalyzeDomain (109ms)
+			TypeCache.Refresh (108ms)
+				TypeCache.ScanAssembly (98ms)
+			BuildScriptInfoCaches (0ms)
+			ResolveRequiredComponents (0ms)
+	FinalizeReload (209ms)
+		ReleaseScriptCaches (0ms)
+		RebuildScriptCaches (0ms)
+		SetupLoadedEditorAssemblies (187ms)
+			LogAssemblyErrors (0ms)
+			InitializePlatformSupportModulesInManaged (15ms)
+			SetLoadedEditorAssemblies (3ms)
+			BeforeProcessingInitializeOnLoad (34ms)
+			ProcessInitializeOnLoadAttributes (94ms)
+			ProcessInitializeOnLoadMethodAttributes (41ms)
+			AfterProcessingInitializeOnLoad (0ms)
+			EditorAssembliesLoaded (0ms)
+		ExecutionOrderSort2 (0ms)
+		AwakeInstancesAfterBackupRestoration (0ms)
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] License group:
+  Id: F4-WHSU-SR5W-2G6V-CH85-XXXX
+  Product: Unity Personal
+  Type: ULF
+  Expiration: Unlimited
+[Licensing::Module] License group:
+  Id: 18966622505151-UnityPersXXXX
+  Product: Unity Personal
+  Type: Assigned
+  Expiration: Unlimited
+Application.AssetDatabase Initial Refresh Start
+Package Manager log level set to [2]
+[Package Manager] Restoring resolved packages state from cache
+[Licensing::Client] Successfully resolved entitlement details
+[Package Manager] Registered 4 packages:
+  Built-in packages:
+    com.unity.test-framework@1.5.1 (location: C:\Users\user\Quadremesh\Headless\Library\PackageCache\com.unity.test-framework@1f954279c37e)
+    com.unity.modules.imgui@1.0.0 (location: C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Data\Resources\PackageManager\BuiltInPackages\com.unity.modules.imgui)
+    com.unity.modules.jsonserialize@1.0.0 (location: C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Data\Resources\PackageManager\BuiltInPackages\com.unity.modules.jsonserialize)
+    com.unity.ext.nunit@2.0.5 (location: C:\Users\user\Quadremesh\Headless\Library\PackageCache\com.unity.ext.nunit@031a54704bff)
+[Subsystems] No new subsystems found in resolved package list.
+[Package Manager] Done registering packages in 0.00 seconds
+[Package Manager] Done resolving packages in 0.57 seconds
+[Package Manager] Registered 4 packages:
+  Built-in packages:
+    com.unity.test-framework@1.5.1 (location: C:\Users\user\Quadremesh\Headless\Library\PackageCache\com.unity.test-framework@1f954279c37e)
+    com.unity.modules.imgui@1.0.0 (location: C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Data\Resources\PackageManager\BuiltInPackages\com.unity.modules.imgui)
+    com.unity.modules.jsonserialize@1.0.0 (location: C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Data\Resources\PackageManager\BuiltInPackages\com.unity.modules.jsonserialize)
+    com.unity.ext.nunit@2.0.5 (location: C:\Users\user\Quadremesh\Headless\Library\PackageCache\com.unity.ext.nunit@031a54704bff)
+[Subsystems] No new subsystems found in resolved package list.
+[Package Manager] Done registering packages in 0.00 seconds
+[ScriptCompilation] Requested script compilation because: Assetdatabase observed changes in script compilation related files
+warn: Unity.AspNetCore.NamedPipeSupport.NamedPipeServer[0]
+      Exception occured while accepting client connection: System.IO.IOException: The pipe is being closed.
+         at System.IO.Pipes.NamedPipeServerStream.WaitForConnectionCoreAsync(CancellationToken cancellationToken)
+         at System.IO.Pipes.NamedPipeServerStream.WaitForConnectionAsync(CancellationToken cancellationToken)
+         at Unity.AspNetCore.NamedPipeSupport.NamedPipeServer.AcceptLoop(Boolean useNamedPipeMessageSemantic)
+         at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+         at Unity.AspNetCore.NamedPipeSupport.NamedPipeServer.AcceptLoop(Boolean useNamedPipeMessageSemantic)
+         at Unity.AspNetCore.NamedPipeSupport.NamedPipeServer..ctor(String pipeName, NamedPipeListenerOptions options, ILogger`1 logger)
+         at Unity.AspNetCore.NamedPipeSupport.NamedPipeListener..ctor(NamedPipeEndpoint endpoint, ILoggerFactory loggerFactory, NamedPipeListenerOptions namedPipeListenerOptions)
+         at Unity.AspNetCore.NamedPipeSupport.NamedPipeListenerFactory.BindAsync(EndPoint _, CancellationToken cancellationToken)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Infrastructure.TransportManager.BindAsync(EndPoint endPoint, ConnectionDelegate connectionDelegate, EndpointConfig endpointConfig, CancellationToken cancellationToken)
+         at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Infrastructure.TransportManager.BindAsync(EndPoint endPoint, ConnectionDelegate connectionDelegate, EndpointConfig endpointConfig, CancellationToken cancellationToken)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.<>c__DisplayClass30_0`1.<<StartAsync>g__OnBind|0>d.MoveNext()
+         at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.<>c__DisplayClass30_0`1.<StartAsync>g__OnBind|0(ListenOptions options, CancellationToken onBindCancellationToken)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.BindEndpointAsync(ListenOptions endpoint, AddressBindContext context, CancellationToken cancellationToken)
+         at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.BindEndpointAsync(ListenOptions endpoint, AddressBindContext context, CancellationToken cancellationToken)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.LocalhostListenOptions.BindAsync(AddressBindContext context, CancellationToken cancellationToken)
+         at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.LocalhostListenOptions.BindAsync(AddressBindContext context, CancellationToken cancellationToken)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.EndpointsStrategy.BindAsync(AddressBindContext context, CancellationToken cancellationToken)
+         at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.EndpointsStrategy.BindAsync(AddressBindContext context, CancellationToken cancellationToken)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.BindAsync(IEnumerable`1 listenOptions, AddressBindContext context, CancellationToken cancellationToken)
+         at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.BindAsync(IEnumerable`1 listenOptions, AddressBindContext context, CancellationToken cancellationToken)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.BindAsync(CancellationToken cancellationToken)
+         at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.BindAsync(CancellationToken cancellationToken)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.StartAsync[TContext](IHttpApplication`1 application, CancellationToken cancellationToken)
+         at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.StartAsync[TContext](IHttpApplication`1 application, CancellationToken cancellationToken)
+         at Microsoft.AspNetCore.Hosting.GenericWebHostService.StartAsync(CancellationToken cancellationToken)
+         at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+         at Microsoft.AspNetCore.Hosting.GenericWebHostService.StartAsync(CancellationToken cancellationToken)
+         at Microsoft.Extensions.Hosting.Internal.Host.StartAsync(CancellationToken cancellationToken)
+         at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+         at Microsoft.Extensions.Hosting.Internal.Host.StartAsync(CancellationToken cancellationToken)
+         at Microsoft.AspNetCore.Builder.WebApplication.StartAsync(CancellationToken cancellationToken)
+         at Microsoft.Extensions.Hosting.HostingAbstractionsHostExtensions.RunAsync(IHost host, CancellationToken token)
+         at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+         at Microsoft.Extensions.Hosting.HostingAbstractionsHostExtensions.RunAsync(IHost host, CancellationToken token)
+         at Microsoft.Extensions.Hosting.HostingAbstractionsHostExtensions.Run(IHost host)
+         at Microsoft.AspNetCore.Builder.WebApplication.Run(String url)
+         at Program.<Main>$(String[] args)
+      --- End of stack trace from previous location ---
+         at Unity.AspNetCore.NamedPipeSupport.NamedPipeServer.AcceptLoop(Boolean useNamedPipeMessageSemantic)
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:80
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Production
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: C:\Users\user\Quadremesh\Headless\
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/Ping application/grpc -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'gRPC - /UnityILPP.PostProcessing/Ping'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'gRPC - /UnityILPP.PostProcessing/Ping'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/Ping application/grpc - - 200 - application/grpc 26.0950ms
+Starting: C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Data\bee_backend.exe --ipc --defer-dag-verification --dagfile="Library/Bee/1900b0aE.dag" --continue-on-failure --profile="Library/Bee/backend1.traceevents" ScriptAssemblies
+WorkingDir: C:/Users/user/Quadremesh/Headless
+DisplayProgressbar: Compiling Scripts
+ExitCode: 0 Duration: 0s720ms
+[179/197    0s] Csc Library/Bee/artifacts/1900b0aE.dag/NativeRemesher.Runtime.dll (+2 others)
+[182/197    0s] Csc Library/Bee/artifacts/1900b0aE.dag/NativeRemesher2.Runtime.dll (+2 others)
+[185/197    0s] Csc Library/Bee/artifacts/1900b0aE.dag/NativeRemesher.Benchmark.dll (+2 others)
+[188/197    0s] Csc Library/Bee/artifacts/1900b0aE.dag/NativeRemesher2.Benchmark.dll (+2 others)
+[189/197    0s] CopyFiles Library/ScriptAssemblies/NativeRemesher2.Benchmark.dll
+[190/197    0s] CopyFiles Library/ScriptAssemblies/NativeRemesher2.Benchmark.pdb
+[191/197    0s] Csc Library/Bee/artifacts/1900b0aE.dag/NativeRemesher.Tests.dll (+2 others)
+[194/197    0s] Csc Library/Bee/artifacts/1900b0aE.dag/NativeRemesher2.Tests.dll (+2 others)
+[195/197    0s] CopyFiles Library/ScriptAssemblies/NativeRemesher2.Tests.pdb
+[196/197    0s] CopyFiles Library/ScriptAssemblies/NativeRemesher2.Tests.dll
+*** Tundra build success (0.70 seconds), 10 items updated, 197 evaluated
+AssetDatabase: script compilation time: 1.003108s
+Begin MonoManager ReloadAssembly
+- Loaded All Assemblies, in  0.366 seconds
+Start importing Assets/NativeRemesher/Benchmark using Guid(c375d28e706b5df42992165bec4df941) (DefaultImporter) -> (artifact id: 'bf555886f46c4316115e1ed2dc6b7616') in 0.0099075 seconds
+Start importing Assets/NativeRemesher2/Runtime using Guid(46a63c2440ac8404b863360e33de03df) (DefaultImporter) -> (artifact id: '837ef32a0e62d8b5d16d3d698cce7a88') in 0.0009243 seconds
+Start importing Assets/NativeRemesher/Runtime using Guid(88afd8705daa0764b8ce5e97fee1a92e) (DefaultImporter) -> (artifact id: '7aad2b8d4052173dc0c2a0601133f7c9') in 0.0011255 seconds
+Start importing Assets/NativeRemesher2/Benchmark using Guid(fa4b2bbbd40e2314a8be6101bf27f190) (DefaultImporter) -> (artifact id: 'd3e3645bc84caf22f14f8d3cba3cfda7') in 0.0014465 seconds
+Start importing Assets/NativeRemesher/Tests using Guid(7b36a5e98b9b1654b8c7b56a9123725e) (DefaultImporter) -> (artifact id: '56a24c4c5a2f46b797b980dce9da6a32') in 0.0009022 seconds
+Start importing Assets/NativeRemesher2/Tests using Guid(7ea75d3c20d86774f859982c8e251c09) (DefaultImporter) -> (artifact id: '8d0b46bdcc272870721e21028e3df733') in 0.0013528 seconds
+Refreshing native plugins compatible for Editor in 0.00 ms, found 0 plugins.
+Native extension for WindowsStandalone target not found
+Mono: successfully reloaded assembly
+- Finished resetting the current domain, in  0.230 seconds
+Domain Reload Profiling: 595ms
+	BeginReloadAssembly (243ms)
+		ExecutionOrderSort (0ms)
+		DisableScriptedObjects (31ms)
+		BackupInstance (0ms)
+		ReleaseScriptingObjects (0ms)
+		CreateAndSetChildDomain (122ms)
+	RebuildCommonClasses (23ms)
+	RebuildNativeTypeToScriptingClass (7ms)
+	initialDomainReloadingComplete (15ms)
+	LoadAllAssembliesAndSetupDomain (76ms)
+		LoadAssemblies (127ms)
+		RebuildTransferFunctionScriptingTraits (0ms)
+		AnalyzeDomain (12ms)
+			TypeCache.Refresh (8ms)
+				TypeCache.ScanAssembly (5ms)
+			BuildScriptInfoCaches (2ms)
+			ResolveRequiredComponents (0ms)
+	FinalizeReload (230ms)
+		ReleaseScriptCaches (0ms)
+		RebuildScriptCaches (0ms)
+		SetupLoadedEditorAssemblies (163ms)
+			LogAssemblyErrors (0ms)
+			InitializePlatformSupportModulesInManaged (9ms)
+			SetLoadedEditorAssemblies (1ms)
+			BeforeProcessingInitializeOnLoad (60ms)
+			ProcessInitializeOnLoadAttributes (74ms)
+			ProcessInitializeOnLoadMethodAttributes (16ms)
+			AfterProcessingInitializeOnLoad (3ms)
+			EditorAssembliesLoaded (0ms)
+		ExecutionOrderSort2 (0ms)
+		AwakeInstancesAfterBackupRestoration (9ms)
+Refreshing native plugins compatible for Editor in 0.00 ms, found 0 plugins.
+Preloading 0 native plugins for Editor in 0.00 ms.
+Asset Pipeline Refresh (id=18198acc7c2f4b545bfce175f14e39a5): Total: 2.340 seconds - Initiated by InitialRefreshV2(ForceSynchronousImport)
+	Summary:
+		Imports: total=6 (actual=6, local cache=0, cache server=0)
+		Asset DB Process Time: managed=2 ms, native=335 ms
+		Asset DB Callback time: managed=45 ms, native=580 ms
+		Scripting: domain reloads=1, domain reload time=366 ms, compile time=1004 ms, other=5 ms
+		Project Asset Count: scripts=96, non-scripts=11
+		Asset File Changes: new=0, changed=7, moved=0, deleted=0
+		Scan Filter Count: 0
+	InvokeCustomDependenciesCallbacks: 0.001ms
+	InvokePackagesCallback: 581.077ms
+	ApplyChangesToAssetFolders: 0.210ms
+	Scan: 38.105ms
+	OnSourceAssetsModified: 0.515ms
+	CategorizeAssetsWithTransientArtifact: 1.735ms
+	ProcessAssetsWithTransientArtifactChanges: 2.990ms
+	CategorizeAssets: 0.418ms
+	ImportOutOfDateAssets: 250.746ms (-773.659ms without children)
+		ImportManagerImport: 19.694ms (3.119ms without children)
+			ImportInProcess: 16.541ms
+			UpdateCategorizedAssets: 0.035ms
+		CompileScripts: 1004.422ms
+		ReloadNativeAssets: 0.001ms
+		UnloadImportedAssets: 0.171ms
+		ReloadImportedAssets: 0.000ms
+		EnsureUptoDateAssetsAreRegisteredWithGuidPM: 0.018ms
+		InitializingProgressBar: 0.001ms
+		PostProcessAllAssetNotificationsAddChangedAssets: 0.001ms
+		OnDemandSchedulerStart: 0.096ms
+	PostProcessAllAssets: 45.670ms
+	Hotreload: 0.403ms
+	GatherAllCurrentPrimaryArtifactRevisions: 0.000ms
+	UnloadStreamsBegin: 0.189ms
+	PersistCurrentRevisions: 0.003ms
+	UnloadStreamsEnd: 0.001ms
+	GenerateScriptTypeHashes: 0.004ms
+	Untracked: 1418.140ms
+
+Application.AssetDatabase Initial Refresh End
+Scanning for USB devices : 1.835ms
+Initializing Unity extensions:
+[MODES] ModeService[none].Initialize
+[MODES] ModeService[none].LoadModes
+[MODES] Loading mode Default (0) for mode-current-id-QuadremeshHeadless
+Unloading 3 Unused Serialized files (Serialized files now loaded: 0)
+Unloading 456 unused Assets / (0.9 MB). Loaded Objects now: 956.
+Memory consumption went from 87.3 MB to 86.4 MB.
+Total: 3.153000 ms (FindLiveObjects: 0.047000 ms CreateObjectMapping: 0.017700 ms MarkObjects: 2.731200 ms  DeleteObjects: 0.356500 ms)
+
+
+=== ExtractorComparison (v1 vs v2, one solve, two extractions) ===
+v1 = NativeRemesher.QuadExtractor  (classify per edge, pairwise frame)
+v2 = NativeRemesher2.CellExtractor  (integrate, flow-repair, then classify)
+
+  case,floor,arm,faces,quadFrac,tris,ngons,irregular,irregPct,maxValence,v1verts,v2verts,clusters,residualBefore,residualAfter,stranded,changed,ms
+  torus,0,v1,2247,0.9034,216,1,483,0.2258,8,0,10,2083,0,0,0,0,308
+  torus,0,v2,2184,0.9602,83,4,617,0.2871,15,5,67,2094,206,32,32,2800,443
+  torus,0,v2-norepair,2247,0.9034,216,1,483,0.2258,8,0,10,2083,0,0,0,0,287
+  torus,0,v2-unclamped,2414,0.9648,85,0,893,0.3693,31,36,103,2239,206,32,32,2319,441
+      v2 clamped   : cellCollapse: edges=24582 (collapse=9025 out=12160 diag=3397 tear=0) applied=6100 rejLinked=42 fallback=42 clusters=2094 largest=24
+      v2 clamped   : flowRepair: faces=15335 dual=22515 (excl sing=20 twist=1033 bnd=0) x: supply=61 routed=47 stranded=14 cost=1477016 | y: supply=58 routed=40 stranded=18 cost=1278719 | changed=2800 residual=206->32 (stranded=32 unmet=0) unbalanced=32 141ms
+      v2 unclamped : cellCollapse: edges=24582 (collapse=8900 out=12023 diag=3247 tear=412) applied=5955 rejLinked=41 fallback=41 clusters=2239 largest=25
+      cellIndex: assigned=8194 unassigned=0 charts=1 largest=100.0 % twisted=1047 inconsistent=816 torn=728 triWithInteriorCell=853 triAcrossCharts=0 maxSpan=68 cells=1808
+  icosphere_80k,8,v1,2609,0.8153,481,1,1122,0.4724,8,6,55,2313,0,0,0,0,922
+  icosphere_80k,8,v2,3349,0.8895,362,8,1319,0.4109,11,36,112,2764,358,54,28,9239,1835
+  icosphere_80k,8,v2-norepair,2609,0.8153,481,1,1122,0.4724,8,6,55,2313,0,0,0,0,964
+  icosphere_80k,8,v2-unclamped,3241,0.9019,317,1,1660,0.4847,9,242,265,2998,358,38,20,8607,1892
+      v2 clamped   : cellCollapse: edges=122880 (collapse=81057 out=37781 diag=4042 tear=0) applied=38198 rejLinked=631 fallback=631 clusters=2764 largest=73
+      v2 clamped   : flowRepair: faces=56708 dual=77179 (excl sing=306 twist=24906 bnd=0) x: supply=83 routed=81 stranded=2 cost=5626221 | y: supply=97 routed=71 stranded=26 cost=4083470 | changed=9239 residual=358->54 (stranded=28 unmet=26) unbalanced=54 833ms
+      v2 unclamped : cellCollapse: edges=122880 (collapse=81258 out=36506 diag=3924 tear=1192) applied=37964 rejLinked=614 fallback=614 clusters=2998 largest=69
+      cellIndex: assigned=40962 unassigned=0 charts=1 largest=100.0 % twisted=25129 inconsistent=3710 torn=3199 triWithInteriorCell=18932 triAcrossCharts=0 maxSpan=67 cells=2247
+  cylinder_capped,8,v1,2191,0.9544,100,0,213,0.0994,16,0,9,2114,0,0,0,0,207
+  cylinder_capped,8,v2,2213,0.9666,70,4,620,0.2839,15,0,62,2107,105,33,11,2397,275
+  cylinder_capped,8,v2-norepair,2191,0.9544,100,0,213,0.0994,16,0,9,2114,0,0,0,0,208
+  cylinder_capped,8,v2-unclamped,2259,0.9788,48,0,735,0.3156,20,51,127,2247,105,33,11,1662,267
+      v2 clamped   : cellCollapse: edges=18477 (collapse=4905 out=10391 diag=3181 tear=0) applied=4054 rejLinked=32 fallback=32 clusters=2107 largest=44
+      v2 clamped   : flowRepair: faces=11827 dual=17499 (excl sing=8 twist=483 bnd=0) x: supply=32 routed=23 stranded=9 cost=1826917 | y: supply=15 routed=13 stranded=2 cost=734345 | changed=2397 residual=105->33 (stranded=11 unmet=22) unbalanced=33 56ms
+      v2 unclamped : cellCollapse: edges=18477 (collapse=4753 out=10471 diag=2869 tear=384) applied=3914 rejLinked=32 fallback=32 clusters=2247 largest=28
+      cellIndex: assigned=6161 unassigned=0 charts=1 largest=100.0 % twisted=489 inconsistent=271 torn=438 triWithInteriorCell=446 triAcrossCharts=0 maxSpan=68 cells=1632
+  sphere_bumpy,8,v1,2290,0.8777,280,0,600,0.2788,8,0,12,2103,0,0,0,0,240
+  sphere_bumpy,8,v2,2493,0.9410,147,0,710,0.2930,11,4,61,2228,232,42,32,3067,428
+  sphere_bumpy,8,v2-norepair,2290,0.8777,280,0,600,0.2788,8,0,12,2103,0,0,0,0,253
+  sphere_bumpy,8,v2-unclamped,2388,0.9384,146,1,1028,0.4129,25,108,162,2366,232,22,22,2951,433
+      v2 clamped   : cellCollapse: edges=30720 (collapse=13218 out=14616 diag=2886 tear=0) applied=8014 rejLinked=110 fallback=110 clusters=2228 largest=16
+      v2 clamped   : flowRepair: faces=15999 dual=22129 (excl sing=86 twist=4395 bnd=0) x: supply=59 routed=52 stranded=7 cost=1777052 | y: supply=68 routed=43 stranded=25 cost=1334167 | changed=3067 residual=232->42 (stranded=32 unmet=10) unbalanced=40 159ms
+      v2 unclamped : cellCollapse: edges=30720 (collapse=13181 out=14052 diag=2747 tear=740) applied=7876 rejLinked=92 fallback=92 clusters=2366 largest=20
+      cellIndex: assigned=10242 unassigned=0 charts=1 largest=100.0 % twisted=4456 inconsistent=1101 torn=1237 triWithInteriorCell=3540 triAcrossCharts=0 maxSpan=62 cells=2040
+  character: decimated to 54,740 tris
+  character,8,v1,6261,0.8487,945,2,2149,0.3707,9,11,84,5584,0,0,0,0,1615
+  character,8,v2,6325,0.9194,508,2,2500,0.4100,17,43,234,6099,935,107,48,10684,3185
+  character,8,v2-norepair,6261,0.8487,945,2,2149,0.3707,9,11,84,5584,0,0,0,0,1695
+  character,8,v2-unclamped,6302,0.9175,515,5,3402,0.5126,29,367,563,6696,935,33,11,9976,3480
+      v2 clamped   : cellCollapse: edges=87873 (collapse=35595 out=41770 diag=10508 tear=0) applied=23190 rejLinked=236 fallback=236 clusters=6099 largest=37
+      v2 clamped   : flowRepair: faces=50403 dual=71516 (excl sing=643 twist=7536 bnd=0) x: supply=225 routed=200 stranded=25 cost=6052930 | y: supply=237 routed=214 stranded=23 cost=6033556 | changed=10684 residual=935->107 (stranded=48 unmet=59) unbalanced=106 1461ms
+      v2 unclamped : cellCollapse: edges=87873 (collapse=34925 out=40463 diag=9847 tear=2638) applied=22593 rejLinked=210 fallback=210 clusters=6696 largest=37
+      cellIndex: assigned=29289 unassigned=0 charts=1 largest=100.0 % twisted=7963 inconsistent=2081 torn=4095 triWithInteriorCell=5483 triAcrossCharts=0 maxSpan=49 cells=2798
+
+Meshes written to Benchmarks/reference/v1-*.obj and v2-*.obj —
+open them side by side to see what the numbers describe.
+=== end ExtractorComparison ===
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:Log (object)
+NativeRemesher2.Benchmark.ExtractorComparison:Run () (at Assets/NativeRemesher2/Benchmark/ExtractorComparison.cs:80)
+
+(Filename: Assets/NativeRemesher2/Benchmark/ExtractorComparison.cs Line: 80)
+
+
+=== ExtractorComparison (v1 vs v2, one solve, two extractions) ===
+v1 = NativeRemesher.QuadExtractor  (classify per edge, pairwise frame)
+v2 = NativeRemesher2.CellExtractor  (integrate, flow-repair, then classify)
+
+  case,floor,arm,faces,quadFrac,tris,ngons,irregular,irregPct,maxValence,v1verts,v2verts,clusters,residualBefore,residualAfter,stranded,changed,ms
+  torus,0,v1,2247,0.9034,216,1,483,0.2258,8,0,10,2083,0,0,0,0,308
+  torus,0,v2,2184,0.9602,83,4,617,0.2871,15,5,67,2094,206,32,32,2800,443
+  torus,0,v2-norepair,2247,0.9034,216,1,483,0.2258,8,0,10,2083,0,0,0,0,287
+  torus,0,v2-unclamped,2414,0.9648,85,0,893,0.3693,31,36,103,2239,206,32,32,2319,441
+      v2 clamped   : cellCollapse: edges=24582 (collapse=9025 out=12160 diag=3397 tear=0) applied=6100 rejLinked=42 fallback=42 clusters=2094 largest=24
+      v2 clamped   : flowRepair: faces=15335 dual=22515 (excl sing=20 twist=1033 bnd=0) x: supply=61 routed=47 stranded=14 cost=1477016 | y: supply=58 routed=40 stranded=18 cost=1278719 | changed=2800 residual=206->32 (stranded=32 unmet=0) unbalanced=32 141ms
+      v2 unclamped : cellCollapse: edges=24582 (collapse=8900 out=12023 diag=3247 tear=412) applied=5955 rejLinked=41 fallback=41 clusters=2239 largest=25
+      cellIndex: assigned=8194 unassigned=0 charts=1 largest=100.0 % twisted=1047 inconsistent=816 torn=728 triWithInteriorCell=853 triAcrossCharts=0 maxSpan=68 cells=1808
+  icosphere_80k,8,v1,2609,0.8153,481,1,1122,0.4724,8,6,55,2313,0,0,0,0,922
+  icosphere_80k,8,v2,3349,0.8895,362,8,1319,0.4109,11,36,112,2764,358,54,28,9239,1835
+  icosphere_80k,8,v2-norepair,2609,0.8153,481,1,1122,0.4724,8,6,55,2313,0,0,0,0,964
+  icosphere_80k,8,v2-unclamped,3241,0.9019,317,1,1660,0.4847,9,242,265,2998,358,38,20,8607,1892
+      v2 clamped   : cellCollapse: edges=122880 (collapse=81057 out=37781 diag=4042 tear=0) applied=38198 rejLinked=631 fallback=631 clusters=2764 largest=73
+      v2 clamped   : flowRepair: faces=56708 dual=77179 (excl sing=306 twist=24906 bnd=0) x: supply=83 routed=81 stranded=2 cost=5626221 | y: supply=97 routed=71 stranded=26 cost=4083470 | changed=9239 residual=358->54 (stranded=28 unmet=26) unbalanced=54 833ms
+      v2 unclamped : cellCollapse: edges=122880 (collapse=81258 out=36506 diag=3924 tear=1192) applied=37964 rejLinked=614 fallback=614 clusters=2998 largest=69
+      cellIndex: assigned=40962 unassigned=0 charts=1 largest=100.0 % twisted=25129 inconsistent=3710 torn=3199 triWithInteriorCell=18932 triAcrossCharts=0 maxSpan=67 cells=2247
+  cylinder_capped,8,v1,2191,0.9544,100,0,213,0.0994,16,0,9,2114,0,0,0,0,207
+  cylinder_capped,8,v2,2213,0.9666,70,4,620,0.2839,15,0,62,2107,105,33,11,2397,275
+  cylinder_capped,8,v2-norepair,2191,0.9544,100,0,213,0.0994,16,0,9,2114,0,0,0,0,208
+  cylinder_capped,8,v2-unclamped,2259,0.9788,48,0,735,0.3156,20,51,127,2247,105,33,11,1662,267
+      v2 clamped   : cellCollapse: edges=18477 (collapse=4905 out=10391 diag=3181 tear=0) applied=4054 rejLinked=32 fallback=32 clusters=2107 largest=44
+      v2 clamped   : flowRepair: faces=11827 dual=17499 (excl sing=8 twist=483 bnd=0) x: supply=32 routed=23 stranded=9 cost=1826917 | y: supply=15 routed=13 stranded=2 cost=734345 | changed=2397 residual=105->33 (stranded=11 unmet=22) unbalanced=33 56ms
+      v2 unclamped : cellCollapse: edges=18477 (collapse=4753 out=10471 diag=2869 tear=384) applied=3914 rejLinked=32 fallback=32 clusters=2247 largest=28
+      cellIndex: assigned=6161 unassigned=0 charts=1 largest=100.0 % twisted=489 inconsistent=271 torn=438 triWithInteriorCell=446 triAcrossCharts=0 maxSpan=68 cells=1632
+  sphere_bumpy,8,v1,2290,0.8777,280,0,600,0.2788,8,0,12,2103,0,0,0,0,240
+  sphere_bumpy,8,v2,2493,0.9410,147,0,710,0.2930,11,4,61,2228,232,42,32,3067,428
+  sphere_bumpy,8,v2-norepair,2290,0.8777,280,0,600,0.2788,8,0,12,2103,0,0,0,0,253
+  sphere_bumpy,8,v2-unclamped,2388,0.9384,146,1,1028,0.4129,25,108,162,2366,232,22,22,2951,433
+      v2 clamped   : cellCollapse: edges=30720 (collapse=13218 out=14616 diag=2886 tear=0) applied=8014 rejLinked=110 fallback=110 clusters=2228 largest=16
+      v2 clamped   : flowRepair: faces=15999 dual=22129 (excl sing=86 twist=4395 bnd=0) x: supply=59 routed=52 stranded=7 cost=1777052 | y: supply=68 routed=43 stranded=25 cost=1334167 | changed=3067 residual=232->42 (stranded=32 unmet=10) unbalanced=40 159ms
+      v2 unclamped : cellCollapse: edges=30720 (collapse=13181 out=14052 diag=2747 tear=740) applied=7876 rejLinked=92 fallback=92 clusters=2366 largest=20
+      cellIndex: assigned=10242 unassigned=0 charts=1 largest=100.0 % twisted=4456 inconsistent=1101 torn=1237 triWithInteriorCell=3540 triAcrossCharts=0 maxSpan=62 cells=2040
+  character: decimated to 54,740 tris
+  character,8,v1,6261,0.8487,945,2,2149,0.3707,9,11,84,5584,0,0,0,0,1615
+  character,8,v2,6325,0.9194,508,2,2500,0.4100,17,43,234,6099,935,107,48,10684,3185
+  character,8,v2-norepair,6261,0.8487,945,2,2149,0.3707,9,11,84,5584,0,0,0,0,1695
+  character,8,v2-unclamped,6302,0.9175,515,5,3402,0.5126,29,367,563,6696,935,33,11,9976,3480
+      v2 clamped   : cellCollapse: edges=87873 (collapse=35595 out=41770 diag=10508 tear=0) applied=23190 rejLinked=236 fallback=236 clusters=6099 largest=37
+      v2 clamped   : flowRepair: faces=50403 dual=71516 (excl sing=643 twist=7536 bnd=0) x: supply=225 routed=200 stranded=25 cost=6052930 | y: supply=237 routed=214 stranded=23 cost=6033556 | changed=10684 residual=935->107 (stranded=48 unmet=59) unbalanced=106 1461ms
+      v2 unclamped : cellCollapse: edges=87873 (collapse=34925 out=40463 diag=9847 tear=2638) applied=22593 rejLinked=210 fallback=210 clusters=6696 largest=37
+      cellIndex: assigned=29289 unassigned=0 charts=1 largest=100.0 % twisted=7963 inconsistent=2081 torn=4095 triWithInteriorCell=5483 triAcrossCharts=0 maxSpan=49 cells=2798
+
+Meshes written to Benchmarks/reference/v1-*.obj and v2-*.obj —
+open them side by side to see what the numbers describe.
+=== end ExtractorComparison ===
+
+Batchmode quit successfully invoked - shutting down!
+[Physics::Module] Cleanup current backned.
+[Physics::Module] Id: 0xf2b8ea05
+Input System module state changed to: ShutdownInProgress.
+Input System polling thread exited.
+Input System module state changed to: Shutdown.
+[Licensing::IpcConnector] LicenseClient-user-notifications channel disconnected successfully.
+[Licensing::IpcConnector] LicenseClient-user channel disconnected successfully.
+AcceleratorClientConnectionCallback - disconnected - :0
+Cleanup mono
+abort_threads: Failed aborting id: 0000000000004A54, mono_thread_manage will ignore it
+
+abort_threads: Failed aborting id: 0000000000004A54, mono_thread_manage will ignore it
+
+debugger-agent: Unable to listen on 3556
+Exiting batchmode successfully now!
+Exiting without the bug reporter. Application will terminate with return code 0

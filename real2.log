@@ -1,0 +1,487 @@
+[Licensing::Module] Trying to connect to existing licensing client channel...
+Built from '6000.0/respin/6000.0.58f2-44b8bf3a32' branch; Version is '6000.0.58f2 (92dee566b325) revision 9625317'; Using compiler version '193933523'; Build Type 'Release'
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-rufat" at "2026-09-18T19:49:53.8300644Z"
+OS: 'Windows 11  (10.0.26200) 64bit CoreSingleLanguage' Language: 'en' Physical Memory: 64897 MB
+BatchMode: 1, IsHumanControllingUs: 0, StartBugReporterOnCrash: 0, Is64bit: 1
+Date: 2026-09-18T19:49:53Z
+
+COMMAND LINE ARGUMENTS:
+C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Unity.exe
+-batchmode
+-nographics
+-quit
+-projectPath
+Headless
+-executeMethod
+NativeRemesher.Benchmark.IntegerGridAudit.RunReal
+-targets
+1000,2500,5000
+-logFile
+C:/Users/rufat/UnityProject/remesher/real2.log
+Successfully changed project path to: C:/Users/rufat/UnityProject/remesher/Headless
+C:/Users/rufat/UnityProject/remesher/Headless
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=33554432"
+    "memorysetup-bucket-allocator-block-count=8"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=33554432"
+    "memorysetup-profiler-bucket-allocator-block-count=8"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=16777216"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=33554432"
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gfx=262144"
+Player connection [3416]  Target information:
+
+Player connection [3416]  * "[IP] 192.168.100.65 [Port] 55505 [Flags] 2 [Guid] 1658055145 [EditorId] 1658055145 [Version] 1048832 [Id] WindowsEditor(7,Rufat) [Debug] 1 [PackageName] WindowsEditor [ProjectName] Editor" 
+
+Player connection [3416]  * "[IP] 192.168.100.67 [Port] 55505 [Flags] 2 [Guid] 1658055145 [EditorId] 1658055145 [Version] 1048832 [Id] WindowsEditor(7,Rufat) [Debug] 1 [PackageName] WindowsEditor [ProjectName] Editor" 
+
+Player connection [3416] Host joined multi-casting on [225.0.0.222:54997]...
+Player connection [3416] Host joined alternative multi-casting on [225.0.0.222:34997]...
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+[Licensing::Client] Code 10 while verifying Licensing Client signature (process Id: 39808, path: "C:/Program Files/Unity Hub/UnityLicensingClient_V1/Unity.Licensing.Client.exe")
+[Licensing::Module] LicensingClient has failed validation; ignoring
+[Licensing::Client] Handshaking with LicensingClient:
+  Version:                 1.17.4+4293ba1
+  Session Id:              aab20fd4b4984c11be12a66497831a1c
+  Correlation Id:          8dc4277c2dd4869d5a679de7a9d47c8d
+  External correlation Id: 1798680902807141337
+  Machine Id:              OK7HIIc0hscU3zYy5uDl92BkRP8=
+[Licensing::Module] Successfully connected to LicensingClient on channel: "LicenseClient-rufat" (connect: 0.00s, validation: 0.00s, handshake: 0.04s)
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-rufat-notifications" at "2026-09-18T19:49:53.8697794Z"
+[Licensing::Module] Error: Access token is unavailable; failed to update
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] License group:
+  Id: 18966622505151-UnityPersXXXX
+  Product: Unity Personal
+  Type: Assigned
+  Expiration: Unlimited
+[Licensing::Client] Successfully updated license, isAsync: True, time: 0.00
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] Licensing Background thread has ended after 0.04s
+[Package Manager] Connected to IPC stream "Upm-17664" after 0.2 seconds.
+Library Redirect Path: Library/
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+Refreshing native plugins compatible for Editor in 0.00 ms, found 0 plugins.
+Preloading 0 native plugins for Editor in 0.00 ms.
+Initialize engine version: 6000.0.58f2 (92dee566b325)
+[Subsystems] Discovering subsystems at path C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/Resources/UnitySubsystems
+[Subsystems] Discovering subsystems at path C:/Users/rufat/UnityProject/remesher/Headless/Assets
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Initialize mono
+Mono path[0] = 'C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/Managed'
+Mono path[1] = 'C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/MonoBleedingEdge/lib/mono/unityjit-win32'
+Mono config path = 'C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/MonoBleedingEdge/etc'
+Using monoOptions --debugger-agent=transport=dt_socket,embedding=1,server=y,suspend=n,address=127.0.0.1:56664
+Using cacheserver namespaces - metadata:defaultmetadata, artifacts:defaultartifacts
+Using cacheserver namespaces - metadata:defaultmetadata, artifacts:defaultartifacts
+ImportWorker Server TCP listen port: 0
+AcceleratorClientConnectionCallback - disconnected - :0
+Begin MonoManager ReloadAssembly
+Registering precompiled unity dll's ...
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/PlaybackEngines/WindowsStandaloneSupport/UnityEditor.WindowsStandalone.Extensions.dll
+[Licensing::Client] Successfully resolved entitlement details
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.0.58f2/Editor/Data/PlaybackEngines/AndroidPlayer/UnityEditor.Android.Extensions.dll
+Registered in 0.005433 seconds.
+- Loaded All Assemblies, in  0.244 seconds
+Native extension for Android target not found
+Android Extension - Scanning For ADB Devices 2185 ms
+Native extension for WindowsStandalone target not found
+Mono: successfully reloaded assembly
+- Finished resetting the current domain, in  2.407 seconds
+Domain Reload Profiling: 2649ms
+	BeginReloadAssembly (84ms)
+		ExecutionOrderSort (0ms)
+		DisableScriptedObjects (0ms)
+		BackupInstance (0ms)
+		ReleaseScriptingObjects (0ms)
+		CreateAndSetChildDomain (1ms)
+	RebuildCommonClasses (21ms)
+	RebuildNativeTypeToScriptingClass (7ms)
+	initialDomainReloadingComplete (34ms)
+	LoadAllAssembliesAndSetupDomain (97ms)
+		LoadAssemblies (83ms)
+		RebuildTransferFunctionScriptingTraits (0ms)
+		AnalyzeDomain (94ms)
+			TypeCache.Refresh (93ms)
+				TypeCache.ScanAssembly (83ms)
+			BuildScriptInfoCaches (0ms)
+			ResolveRequiredComponents (0ms)
+	FinalizeReload (2407ms)
+		ReleaseScriptCaches (0ms)
+		RebuildScriptCaches (0ms)
+		SetupLoadedEditorAssemblies (2384ms)
+			LogAssemblyErrors (0ms)
+			InitializePlatformSupportModulesInManaged (2238ms)
+			SetLoadedEditorAssemblies (2ms)
+			BeforeProcessingInitializeOnLoad (35ms)
+			ProcessInitializeOnLoadAttributes (73ms)
+			ProcessInitializeOnLoadMethodAttributes (37ms)
+			AfterProcessingInitializeOnLoad (0ms)
+			EditorAssembliesLoaded (0ms)
+		ExecutionOrderSort2 (0ms)
+		AwakeInstancesAfterBackupRestoration (0ms)
+[Licensing::Client] Successfully resolved entitlement details
+Application.AssetDatabase Initial Refresh Start
+Package Manager log level set to [2]
+[Package Manager] Restoring resolved packages state from cache
+[Licensing::Client] Successfully resolved entitlement details
+[Package Manager] Registered 4 packages:
+  Built-in packages:
+    com.unity.test-framework@1.5.1 (location: C:\Users\rufat\UnityProject\remesher\Headless\Library\PackageCache\com.unity.test-framework@1f954279c37e)
+    com.unity.modules.imgui@1.0.0 (location: C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Data\Resources\PackageManager\BuiltInPackages\com.unity.modules.imgui)
+    com.unity.modules.jsonserialize@1.0.0 (location: C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Data\Resources\PackageManager\BuiltInPackages\com.unity.modules.jsonserialize)
+    com.unity.ext.nunit@2.0.5 (location: C:\Users\rufat\UnityProject\remesher\Headless\Library\PackageCache\com.unity.ext.nunit@031a54704bff)
+[Subsystems] No new subsystems found in resolved package list.
+[Package Manager] Done registering packages in 0.00 seconds
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:80
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Production
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: C:\Users\rufat\UnityProject\remesher\Headless\
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/Ping application/grpc -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'gRPC - /UnityILPP.PostProcessing/Ping'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'gRPC - /UnityILPP.PostProcessing/Ping'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/Ping application/grpc - - 200 - application/grpc 23.9445ms
+Starting: C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Data\bee_backend.exe --ipc --defer-dag-verification --dagfile="Library/Bee/1900b0aE.dag" --continue-on-failure --profile="Library/Bee/backend1.traceevents" ScriptAssemblies
+WorkingDir: C:/Users/rufat/UnityProject/remesher/Headless
+DisplayProgressbar: Compiling Scripts
+ExitCode: 0 Duration: 0s49ms
+*** Tundra build success (0.03 seconds), 0 items updated, 176 evaluated
+AssetDatabase: script compilation time: 0.291220s
+Begin MonoManager ReloadAssembly
+- Loaded All Assemblies, in  0.342 seconds
+Refreshing native plugins compatible for Editor in 0.00 ms, found 0 plugins.
+Native extension for Android target not found
+Native extension for WindowsStandalone target not found
+Mono: successfully reloaded assembly
+- Finished resetting the current domain, in  0.219 seconds
+Domain Reload Profiling: 560ms
+	BeginReloadAssembly (218ms)
+		ExecutionOrderSort (0ms)
+		DisableScriptedObjects (7ms)
+		BackupInstance (0ms)
+		ReleaseScriptingObjects (0ms)
+		CreateAndSetChildDomain (125ms)
+	RebuildCommonClasses (21ms)
+	RebuildNativeTypeToScriptingClass (7ms)
+	initialDomainReloadingComplete (15ms)
+	LoadAllAssembliesAndSetupDomain (80ms)
+		LoadAssemblies (127ms)
+		RebuildTransferFunctionScriptingTraits (0ms)
+		AnalyzeDomain (17ms)
+			TypeCache.Refresh (13ms)
+				TypeCache.ScanAssembly (9ms)
+			BuildScriptInfoCaches (2ms)
+			ResolveRequiredComponents (0ms)
+	FinalizeReload (219ms)
+		ReleaseScriptCaches (0ms)
+		RebuildScriptCaches (0ms)
+		SetupLoadedEditorAssemblies (154ms)
+			LogAssemblyErrors (0ms)
+			InitializePlatformSupportModulesInManaged (14ms)
+			SetLoadedEditorAssemblies (1ms)
+			BeforeProcessingInitializeOnLoad (57ms)
+			ProcessInitializeOnLoadAttributes (64ms)
+			ProcessInitializeOnLoadMethodAttributes (14ms)
+			AfterProcessingInitializeOnLoad (4ms)
+			EditorAssembliesLoaded (0ms)
+		ExecutionOrderSort2 (0ms)
+		AwakeInstancesAfterBackupRestoration (7ms)
+Asset Pipeline Refresh (id=caf9ff57688421b4a84b812becf16e93): Total: 0.941 seconds - Initiated by InitialRefreshV2(ForceSynchronousImport)
+	Summary:
+		Imports: total=0 (actual=0, local cache=0, cache server=0)
+		Asset DB Process Time: managed=0 ms, native=286 ms
+		Asset DB Callback time: managed=8 ms, native=3 ms
+		Scripting: domain reloads=1, domain reload time=342 ms, compile time=293 ms, other=6 ms
+		Project Asset Count: scripts=90, non-scripts=11
+		Asset File Changes: new=0, changed=0, moved=0, deleted=0
+		Scan Filter Count: 0
+	InvokeCustomDependenciesCallbacks: 0.001ms
+	InvokePackagesCallback: 5.002ms
+	ApplyChangesToAssetFolders: 0.197ms
+	Scan: 17.169ms
+	OnSourceAssetsModified: 0.001ms
+	CategorizeAssetsWithTransientArtifact: 1.740ms
+	ProcessAssetsWithTransientArtifactChanges: 3.058ms
+	CategorizeAssets: 0.408ms
+	ImportOutOfDateAssets: 219.723ms (-73.086ms without children)
+		CompileScripts: 292.602ms
+		ReloadNativeAssets: 0.001ms
+		UnloadImportedAssets: 0.078ms
+		EnsureUptoDateAssetsAreRegisteredWithGuidPM: 0.013ms
+		InitializingProgressBar: 0.000ms
+		PostProcessAllAssetNotificationsAddChangedAssets: 0.000ms
+		OnDemandSchedulerStart: 0.115ms
+	PostProcessAllAssets: 8.870ms
+	GatherAllCurrentPrimaryArtifactRevisions: 0.000ms
+	UnloadStreamsBegin: 0.168ms
+	PersistCurrentRevisions: 0.003ms
+	UnloadStreamsEnd: 0.001ms
+	GenerateScriptTypeHashes: 0.003ms
+	Untracked: 684.735ms
+
+Application.AssetDatabase Initial Refresh End
+Scanning for USB devices : 1.605ms
+Initializing Unity extensions:
+[MODES] ModeService[none].Initialize
+[MODES] ModeService[none].LoadModes
+[MODES] Loading mode Default (0) for mode-current-id-QuadremeshHeadless
+Unloading 3 Unused Serialized files (Serialized files now loaded: 0)
+Unloading 485 unused Assets / (1.0 MB). Loaded Objects now: 985.
+Memory consumption went from 86.0 MB to 85.0 MB.
+Total: 3.237700 ms (FindLiveObjects: 0.061400 ms CreateObjectMapping: 0.012100 ms MarkObjects: 2.686800 ms  DeleteObjects: 0.476700 ms)
+
+
+=== IntegerGridAudit (real assets) ===
+  asset,profile,target,extractor,faces,quadFrac,tris,ngons,interior,irregular,v3,v5,vHigher,bndEdges,nonManifold,components,hausdorff,chamfer,inputTris,fieldSing,ms
+  head,Photogrammetry,1000,collapse,1019,0.9195,78,4,942,539,290,151,98,98,0,3,0.04437,0.00369,10000,124,15714
+      subdiv:   verts=4918->4918 tris=10000->10000 rounds=4 split=932 perRound=[782,139,6,5] unresolved=782 ABANDONED(diverging at round 5: 6 splits after 5) 365ms
+      collapse: edges=15000 (collapse=5621 out=6950 discard=2429 / 16.2 %) applied=2719 rejLinked=52 rejFeature=0 rejLarge=0 rejOpposed=1809 fallback=1 splitCells=1062/1289 (rejLarge=2) clusters=1137 largest=36
+      dirs:     occupied=[2 20 198 447 470] fitted=[2 20 195 439 481]->[2 20 195 439 481] contested=518 surplus=609 vacant=897 removed=0 (oneSided=0 strand=0 prot=0) added=0 (notMutual=0 offAxis=0 badSpan=0 none=0)
+      cleanup:  v1removed=22 v2spliced=160 v2kept=0 isolated=2 rounds=3 | graph 953 verts mean=4.027 [3=339 4=400 5=129 6=46 7+=39]
+      trace:    faces=721 (quads=436 tris=198 5=43 6=30 7=10 8=4) walks=8743 failed=8022 holesClosed=0 unusedSlots=1003
+      holeFill: boundaryEdges=485 capped=40 split=9 quadrangulated=10(+26quads) grid=9(+75quads +4ears +33verts rej=0 largest=16) hubLargest=7 ngonCaps=14 fanned=0 added=43 abandoned=1(dead=0 long=0 offSurface=0 longest=0) leftOpen=0 uncovered=75 largestCap=27 fans=n=10/med=6/max=7/gt128=0/gt512=0 refused=n=15/med=12/max=75/gt128=0/gt512=0
+      regular:  candidates=53 merged=32 rejNonConvex=9 rejQuality=4 trisLeft=152
+      triPair:  trianglePairing: 152 -> 86 triangles (66 removed), 33 of 124 pairs applied in 3 rounds [n1:23 n2:6 n3:1], refused 15 loop + 2 interior + 64 quality (nonConvex 64, backwards 0, dupEdge 0, threshold 0), 1 needed a fold, 10 overlapping, open edges 75 -> 75, faces 832 -> 799, 4 ms
+      ngonSplit: split=97 (+296quads +59tris) added=97 largest=27 refused=0 nonSimple=4
+      repair:   faces=1026->1019 dup=7 (opposite=7) collapsed=0 degenerate=0 zeroArea=0 overIncident=0
+      orient:   components=13 (closed=5 weak=0 minConf=0.280) flipped=12 consistency=0 faces=1014/1019 inconsistentEdges=0 disagreeAfter=31 negligible=0
+      relax:    iters=17 movable=942 moves=12157 rejFlip=110 rejProj=0 rejFeature=0 rejDrift=3747 onCrease=0 sliding=0 junction=0 meanMove=0.029 maxMove=0.497 cells
+      snap:     snapped 0 (0 corners) of 0 candidates, mean move 0.000 cells, rejected flip 0 sliver 0
+  head,Photogrammetry,1000,integer,940,1.0000,0,0,923,125,68,57,0,26,0,2,0.05429,0.00449,36010,186,16913
+      igm:      in v=17923 f=36010 e=54015 sing=228 sharp=0 unsat=362->0 valve=0+0 flow: supply=244 routed=244 iters=1 cap=2 cost=3857 arcs=104805 | pos: n=1982 nnz=27732 cg=40 move=0.03246 | clamped=0 subdiv=420+75 oor=0 onFlip=68 capped=0 stillLong=0 flips=328->31 (5 passes) | levels=11 compact=991 out=949 flippedTris=20 degen=0 unpaired=26 holeQuads=13 v2=35 nmSplit=107 hiVal=14 | ms build=371 cons=33 flow=778 subdiv=45 flip=145 pos=16 extract=34 total=1427
+      igm:      in v=17923 f=36010 e=54015 sing=228 sharp=0 unsat=362->0 valve=0+0 flow: supply=244 routed=244 iters=1 cap=2 cost=3857 arcs=104805 | pos: n=1982 nnz=27732 cg=40 move=0.03246 | clamped=0 subdiv=420+75 oor=0 onFlip=68 capped=0 stillLong=0 flips=328->31 (5 passes) | levels=11 compact=991 out=949 flippedTris=20 degen=0 unpaired=26 holeQuads=13 v2=35 nmSplit=107 hiVal=14 | ms build=371 cons=33 flow=778 subdiv=45 flip=145 pos=16 extract=34 total=1427
+      collapse: 
+      dirs:     
+      cleanup:  
+      trace:    
+      holeFill: 
+      regular:  
+      ngonSplit: 
+      repair:   faces=940->940 dup=0 (opposite=0) collapsed=0 degenerate=0 zeroArea=0 overIncident=0
+      orient:   components=2 (closed=1 weak=0 minConf=0.952) flipped=0 consistency=0 faces=0/940 inconsistentEdges=0 disagreeAfter=21 negligible=0
+      relax:    iters=24 movable=923 moves=19873 rejFlip=11 rejProj=24 rejFeature=0 rejDrift=2244 onCrease=0 sliding=0 junction=0 meanMove=0.015 maxMove=0.496 cells
+      snap:     snapped 0 (0 corners) of 0 candidates, mean move 0.000 cells, rejected flip 0 sliver 0
+  head,Photogrammetry,2500,collapse,2518,0.9472,127,6,2449,899,421,333,145,25,0,5,0.02511,0.00206,25000,308,16479
+      subdiv:   verts=12418->14986 tris=25000->30136 rounds=6 split=2568 perRound=[2080,453,32,1,1,1] unresolved=1 1121ms
+      collapse: edges=45204 (collapse=16874 out=23593 discard=4737 / 10.5 %) applied=8977 rejLinked=136 rejFeature=0 rejLarge=0 rejOpposed=5225 fallback=6 splitCells=3561/4193 (rejLarge=37) clusters=2448 largest=50
+      dirs:     occupied=[0 2 102 311 2033] fitted=[0 2 99 304 2043]->[0 2 99 304 2043] contested=1003 surplus=1132 vacant=508 removed=0 (oneSided=0 strand=0 prot=0) added=0 (notMutual=0 offAxis=0 badSpan=0 none=0)
+      cleanup:  v1removed=2 v2spliced=42 v2kept=0 isolated=0 rounds=2 | graph 2404 verts mean=4.285 [3=175 4=1699 5=336 6=113 7+=81]
+      trace:    faces=2415 (quads=1772 tris=601 5=27 6=10 7=2 8=3) walks=11900 failed=9485 holesClosed=0 unusedSlots=1176
+      holeFill: boundaryEdges=512 capped=67 split=13 quadrangulated=11(+33quads) grid=5(+105quads +2ears +73verts rej=0 largest=37) hubLargest=7 ngonCaps=24 fanned=0 added=84 abandoned=0(dead=0 long=0 offSurface=0 longest=0) leftOpen=0 uncovered=0 largestCap=38 fans=n=11/med=6/max=7/gt128=0/gt512=0 refused=n=24/med=8/max=38/gt128=0/gt512=0
+      regular:  candidates=242 merged=134 rejNonConvex=29 rejQuality=14 trisLeft=354
+      triPair:  trianglePairing: 354 -> 122 triangles (232 removed), 116 of 358 pairs applied in 5 rounds [n1:73 n2:25 n3:6 n4:2], refused 35 loop + 0 interior + 173 quality (nonConvex 173, backwards 0, dupEdge 0, threshold 0), 18 needed a fold, 34 overlapping, open edges 0 -> 0, faces 2,484 -> 2,368, 9 ms
+      ngonSplit: split=60 (+193quads +38tris) added=60 largest=38 refused=0 nonSimple=6
+      repair:   faces=2526->2518 dup=8 (opposite=8) collapsed=0 degenerate=0 zeroArea=0 overIncident=0
+      orient:   components=15 (closed=7 weak=0 minConf=0.169) flipped=15 consistency=0 faces=2518/2518 inconsistentEdges=0 disagreeAfter=90 negligible=0
+      relax:    iters=21 movable=2449 moves=44271 rejFlip=190 rejProj=21 rejFeature=0 rejDrift=6947 onCrease=0 sliding=0 junction=0 meanMove=0.018 maxMove=0.498 cells
+      snap:     snapped 0 (0 corners) of 0 candidates, mean move 0.000 cells, rejected flip 0 sliver 0
+  head,Photogrammetry,2500,integer,2195,1.0000,0,0,2150,237,125,112,0,64,0,4,0.05245,0.00280,94264,376,21659
+      igm:      in v=47050 f=94264 e=141396 sing=594 sharp=0 unsat=811->0 valve=14+0 flow: supply=488 routed=488 iters=1 cap=2 cost=10010 arcs=274966 | pos: n=4540 nnz=63416 cg=40 move=0.02833 | clamped=0 subdiv=858+294 oor=0 onFlip=176 capped=0 stillLong=0 flips=932->67 (5 passes) | levels=12 compact=2270 out=2214 flippedTris=57 degen=0 unpaired=36 holeQuads=6 v2=54 nmSplit=139 hiVal=33 | ms build=944 cons=95 flow=3670 subdiv=136 flip=380 pos=34 extract=94 total=5357
+      igm:      in v=47050 f=94264 e=141396 sing=594 sharp=0 unsat=811->0 valve=14+0 flow: supply=488 routed=488 iters=1 cap=2 cost=10010 arcs=274966 | pos: n=4540 nnz=63416 cg=40 move=0.02833 | clamped=0 subdiv=858+294 oor=0 onFlip=176 capped=0 stillLong=0 flips=932->67 (5 passes) | levels=12 compact=2270 out=2214 flippedTris=57 degen=0 unpaired=36 holeQuads=6 v2=54 nmSplit=139 hiVal=33 | ms build=944 cons=95 flow=3670 subdiv=136 flip=380 pos=34 extract=94 total=5357
+      collapse: 
+      dirs:     
+      cleanup:  
+      trace:    
+      holeFill: 
+      regular:  
+      ngonSplit: 
+      repair:   faces=2195->2195 dup=0 (opposite=0) collapsed=0 degenerate=0 zeroArea=0 overIncident=0
+      orient:   components=4 (closed=1 weak=0 minConf=0.602) flipped=0 consistency=0 faces=0/2195 inconsistentEdges=0 disagreeAfter=37 negligible=0
+      relax:    iters=24 movable=2150 moves=46292 rejFlip=75 rejProj=121 rejFeature=0 rejDrift=5112 onCrease=0 sliding=0 junction=0 meanMove=0.015 maxMove=0.499 cells
+      snap:     snapped 0 (0 corners) of 0 candidates, mean move 0.000 cells, rejected flip 0 sliver 0
+  head,Photogrammetry,5000,collapse,5142,0.9516,239,10,5017,1794,824,637,333,40,0,8,0.01577,0.00126,50000,469,21797
+      subdiv:   verts=24918->30198 tris=50000->60560 rounds=4 split=5280 perRound=[4311,906,62,1] unresolved=0 1859ms
+      collapse: edges=90840 (collapse=34106 out=47523 discard=9211 / 10.1 %) applied=18880 rejLinked=287 rejFeature=0 rejLarge=0 rejOpposed=9720 fallback=14 splitCells=6324/7481 (rejLarge=36) clusters=4994 largest=71
+      dirs:     occupied=[0 4 168 558 4264] fitted=[0 5 162 531 4296]->[0 5 162 531 4296] contested=1893 surplus=2186 vacant=870 removed=0 (oneSided=0 strand=0 prot=0) added=0 (notMutual=0 offAxis=0 badSpan=0 none=0)
+      cleanup:  v1removed=3 v2spliced=86 v2kept=0 isolated=0 rounds=4 | graph 4905 verts mean=4.293 [3=212 4=3688 5=640 6=191 7+=174]
+      trace:    faces=4919 (quads=3686 tris=1142 5=60 6=20 7=6 8=5) walks=23989 failed=19070 holesClosed=0 unusedSlots=2386
+      holeFill: boundaryEdges=1108 capped=141 split=27 quadrangulated=20(+54quads) grid=16(+137quads +5ears +66verts rej=0 largest=24) hubLargest=7 ngonCaps=72 fanned=0 added=86 abandoned=0(dead=0 long=0 offSurface=0 longest=0) leftOpen=0 uncovered=0 largestCap=33 fans=n=20/med=6/max=7/gt128=0/gt512=0 refused=n=72/med=7/max=33/gt128=0/gt512=0
+      regular:  candidates=454 merged=243 rejNonConvex=53 rejQuality=40 trisLeft=693
+      triPair:  trianglePairing: 693 -> 223 triangles (470 removed), 235 of 719 pairs applied in 5 rounds [n1:148 n2:38 n3:14 n4:5], refused 20 loop + 4 interior + 385 quality (nonConvex 385, backwards 0, dupEdge 0, threshold 0), 33 needed a fold, 75 overlapping, open edges 0 -> 0, faces 5,008 -> 4,773, 22 ms
+      ngonSplit: split=153 (+473quads +100tris) added=153 largest=33 refused=0 nonSimple=10
+      repair:   faces=5153->5142 dup=11 (opposite=11) collapsed=0 degenerate=0 zeroArea=0 overIncident=0
+      orient:   components=26 (closed=15 weak=1 minConf=0.000) flipped=24 consistency=0 faces=5134/5142 inconsistentEdges=0 disagreeAfter=135 negligible=0
+      relax:    iters=21 movable=5017 moves=91471 rejFlip=257 rejProj=0 rejFeature=0 rejDrift=13629 onCrease=0 sliding=0 junction=0 meanMove=0.017 maxMove=0.500 cells
+      snap:     snapped 0 (0 corners) of 0 candidates, mean move 0.000 cells, rejected flip 0 sliver 0
+  head,Photogrammetry,5000,integer,4389,1.0000,0,0,4325,538,227,310,1,60,0,1,0.03597,0.00163,191202,558,43220
+      igm:      in v=95519 f=191202 e=286803 sing=1042 sharp=0 unsat=1585->0 valve=23+0 flow: supply=1 routed=1 iters=2 cap=3 cost=314 arcs=557367 | pos: n=8906 nnz=124436 cg=40 move=0.01973 | clamped=0 subdiv=1968+733 oor=0 onFlip=447 capped=0 stillLong=0 flips=2265->118 (6 passes) | levels=13 compact=4453 out=4385 flippedTris=109 degen=0 unpaired=34 holeQuads=13 v2=86 nmSplit=128 hiVal=86 | ms build=1918 cons=189 flow=18129 subdiv=260 flip=935 pos=78 extract=194 total=21707
+      igm:      in v=95519 f=191202 e=286803 sing=1042 sharp=0 unsat=1585->0 valve=23+0 flow: supply=1 routed=1 iters=2 cap=3 cost=314 arcs=557367 | pos: n=8906 nnz=124436 cg=40 move=0.01973 | clamped=0 subdiv=1968+733 oor=0 onFlip=447 capped=0 stillLong=0 flips=2265->118 (6 passes) | levels=13 compact=4453 out=4385 flippedTris=109 degen=0 unpaired=34 holeQuads=13 v2=86 nmSplit=128 hiVal=86 | ms build=1918 cons=189 flow=18129 subdiv=260 flip=935 pos=78 extract=194 total=21707
+      collapse: 
+      dirs:     
+      cleanup:  
+      trace:    
+      holeFill: 
+      regular:  
+      ngonSplit: 
+      repair:   faces=4389->4389 dup=0 (opposite=0) collapsed=0 degenerate=0 zeroArea=0 overIncident=0
+      orient:   components=1 (closed=0 weak=0 minConf=0.956) flipped=0 consistency=0 faces=0/4389 inconsistentEdges=0 disagreeAfter=62 negligible=0
+      relax:    iters=24 movable=4325 moves=94005 rejFlip=126 rejProj=50 rejFeature=0 rejDrift=9619 onCrease=0 sliding=0 junction=0 meanMove=0.015 maxMove=0.499 cells
+      snap:     snapped 0 (0 corners) of 0 candidates, mean move 0.000 cells, rejected flip 0 sliver 0
+=== end IntegerGridAudit (real assets) ===
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:Log (object)
+NativeRemesher.Benchmark.IntegerGridAudit:RunReal () (at Assets/NativeRemesher/Benchmark/IntegerGridAudit.cs:238)
+
+(Filename: Assets/NativeRemesher/Benchmark/IntegerGridAudit.cs Line: 238)
+
+
+=== IntegerGridAudit (real assets) ===
+  asset,profile,target,extractor,faces,quadFrac,tris,ngons,interior,irregular,v3,v5,vHigher,bndEdges,nonManifold,components,hausdorff,chamfer,inputTris,fieldSing,ms
+  head,Photogrammetry,1000,collapse,1019,0.9195,78,4,942,539,290,151,98,98,0,3,0.04437,0.00369,10000,124,15714
+      subdiv:   verts=4918->4918 tris=10000->10000 rounds=4 split=932 perRound=[782,139,6,5] unresolved=782 ABANDONED(diverging at round 5: 6 splits after 5) 365ms
+      collapse: edges=15000 (collapse=5621 out=6950 discard=2429 / 16.2 %) applied=2719 rejLinked=52 rejFeature=0 rejLarge=0 rejOpposed=1809 fallback=1 splitCells=1062/1289 (rejLarge=2) clusters=1137 largest=36
+      dirs:     occupied=[2 20 198 447 470] fitted=[2 20 195 439 481]->[2 20 195 439 481] contested=518 surplus=609 vacant=897 removed=0 (oneSided=0 strand=0 prot=0) added=0 (notMutual=0 offAxis=0 badSpan=0 none=0)
+      cleanup:  v1removed=22 v2spliced=160 v2kept=0 isolated=2 rounds=3 | graph 953 verts mean=4.027 [3=339 4=400 5=129 6=46 7+=39]
+      trace:    faces=721 (quads=436 tris=198 5=43 6=30 7=10 8=4) walks=8743 failed=8022 holesClosed=0 unusedSlots=1003
+      holeFill: boundaryEdges=485 capped=40 split=9 quadrangulated=10(+26quads) grid=9(+75quads +4ears +33verts rej=0 largest=16) hubLargest=7 ngonCaps=14 fanned=0 added=43 abandoned=1(dead=0 long=0 offSurface=0 longest=0) leftOpen=0 uncovered=75 largestCap=27 fans=n=10/med=6/max=7/gt128=0/gt512=0 refused=n=15/med=12/max=75/gt128=0/gt512=0
+      regular:  candidates=53 merged=32 rejNonConvex=9 rejQuality=4 trisLeft=152
+      triPair:  trianglePairing: 152 -> 86 triangles (66 removed), 33 of 124 pairs applied in 3 rounds [n1:23 n2:6 n3:1], refused 15 loop + 2 interior + 64 quality (nonConvex 64, backwards 0, dupEdge 0, threshold 0), 1 needed a fold, 10 overlapping, open edges 75 -> 75, faces 832 -> 799, 4 ms
+      ngonSplit: split=97 (+296quads +59tris) added=97 largest=27 refused=0 nonSimple=4
+      repair:   faces=1026->1019 dup=7 (opposite=7) collapsed=0 degenerate=0 zeroArea=0 overIncident=0
+      orient:   components=13 (closed=5 weak=0 minConf=0.280) flipped=12 consistency=0 faces=1014/1019 inconsistentEdges=0 disagreeAfter=31 negligible=0
+      relax:    iters=17 movable=942 moves=12157 rejFlip=110 rejProj=0 rejFeature=0 rejDrift=3747 onCrease=0 sliding=0 junction=0 meanMove=0.029 maxMove=0.497 cells
+      snap:     snapped 0 (0 corners) of 0 candidates, mean move 0.000 cells, rejected flip 0 sliver 0
+  head,Photogrammetry,1000,integer,940,1.0000,0,0,923,125,68,57,0,26,0,2,0.05429,0.00449,36010,186,16913
+      igm:      in v=17923 f=36010 e=54015 sing=228 sharp=0 unsat=362->0 valve=0+0 flow: supply=244 routed=244 iters=1 cap=2 cost=3857 arcs=104805 | pos: n=1982 nnz=27732 cg=40 move=0.03246 | clamped=0 subdiv=420+75 oor=0 onFlip=68 capped=0 stillLong=0 flips=328->31 (5 passes) | levels=11 compact=991 out=949 flippedTris=20 degen=0 unpaired=26 holeQuads=13 v2=35 nmSplit=107 hiVal=14 | ms build=371 cons=33 flow=778 subdiv=45 flip=145 pos=16 extract=34 total=1427
+      igm:      in v=17923 f=36010 e=54015 sing=228 sharp=0 unsat=362->0 valve=0+0 flow: supply=244 routed=244 iters=1 cap=2 cost=3857 arcs=104805 | pos: n=1982 nnz=27732 cg=40 move=0.03246 | clamped=0 subdiv=420+75 oor=0 onFlip=68 capped=0 stillLong=0 flips=328->31 (5 passes) | levels=11 compact=991 out=949 flippedTris=20 degen=0 unpaired=26 holeQuads=13 v2=35 nmSplit=107 hiVal=14 | ms build=371 cons=33 flow=778 subdiv=45 flip=145 pos=16 extract=34 total=1427
+      collapse: 
+      dirs:     
+      cleanup:  
+      trace:    
+      holeFill: 
+      regular:  
+      ngonSplit: 
+      repair:   faces=940->940 dup=0 (opposite=0) collapsed=0 degenerate=0 zeroArea=0 overIncident=0
+      orient:   components=2 (closed=1 weak=0 minConf=0.952) flipped=0 consistency=0 faces=0/940 inconsistentEdges=0 disagreeAfter=21 negligible=0
+      relax:    iters=24 movable=923 moves=19873 rejFlip=11 rejProj=24 rejFeature=0 rejDrift=2244 onCrease=0 sliding=0 junction=0 meanMove=0.015 maxMove=0.496 cells
+      snap:     snapped 0 (0 corners) of 0 candidates, mean move 0.000 cells, rejected flip 0 sliver 0
+  head,Photogrammetry,2500,collapse,2518,0.9472,127,6,2449,899,421,333,145,25,0,5,0.02511,0.00206,25000,308,16479
+      subdiv:   verts=12418->14986 tris=25000->30136 rounds=6 split=2568 perRound=[2080,453,32,1,1,1] unresolved=1 1121ms
+      collapse: edges=45204 (collapse=16874 out=23593 discard=4737 / 10.5 %) applied=8977 rejLinked=136 rejFeature=0 rejLarge=0 rejOpposed=5225 fallback=6 splitCells=3561/4193 (rejLarge=37) clusters=2448 largest=50
+      dirs:     occupied=[0 2 102 311 2033] fitted=[0 2 99 304 2043]->[0 2 99 304 2043] contested=1003 surplus=1132 vacant=508 removed=0 (oneSided=0 strand=0 prot=0) added=0 (notMutual=0 offAxis=0 badSpan=0 none=0)
+      cleanup:  v1removed=2 v2spliced=42 v2kept=0 isolated=0 rounds=2 | graph 2404 verts mean=4.285 [3=175 4=1699 5=336 6=113 7+=81]
+      trace:    faces=2415 (quads=1772 tris=601 5=27 6=10 7=2 8=3) walks=11900 failed=9485 holesClosed=0 unusedSlots=1176
+      holeFill: boundaryEdges=512 capped=67 split=13 quadrangulated=11(+33quads) grid=5(+105quads +2ears +73verts rej=0 largest=37) hubLargest=7 ngonCaps=24 fanned=0 added=84 abandoned=0(dead=0 long=0 offSurface=0 longest=0) leftOpen=0 uncovered=0 largestCap=38 fans=n=11/med=6/max=7/gt128=0/gt512=0 refused=n=24/med=8/max=38/gt128=0/gt512=0
+      regular:  candidates=242 merged=134 rejNonConvex=29 rejQuality=14 trisLeft=354
+      triPair:  trianglePairing: 354 -> 122 triangles (232 removed), 116 of 358 pairs applied in 5 rounds [n1:73 n2:25 n3:6 n4:2], refused 35 loop + 0 interior + 173 quality (nonConvex 173, backwards 0, dupEdge 0, threshold 0), 18 needed a fold, 34 overlapping, open edges 0 -> 0, faces 2,484 -> 2,368, 9 ms
+      ngonSplit: split=60 (+193quads +38tris) added=60 largest=38 refused=0 nonSimple=6
+      repair:   faces=2526->2518 dup=8 (opposite=8) collapsed=0 degenerate=0 zeroArea=0 overIncident=0
+      orient:   components=15 (closed=7 weak=0 minConf=0.169) flipped=15 consistency=0 faces=2518/2518 inconsistentEdges=0 disagreeAfter=90 negligible=0
+      relax:    iters=21 movable=2449 moves=44271 rejFlip=190 rejProj=21 rejFeature=0 rejDrift=6947 onCrease=0 sliding=0 junction=0 meanMove=0.018 maxMove=0.498 cells
+      snap:     snapped 0 (0 corners) of 0 candidates, mean move 0.000 cells, rejected flip 0 sliver 0
+  head,Photogrammetry,2500,integer,2195,1.0000,0,0,2150,237,125,112,0,64,0,4,0.05245,0.00280,94264,376,21659
+      igm:      in v=47050 f=94264 e=141396 sing=594 sharp=0 unsat=811->0 valve=14+0 flow: supply=488 routed=488 iters=1 cap=2 cost=10010 arcs=274966 | pos: n=4540 nnz=63416 cg=40 move=0.02833 | clamped=0 subdiv=858+294 oor=0 onFlip=176 capped=0 stillLong=0 flips=932->67 (5 passes) | levels=12 compact=2270 out=2214 flippedTris=57 degen=0 unpaired=36 holeQuads=6 v2=54 nmSplit=139 hiVal=33 | ms build=944 cons=95 flow=3670 subdiv=136 flip=380 pos=34 extract=94 total=5357
+      igm:      in v=47050 f=94264 e=141396 sing=594 sharp=0 unsat=811->0 valve=14+0 flow: supply=488 routed=488 iters=1 cap=2 cost=10010 arcs=274966 | pos: n=4540 nnz=63416 cg=40 move=0.02833 | clamped=0 subdiv=858+294 oor=0 onFlip=176 capped=0 stillLong=0 flips=932->67 (5 passes) | levels=12 compact=2270 out=2214 flippedTris=57 degen=0 unpaired=36 holeQuads=6 v2=54 nmSplit=139 hiVal=33 | ms build=944 cons=95 flow=3670 subdiv=136 flip=380 pos=34 extract=94 total=5357
+      collapse: 
+      dirs:     
+      cleanup:  
+      trace:    
+      holeFill: 
+      regular:  
+      ngonSplit: 
+      repair:   faces=2195->2195 dup=0 (opposite=0) collapsed=0 degenerate=0 zeroArea=0 overIncident=0
+      orient:   components=4 (closed=1 weak=0 minConf=0.602) flipped=0 consistency=0 faces=0/2195 inconsistentEdges=0 disagreeAfter=37 negligible=0
+      relax:    iters=24 movable=2150 moves=46292 rejFlip=75 rejProj=121 rejFeature=0 rejDrift=5112 onCrease=0 sliding=0 junction=0 meanMove=0.015 maxMove=0.499 cells
+      snap:     snapped 0 (0 corners) of 0 candidates, mean move 0.000 cells, rejected flip 0 sliver 0
+  head,Photogrammetry,5000,collapse,5142,0.9516,239,10,5017,1794,824,637,333,40,0,8,0.01577,0.00126,50000,469,21797
+      subdiv:   verts=24918->30198 tris=50000->60560 rounds=4 split=5280 perRound=[4311,906,62,1] unresolved=0 1859ms
+      collapse: edges=90840 (collapse=34106 out=47523 discard=9211 / 10.1 %) applied=18880 rejLinked=287 rejFeature=0 rejLarge=0 rejOpposed=9720 fallback=14 splitCells=6324/7481 (rejLarge=36) clusters=4994 largest=71
+      dirs:     occupied=[0 4 168 558 4264] fitted=[0 5 162 531 4296]->[0 5 162 531 4296] contested=1893 surplus=2186 vacant=870 removed=0 (oneSided=0 strand=0 prot=0) added=0 (notMutual=0 offAxis=0 badSpan=0 none=0)
+      cleanup:  v1removed=3 v2spliced=86 v2kept=0 isolated=0 rounds=4 | graph 4905 verts mean=4.293 [3=212 4=3688 5=640 6=191 7+=174]
+      trace:    faces=4919 (quads=3686 tris=1142 5=60 6=20 7=6 8=5) walks=23989 failed=19070 holesClosed=0 unusedSlots=2386
+      holeFill: boundaryEdges=1108 capped=141 split=27 quadrangulated=20(+54quads) grid=16(+137quads +5ears +66verts rej=0 largest=24) hubLargest=7 ngonCaps=72 fanned=0 added=86 abandoned=0(dead=0 long=0 offSurface=0 longest=0) leftOpen=0 uncovered=0 largestCap=33 fans=n=20/med=6/max=7/gt128=0/gt512=0 refused=n=72/med=7/max=33/gt128=0/gt512=0
+      regular:  candidates=454 merged=243 rejNonConvex=53 rejQuality=40 trisLeft=693
+      triPair:  trianglePairing: 693 -> 223 triangles (470 removed), 235 of 719 pairs applied in 5 rounds [n1:148 n2:38 n3:14 n4:5], refused 20 loop + 4 interior + 385 quality (nonConvex 385, backwards 0, dupEdge 0, threshold 0), 33 needed a fold, 75 overlapping, open edges 0 -> 0, faces 5,008 -> 4,773, 22 ms
+      ngonSplit: split=153 (+473quads +100tris) added=153 largest=33 refused=0 nonSimple=10
+      repair:   faces=5153->5142 dup=11 (opposite=11) collapsed=0 degenerate=0 zeroArea=0 overIncident=0
+      orient:   components=26 (closed=15 weak=1 minConf=0.000) flipped=24 consistency=0 faces=5134/5142 inconsistentEdges=0 disagreeAfter=135 negligible=0
+      relax:    iters=21 movable=5017 moves=91471 rejFlip=257 rejProj=0 rejFeature=0 rejDrift=13629 onCrease=0 sliding=0 junction=0 meanMove=0.017 maxMove=0.500 cells
+      snap:     snapped 0 (0 corners) of 0 candidates, mean move 0.000 cells, rejected flip 0 sliver 0
+  head,Photogrammetry,5000,integer,4389,1.0000,0,0,4325,538,227,310,1,60,0,1,0.03597,0.00163,191202,558,43220
+      igm:      in v=95519 f=191202 e=286803 sing=1042 sharp=0 unsat=1585->0 valve=23+0 flow: supply=1 routed=1 iters=2 cap=3 cost=314 arcs=557367 | pos: n=8906 nnz=124436 cg=40 move=0.01973 | clamped=0 subdiv=1968+733 oor=0 onFlip=447 capped=0 stillLong=0 flips=2265->118 (6 passes) | levels=13 compact=4453 out=4385 flippedTris=109 degen=0 unpaired=34 holeQuads=13 v2=86 nmSplit=128 hiVal=86 | ms build=1918 cons=189 flow=18129 subdiv=260 flip=935 pos=78 extract=194 total=21707
+      igm:      in v=95519 f=191202 e=286803 sing=1042 sharp=0 unsat=1585->0 valve=23+0 flow: supply=1 routed=1 iters=2 cap=3 cost=314 arcs=557367 | pos: n=8906 nnz=124436 cg=40 move=0.01973 | clamped=0 subdiv=1968+733 oor=0 onFlip=447 capped=0 stillLong=0 flips=2265->118 (6 passes) | levels=13 compact=4453 out=4385 flippedTris=109 degen=0 unpaired=34 holeQuads=13 v2=86 nmSplit=128 hiVal=86 | ms build=1918 cons=189 flow=18129 subdiv=260 flip=935 pos=78 extract=194 total=21707
+      collapse: 
+      dirs:     
+      cleanup:  
+      trace:    
+      holeFill: 
+      regular:  
+      ngonSplit: 
+      repair:   faces=4389->4389 dup=0 (opposite=0) collapsed=0 degenerate=0 zeroArea=0 overIncident=0
+      orient:   components=1 (closed=0 weak=0 minConf=0.956) flipped=0 consistency=0 faces=0/4389 inconsistentEdges=0 disagreeAfter=62 negligible=0
+      relax:    iters=24 movable=4325 moves=94005 rejFlip=126 rejProj=50 rejFeature=0 rejDrift=9619 onCrease=0 sliding=0 junction=0 meanMove=0.015 maxMove=0.499 cells
+      snap:     snapped 0 (0 corners) of 0 candidates, mean move 0.000 cells, rejected flip 0 sliver 0
+=== end IntegerGridAudit (real assets) ===
+
+Batchmode quit successfully invoked - shutting down!
+Killing ADB server in 0.041025 seconds.
+[Physics::Module] Cleanup current backned.
+[Physics::Module] Id: 0xf2b8ea05
+Input System module state changed to: ShutdownInProgress.
+Input System polling thread exited.
+Input System module state changed to: Shutdown.
+[Licensing::IpcConnector] LicenseClient-rufat-notifications channel disconnected successfully.
+[Licensing::IpcConnector] LicenseClient-rufat channel disconnected successfully.
+AcceleratorClientConnectionCallback - disconnected - :0
+Cleanup mono
+abort_threads: Failed aborting id: 000000000000A414, mono_thread_manage will ignore it
+
+abort_threads: Failed aborting id: 000000000000652C, mono_thread_manage will ignore it
+
+abort_threads: Failed aborting id: 000000000000A414, mono_thread_manage will ignore it
+
+abort_threads: Failed aborting id: 000000000000652C, mono_thread_manage will ignore it
+
+debugger-agent: Unable to listen on 3492
+Exiting batchmode successfully now!
+Exiting without the bug reporter. Application will terminate with return code 0

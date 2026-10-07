@@ -1,0 +1,19 @@
+{
+    "name": "NativeRemesher.Editor",
+    "rootNamespace": "NativeRemesher",
+    "references": [
+        "NativeRemesher.Runtime",
+        "NativeRemesher.Benchmark"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

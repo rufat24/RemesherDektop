@@ -1,0 +1,5 @@
+cvk_body   MEAN body,IntegerGrid over 3: irregular 3.64 % open 4.0 pieces 1.00 hausdorff 0.01067 chamfer 0.00061 |       curve network: 49 curves (1 closed, 5 joins), 1764 vertices, 535 cells long, 11 corner vertices 
+cvk_head   MEAN head,IntegerGrid over 3: irregular 10.48 % open 80.7 pieces 1.00 hausdorff 0.02676 chamfer 0.00134 |       curve network: 88 curves (4 closed, 23 joins), 4288 vertices, 1280 cells long, 28 corner vertices 
+cvg_body   MEAN body,IntegerGrid over 3: irregular 3.42 % open 2.0 pieces 1.00 hausdorff 0.01097 chamfer 0.00063 |       curve network: 49 curves (1 closed, 5 joins), 1764 vertices, 535 cells long, 11 corner vertices 
+cvg_head   MEAN head,IntegerGrid over 3: irregular 9.20 % open 88.7 pieces 1.33 hausdorff 0.02191 chamfer 0.00138 |       curve network: 88 curves (4 closed, 23 joins), 4288 vertices, 1280 cells long, 28 corner vertices 
+SWEEP13_DONE
