@@ -54,3 +54,36 @@ Renders: `shots_final/head_r5_param.png`, `head_r5_neck.png`, `body_r5_param.png
 - Parametric flips remain: about 1,300 on the head and about 4,000 on ccnb, on the coarse mesh.
 - Head time: each factorization takes about 2.9 s. It is bound by the top separators, so running the
   subtrees in parallel did not help.
+
+## Round 6: folds at low quad counts (body neck at 2k)
+
+The user reported the body's neck at 2k looking wrong. On the body at 2k, the old extractor beat
+the committed parametrization (Hausdorff 0.0129 vs 0.0212). Most of the gap comes from crease
+rounding: on the coarse mesh, folds rise from 140 to 321 at that stage.
+
+Two changes, both now default:
+
+- **`featureRollbackRounds = 1`.** A crease line whose integer rounding folds faces within one ring
+  is released back to a straight, non-integer line, and the system is solved once more.
+- **`cancelPairRadiusCells = 1`.** Opposite singularities up to a cell apart are cancelled along
+  the shortest path between them. Step 2b only ever cancelled adjacent pairs.
+
+Single runs, window path. Each cell shows Hausdorff / p05 / irregular vertices.
+
+| run | committed param | + rollback | + rollback + pair cancel | old path |
+|---|---|---|---|---|
+| body 2k | 0.0212 / 55.1 / 3.68 % | 0.0147 / 56.8 / 3.65 % | 0.0168 / 59.0 / 3.13 % | 0.0129 / 60.5 / 3.07 % |
+| body 3.5k | 0.0122 / 62.9 / 2.07 % | 0.0122 / 62.8 / 1.99 % | 0.0117 / 63.6 / 1.91 % | 0.0091 / 59.7 / 2.16 % |
+| body 5k | 0.0093 / 61.0 / 2.06 % | 0.0093 / 61.8 / 2.05 % | 0.0094 / 60.9 / 1.72 % | 0.0092 / 56.8 / 2.26 % |
+| head 2k | 0.0206 / 42.7 / 7.08 % | 0.0217 / 42.1 / 7.61 % | 0.0217 / 44.0 / 6.29 % | 0.0308 / 41.5 / 6.48 % |
+| head 3.5k | 0.0146 / 43.6 / 5.42 % | 0.0128 / 45.1 / 5.28 % | 0.0122 / 48.3 / 5.06 % | 0.0178 / 48.4 / 5.24 % |
+| head 5k | 0.0113 / 53.8 / 3.79 % | 0.0087 / 52.9 / 3.76 % | 0.0106 / 54.2 / 3.65 % | 0.0093 / 53.7 / 4.29 % |
+
+At body 2k the collar is now a clean cylinder with a regular ring of quads and keeps its teardrop
+outline. Its rolled lip is under one cell at that density, so it is not represented.
+
+Still open:
+
+- Folds from singularity rounding and translation rounding: about 115 on the body and about 580 on
+  the head, on the coarse mesh.
+- Turning the direct tracer on needs those folds near zero.

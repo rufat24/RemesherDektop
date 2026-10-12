@@ -73,6 +73,7 @@ namespace NativeRemesher.Extraction
         public int featureEdgesNearPoles;
         public int foldsBeforeUntangle, untangleRounds;
         public int cancelledFarPairs, pairCancelFailed;
+        public int releasedFeatureGroups, releasedFeatureCoordinates;
         public float closureWorst;
         public long factorNonZeros;
         public long symbolicMs, factorMs;
@@ -84,7 +85,7 @@ namespace NativeRemesher.Extraction
         public long ms;
 
         public override string ToString() =>
-            $"faces={faces} singular={singularVertices} cancelled={cancelledPairs}+{cancelledFarPairs}(fail {pairCancelFailed}) poles={roundedSingularities} stiff={stiffenIterationsRun}/{stiffened} reused={reusedFreeSolve} features={featureEdges}(skip {featureEdgesSkipped}, nearPoles {featureEdgesNearPoles}, pins {pinnedFeatureCoordinates}) cut={cutEdges}(of {cutEdgesBeforePrune}) chains={chains} " +
+            $"faces={faces} singular={singularVertices} cancelled={cancelledPairs}+{cancelledFarPairs}(fail {pairCancelFailed}) poles={roundedSingularities} stiff={stiffenIterationsRun}/{stiffened} reused={reusedFreeSolve} features={featureEdges}(skip {featureEdgesSkipped}, nearPoles {featureEdgesNearPoles}, pins {pinnedFeatureCoordinates}, released {releasedFeatureGroups}/{releasedFeatureCoordinates}) cut={cutEdges}(of {cutEdgesBeforePrune}) chains={chains} " +
             $"blocks={blocks} closures={closureConstraints} cg={cgIterations} res={residual:G3} " +
             $"rounds={roundingRounds} rounded={roundedVariables} maxRound={maxRoundingMove:F3} " +
             $"flipped={flippedFaces} stages={flipsByStage}closuresOpen={closuresOpen} propagated={propagatedChains} nonInt={closureNonInteger} forced={forcedChains} free={freeChains} tree={treeChains} freedPoles={freedPoles} regRoots={regularRoots} unsolved={unsolvedTree} kinds={closureKinds}worst={closureWorst:F2} nnzL={factorNonZeros} symbolic={symbolicMs} factor={factorMs}/{factorizations} failed={factorFailures} ms={ms} (split {split}structure {structureMs} expr {expressionMs} asm {assemblyMs}) transfer={transferMs} fineSingular={refinedSingularFaces} unmapped={unmappedFaces} trace[{trace}]";
@@ -167,6 +168,15 @@ namespace NativeRemesher.Extraction
         /// <summary>Round the features' held coordinates to integers (grid lines), not only hold them equal.</summary>
         public static bool pinFeatures = true;
 
+        /// <summary>
+        /// Rounds of releasing creases whose integer rounding folded faces nearby (0 = keep every
+        /// crease on its grid line). See the feature rounding step.
+        /// </summary>
+        public static int featureRollbackRounds = 1;
+
+        /// <summary>Rings round a new fold within which a crease counts as its cause.</summary>
+        public static int featureRollbackRings = 1;
+
         /// <summary>Weight of a feature's equal-coordinate row against a face's energy.</summary>
         public static float featureWeight = 100f;
 
@@ -201,7 +211,7 @@ namespace NativeRemesher.Extraction
         /// Cancel opposite singularities up to this many cells apart along the shortest path
         /// between them (0 = adjacent pairs only). See step 2c.
         /// </summary>
-        public static float cancelPairRadiusCells = 0f;
+        public static float cancelPairRadiusCells = 1f;
 
         /// <summary>Cancel adjacent opposite singularities (see step 2b).</summary>
         public static bool cancelDipoles = true;
@@ -884,6 +894,9 @@ namespace NativeRemesher.Extraction
             }
 
             var firstAssembly = true;
+            // Each constrained feature edge as the two pinned (vertex, master coordinate) slots it
+            // ties, 2v + comp: a crease line in u and one in v meeting at a corner stay apart.
+            var usedFeatureEdges = new List<(int a, int b)>();
             var pinU = new bool[n];
             var pinV = new bool[n];
             var stA = stats;
@@ -962,6 +975,8 @@ namespace NativeRemesher.Extraction
                     AddRow(0.0, featureW);
                     if (!firstAssembly) continue;
                     stA.featureEdges++;
+                    var slotA = -1;
+                    var slotB = -1;
                     // Which master coordinate that is at each end: the corner's chart is the master's
                     // turned by k quarter-turns, and an odd k swaps u and v.
                     foreach (var c in new[] { ca, cb })
@@ -976,7 +991,9 @@ namespace NativeRemesher.Extraction
                         if (turn < 0) continue;
                         var masterComp = turn == 0 ? comp : 1 - comp;
                         if (masterComp == 0) pinU[v] = true; else pinV[v] = true;
+                        if (c == ca) slotA = 2 * v + masterComp; else slotB = 2 * v + masterComp;
                     }
+                    if (slotA >= 0 && slotB >= 0) usedFeatureEdges.Add((slotA, slotB));
                 }
             }
 
@@ -1109,6 +1126,32 @@ namespace NativeRemesher.Extraction
                     reused = true;
                     stats.reusedFreeSolve = true;
                 }
+            }
+
+            bool[] FoldFlags()
+            {
+                var folded = new bool[m];
+                for (var f = 0; f < m; f++)
+                {
+                    if (!(fArea[f] > 0f)) continue;
+                    double ux = 0, uy = 0, vx = 0, vy = 0;
+                    for (var k = 0; k < 3; k++)
+                    {
+                        var corner = 3 * f + k;
+                        double cu = 0, cv = 0;
+                        for (var i = 0; i < cornerCount[corner]; i++)
+                        {
+                            var t = pool[cornerStart[corner] + i];
+                            double xu = x[2 * t.block], xv = x[2 * t.block + 1];
+                            if (t.rot == 0) { cu += t.sign * xu; cv += t.sign * xv; }
+                            else { cu -= t.sign * xv; cv += t.sign * xu; }
+                        }
+                        ux += gradX[corner] * cu; uy += gradY[corner] * cu;
+                        vx += gradX[corner] * cv; vy += gradY[corner] * cv;
+                    }
+                    folded[f] = ux * vy - uy * vx <= 0;
+                }
+                return folded;
             }
 
             int CountFlips()
@@ -1528,6 +1571,7 @@ namespace NativeRemesher.Extraction
             }
 
             stats.flipsByStage += "trans " + CountFlips() + " ";
+            var foldedBeforeFeatures = FoldFlags();
             // Feature coordinates: once the translations are integers, round every pinned
             // coordinate at once and solve again, so each crease lands on a grid line.
             if (featureEdges != null && pinFeatures)
@@ -1549,6 +1593,70 @@ namespace NativeRemesher.Extraction
                     }
                 }
                 if (any) { stats.roundingRounds++; SolveSystem(roundIterations); }
+
+                // A crease whose rounding folded the faces round it goes back to a straight line at
+                // a free coordinate. Rounding moves each crease by up to half a cell, and two
+                // creases closer than a cell -- both edges of a strap, a collar's lip -- can land
+                // on one grid line or a whole cell apart; either way the cells between them fold.
+                // Released, the crease is still a single iso-line (its rows hold it), just not an
+                // integer one.
+                if (any && featureRollbackRounds > 0)
+                {
+                    var group = new int[2 * n];
+                    for (var v = 0; v < 2 * n; v++) group[v] = v;
+                    int Find(int v) { while (group[v] != v) { group[v] = group[group[v]]; v = group[v]; } return v; }
+                    foreach (var (a, b) in usedFeatureEdges) { var ra = Find(a); var rb = Find(b); if (ra != rb) group[ra] = rb; }
+                    var released = new bool[2 * n];
+                    for (var round = 0; round < featureRollbackRounds; round++)
+                    {
+                        var after = FoldFlags();
+                        var bad = new bool[n];
+                        for (var f = 0; f < m; f++)
+                        {
+                            if (!after[f] || foldedBeforeFeatures[f]) continue;
+                            for (var k = 0; k < 3; k++) bad[T[3 * f + k]] = true;
+                        }
+                        for (var ring = 0; ring < featureRollbackRings; ring++)
+                        {
+                            var next = (bool[])bad.Clone();
+                            for (var f = 0; f < m; f++)
+                            {
+                                if (!(bad[T[3 * f]] || bad[T[3 * f + 1]] || bad[T[3 * f + 2]])) continue;
+                                for (var k = 0; k < 3; k++) next[T[3 * f + k]] = true;
+                            }
+                            bad = next;
+                        }
+                        var badGroup = new HashSet<int>();
+                        for (var v = 0; v < n; v++)
+                        {
+                            if (!bad[v]) continue;
+                            for (var comp = 0; comp < 2; comp++)
+                                if ((comp == 0 ? pinU[v] : pinV[v]) && !released[2 * v + comp]) badGroup.Add(Find(2 * v + comp));
+                        }
+                        if (badGroup.Count == 0) break;
+                        var freed = 0;
+                        for (var v = 0; v < n; v++)
+                        {
+                            var b = masterOf[v];
+                            if (b < 0 || singular[v]) continue;
+                            for (var comp = 0; comp < 2; comp++)
+                            {
+                                if (!(comp == 0 ? pinU[v] : pinV[v])) continue;
+                                if (!badGroup.Contains(Find(2 * v + comp))) continue;
+                                released[2 * v + comp] = true;
+                                if (!fixedVar[2 * b + comp]) continue;
+                                fixedVar[2 * b + comp] = false;
+                                freed++;
+                            }
+                        }
+                        if (freed == 0) break;
+                        stats.releasedFeatureGroups += badGroup.Count;
+                        stats.releasedFeatureCoordinates += freed;
+                        stats.roundingRounds++;
+                        SolveSystem(roundIterations);
+                        stats.flipsByStage += "release" + round + " " + CountFlips() + " ";
+                    }
+                }
             }
 
             stats.flipsByStage += "feat " + CountFlips() + " ";
