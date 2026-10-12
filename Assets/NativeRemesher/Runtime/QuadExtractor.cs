@@ -648,6 +648,8 @@ namespace NativeRemesher
                 // repair -- see ParametrizationTrace.
                 Extraction.ParametrizationTrace.Extract(topology, position.cornerUvExact,
                     out positions, out normals, out faces, out var traceStats);
+                if (Extraction.ParametrizationTrace.fillHoles)
+                    Extraction.ParametrizationTrace.FillHoles(ref positions, ref normals, faces, traceStats);
                 result.parametrizationTraceStats = traceStats;
                 igStats = new IntegerGridStats();
                 igStats.totalMs = watch.ElapsedMilliseconds;

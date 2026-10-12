@@ -87,3 +87,67 @@ Still open:
 - Folds from singularity rounding and translation rounding: about 115 on the body and about 580 on
   the head, on the coarse mesh.
 - Turning the direct tracer on needs those folds near zero.
+
+## Round 7: where the remaining folds come from
+
+Diagnostic: `SeamlessParametrization.debugDumpPrefix` writes the coarse map, with every corner's
+(u, v), at each fold census. Body at 2k, final stage (142 folded triangles by uv orientation):
+
+- The folds sit at singularities: 97 are in a singularity's own fan, 21 one ring out.
+- Close singularities cause them. A singularity on a grid node is a whole number of cells from
+  every other, so two the field put a fraction of a cell apart round onto one node and their fans
+  collapse. The 35 singularities with another within half a cell carry about half the folds. Those
+  more than 1.5 cells from any other carry almost none. The head looks the same, at about three
+  times the count.
+- Index +-2 fans fold even before rounding: 27 of them carry 21 of the free solve's 31 folds. Mod 4,
+  a 180-degree and a 540-degree cone are the same index. The field's true signed turn (transport
+  plus angle defect, measured against the jumps actually used) tells them apart. It is always
+  computed now, and dumped.
+
+Single runs. Each cell shows Hausdorff / p05 / irregular vertices, with coarse-mesh folds after them.
+
+| variant (flags) | body 2k | head 3.5k |
+|---|---|---|
+| default | 0.0168 / 59.0 / 3.13 %, 117 | 0.0122 / 48.3 / 5.06 %, 569 |
+| no pole rounding | 0.0182 / 57.6 / 4.08 %, 103 | 0.0130 / 47.0 / 4.74 %, 479 |
+| consistent rounding (closures exact) | 0.0155 / 50.3 / 3.31 %, 359 | |
+| split +-2 into two unit singularities a cell apart | 0.0163 / 60.0 / 3.66 %, 150 | 0.0173 / 49.5 / 4.94 %, 641 |
+| spread close same-sign pairs a cell apart (`spreadSingularities`) | 0.0123 / 56.5 / 3.96 %, 185 | 0.0139 / 49.4 / 5.06 %, 737 |
+| Knöppel field on the refined mesh (`globalField`) | 0.0229 / 57.0 / 3.84 %, 133 | 0.0141 / 44.9 / 5.63 %, 795 |
+| 10 coarse sweeps (`parametrizationFieldSweeps`) | 0.0212 / 55.8 / 3.60 %, 137 | 0.0131 / 48.2 / 4.92 %, 608 |
+| Knöppel field on the decimated mesh (`parametrizationGlobalField`) | 0.0177 / 56.9 / 4.27 %, 157 | |
+| 20 decimated triangles per quad (default 10) | 0.0153 / 61.6 / 2.80 %, 162 | 0.0162 / 53.4 / 4.29 %, 816 |
+
+None is adopted. Each change to the singularity layout adds folds elsewhere. On wrinkled cloth the
+smoothest field itself winds round every bump, so the noise is in the surface, not the solver.
+
+### Direct tracing with closed seams
+
+With soft closures (weight 30), rounding leaves about 100 vertex closures open by whole cells. On
+the map path that only distorts. To the tracer it is a dislocation, and it leaves odd-length holes
+that no quad patch can close. With `closureWeight = 1e5` and `consistentRounding`, every closure
+holds and the holes are even. New in `ParametrizationTrace` (`fillHoles`, off by default):
+
+- A rim whose corners add up to a whole turn is a lattice polygon. Its unit cells are rebuilt as a
+  grid patch, with the inner vertices placed by Laplace.
+- Other even rims of 6 to 10 edges get a fan of quads round one new vertex: valence 3, 4 or 5.
+- Longer even rims are first cut by a chord.
+- Doublets (valence-2 vertices) are merged, but only where the vertex lies on the merged quad's
+  diagonal.
+
+Tracer + hard closures + consistent rounding + fillHoles (each cell: Hausdorff / p05 / irregular):
+
+| run | tracer | default |
+|---|---|---|
+| body 2k | **0.0105** / 56.7 / 5.13 % | 0.0168 / 59.0 / 3.13 % |
+| body 3.5k | **0.0100** / 59.4 / 3.53 % | 0.0117 / 63.6 / 1.91 % |
+| body 5k | 0.0094 / 62.4 / 2.74 % | 0.0094 / 60.9 / 1.72 % |
+| head 2k | 0.0206 / 28.8 / 11.79 % | 0.0217 / 44.0 / 6.29 % |
+| head 3.5k | 0.0138 / 34.0 / 9.58 % | 0.0122 / 48.3 / 5.06 % |
+| head 5k | 0.0102 / 50.7 / 6.64 % | 0.0106 / 54.2 / 3.65 % |
+
+On the body the tracer has the best Hausdorff at low counts, and the vest hem and belt come out as
+straight loops. On the head its 460 to 620 folds become holes, so it stays off. What would make it
+the default is a fold-free map: the robust route in the literature is quantizing a seamless map's
+quad layout (Campen et al. 2015, "Quantized Global Parametrization"; QuadWild Bi-MDF 2023), which
+places close singularities by integer arc lengths instead of rounding each one alone.

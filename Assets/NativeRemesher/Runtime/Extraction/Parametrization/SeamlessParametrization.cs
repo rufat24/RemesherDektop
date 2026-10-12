@@ -73,6 +73,7 @@ namespace NativeRemesher.Extraction
         public int featureEdgesNearPoles;
         public int foldsBeforeUntangle, untangleRounds;
         public int cancelledFarPairs, pairCancelFailed;
+        public int splitSingularities, splitFailed, splitMismatch, spreadMoves, spreadFailed, multipleSingularities;
         public int releasedFeatureGroups, releasedFeatureCoordinates;
         public float closureWorst;
         public long factorNonZeros;
@@ -85,7 +86,7 @@ namespace NativeRemesher.Extraction
         public long ms;
 
         public override string ToString() =>
-            $"faces={faces} singular={singularVertices} cancelled={cancelledPairs}+{cancelledFarPairs}(fail {pairCancelFailed}) poles={roundedSingularities} stiff={stiffenIterationsRun}/{stiffened} reused={reusedFreeSolve} features={featureEdges}(skip {featureEdgesSkipped}, nearPoles {featureEdgesNearPoles}, pins {pinnedFeatureCoordinates}, released {releasedFeatureGroups}/{releasedFeatureCoordinates}) cut={cutEdges}(of {cutEdgesBeforePrune}) chains={chains} " +
+            $"faces={faces} singular={singularVertices} cancelled={cancelledPairs}+{cancelledFarPairs}(fail {pairCancelFailed}) split={splitSingularities}(fail {splitFailed}, mismatch {splitMismatch}) spread={spreadMoves}(fail {spreadFailed}) multiple={multipleSingularities} poles={roundedSingularities} stiff={stiffenIterationsRun}/{stiffened} reused={reusedFreeSolve} features={featureEdges}(skip {featureEdgesSkipped}, nearPoles {featureEdgesNearPoles}, pins {pinnedFeatureCoordinates}, released {releasedFeatureGroups}/{releasedFeatureCoordinates}) cut={cutEdges}(of {cutEdgesBeforePrune}) chains={chains} " +
             $"blocks={blocks} closures={closureConstraints} cg={cgIterations} res={residual:G3} " +
             $"rounds={roundingRounds} rounded={roundedVariables} maxRound={maxRoundingMove:F3} " +
             $"flipped={flippedFaces} stages={flipsByStage}closuresOpen={closuresOpen} propagated={propagatedChains} nonInt={closureNonInteger} forced={forcedChains} free={freeChains} tree={treeChains} freedPoles={freedPoles} regRoots={regularRoots} unsolved={unsolvedTree} kinds={closureKinds}worst={closureWorst:F2} nnzL={factorNonZeros} symbolic={symbolicMs} factor={factorMs}/{factorizations} failed={factorFailures} ms={ms} (split {split}structure {structureMs} expr {expressionMs} asm {assemblyMs}) transfer={transferMs} fineSingular={refinedSingularFaces} unmapped={unmappedFaces} trace[{trace}]";
@@ -201,6 +202,9 @@ namespace NativeRemesher.Extraction
         /// <summary>Share of the free chains rounded per batch by the consistent rounding.</summary>
         public static float chainBatch = 0.5f;
 
+        /// <summary>Diagnostics: write the coarse map at every fold census to {prefix}_{k}.obj.</summary>
+        public static string debugDumpPrefix = null;
+
         /// <summary>Diagnostics: classify the closures left open after rounding.</summary>
         public static bool diagnoseClosures = false;
 
@@ -212,6 +216,18 @@ namespace NativeRemesher.Extraction
         /// between them (0 = adjacent pairs only). See step 2c.
         /// </summary>
         public static float cancelPairRadiusCells = 1f;
+
+        /// <summary>
+        /// Spread singularities closer than <see cref="spreadMinCells"/> of the same sign, and split
+        /// vertices turning by two or more quarters, a cell apart along a grid axis (see step 2d).
+        /// </summary>
+        public static bool spreadSingularities = false;
+
+        /// <summary>Distance, in cells, under which two singularities of one sign are spread.</summary>
+        public static float spreadMinCells = 0.8f;
+
+        /// <summary>Passes of the spreading.</summary>
+        public static int spreadPasses = 3;
 
         /// <summary>Cancel adjacent opposite singularities (see step 2b).</summary>
         public static bool cancelDipoles = true;
@@ -602,6 +618,233 @@ namespace NativeRemesher.Extraction
                     index[v] = index[found] = 0;
                     stats.cancelledFarPairs++;
                 }
+            }
+
+            // --- 2d. spread singularities ----------------------------------------------------------
+            // Two singularities on grid nodes are a whole number of cells apart -- the map is
+            // seamless -- so two that the field put a fraction of a cell apart round onto one node,
+            // or a cell apart with the cells between them stretched: either way their fans fold.
+            // On the body at 2k the 35 singularities with another within half a cell carry half
+            // the folds; those more than a cell and a half from any other carry almost none. The
+            // opposite pairs are cancelled above; what is left is pairs of the same sign, and
+            // fans that turn by two or more quarters at one vertex. A fan's index is only known
+            // mod 4: the jumps say how the frame comes back, not how far it turned on the way, and
+            // at +-2 that is the whole answer -- a 180-degree cone and a 540-degree one, equally
+            // far from the surface's 360, and the least squares settles on neither: the fan
+            // collapses before anything is rounded. The turn itself -- the frame's rotation
+            // against parallel transport round the fan, plus the angle defect -- says which.
+            // Both are spread the way a quad mesh has them: one quarter at a vertex, the next a
+            // cell away along a grid axis, moved there along a path as the pair cancellation does.
+            var trueTurn = new double[n];
+            var cellOf = spacing;
+            {
+                var feature = new bool[n];
+                if (featureEdges != null)
+                    foreach (var (a, b) in featureEdges)
+                    {
+                        if (a >= 0 && a < n) feature[a] = true;
+                        if (b >= 0 && b < n) feature[b] = true;
+                    }
+                // Quarter turns of the field round v's fan, or NaN for an open fan.
+                double TrueTurn(int v)
+                {
+                    var list = cornersOf[v];
+                    if (list == null) return double.NaN;
+                    var start = list[0];
+                    var c = start;
+                    double turn = 0, angles = 0;
+                    var steps = 0;
+                    while (steps++ <= list.Count)
+                    {
+                        var f = c / 3;
+                        var k = c % 3;
+                        var pa = P[T[3 * f + (k + 1) % 3]] - P[v];
+                        var pb = P[T[3 * f + (k + 2) % 3]] - P[v];
+                        angles += Vector3.Angle(pa, pb) * Mathf.Deg2Rad;
+                        var prev = 3 * f + (k + 2) % 3;
+                        var g = across[prev];
+                        if (g < 0) return double.NaN;
+                        var t = GlobalCrossField.Transport(fr[f], fn[f], fn[g]);
+                        var d = Math.Atan2(Vector3.Dot(Vector3.Cross(t, fr[g]), fn[g]), Vector3.Dot(t, fr[g]));
+                        // Measured against the jump the fan actually uses, whichever way it was matched.
+                        var r = d - 0.5 * Math.PI * Jump(edgeOf[prev], f);
+                        r -= 2 * Math.PI * Math.Round(r / (2 * Math.PI));
+                        turn += r;
+                        c = 3 * g + acrossCorner[prev];
+                        if (c == start) return steps == list.Count ? (turn + 2 * Math.PI - angles) / (0.5 * Math.PI) : double.NaN;
+                    }
+                    return double.NaN;
+                }
+                int Quarters(int v) => double.IsNaN(trueTurn[v]) ? 0 : (int)Math.Round(trueTurn[v]);
+                for (var v = 0; v < n; v++) trueTurn[v] = singular[v] ? TrueTurn(v) : 0;
+
+                if (spreadSingularities)
+                {
+                    var dist = new float[n];
+                    var via = new int[n];
+                    var touched = new List<int>();
+                    for (var i = 0; i < n; i++) { dist[i] = float.PositiveInfinity; via[i] = -1; }
+                    var heap = new SortedSet<(float d, int v)>();
+                    var singularList = new List<int>();
+                    for (var v = 0; v < n; v++) if (singular[v] && !double.IsNaN(trueTurn[v])) singularList.Add(v);
+
+                    // The vertex, reachable from `from` through regular vertices, nearest a cell from
+                    // `anchor` along one of its grid axes and clear of every singularity but `from`
+                    // and `anchor`; -1 if none is within half a cell of such a spot.
+                    int Spot(int from, int anchor, bool fromStays, out List<int> path, out double cost)
+                    {
+                        path = null;
+                        cost = double.PositiveInfinity;
+                        var h = cellOf[anchor];
+                        var fa = cornersOf[anchor][0] / 3;
+                        var ax0 = Project(fr[fa], fn[fa]).normalized;
+                        var ax1 = Vector3.Cross(fn[fa], ax0);
+                        foreach (var t in touched) { dist[t] = float.PositiveInfinity; via[t] = -1; }
+                        touched.Clear();
+                        heap.Clear();
+                        dist[from] = 0f;
+                        touched.Add(from);
+                        heap.Add((0f, from));
+                        var best = -1;
+                        while (heap.Count > 0)
+                        {
+                            var (d, x0) = heap.Min;
+                            heap.Remove(heap.Min);
+                            if (d > dist[x0]) continue;
+                            if (x0 != from)
+                            {
+                                var off = P[x0] - P[anchor];
+                                var miss = Math.Min(Math.Min((off - h * ax0).magnitude, (off + h * ax0).magnitude),
+                                    Math.Min((off - h * ax1).magnitude, (off + h * ax1).magnitude)) / h;
+                                if (miss < cost)
+                                {
+                                    var clear = true;
+                                    foreach (var o in singularList)
+                                    {
+                                        if (o == anchor || (o == from && !fromStays) || !singular[o]) continue;
+                                        if ((P[o] - P[x0]).magnitude < spreadMinCells * h) { clear = false; break; }
+                                    }
+                                    if (clear) { cost = miss; best = x0; }
+                                }
+                            }
+                            foreach (var e in edgesAt0[x0])
+                            {
+                                var y = edgeA[e] == x0 ? edgeB[e] : edgeA[e];
+                                if (singular[y] || boundary[y] || feature[y] || edgesAt0[y] == null) continue;
+                                var nd = d + (P[y] - P[x0]).magnitude;
+                                if (nd > 2.5f * h || nd >= dist[y]) continue;
+                                if (float.IsPositiveInfinity(dist[y])) touched.Add(y);
+                                dist[y] = nd;
+                                via[y] = e;
+                                heap.Add((nd, y));
+                            }
+                        }
+                        if (best < 0 || cost > 0.5) return -1;
+                        path = new List<int>();
+                        for (var y = best; y != from; )
+                        {
+                            var e = via[y];
+                            path.Add(e);
+                            y = edgeA[e] == y ? edgeB[e] : edgeA[e];
+                        }
+                        path.Reverse();
+                        return best;
+                    }
+
+                    // One quarter of `from`'s turn, of sign sgn, moved along the path to `to`.
+                    bool Move(int from, int to, int sgn, List<int> path)
+                    {
+                        var saved = new int[path.Count];
+                        for (var i = 0; i < path.Count; i++) saved[i] = jump[path[i]];
+                        var keep = Mod4(-(Quarters(from) - sgn));
+                        var ok = true;
+                        var at = from;
+                        for (var i = 0; i < path.Count && ok; i++)
+                        {
+                            var e = path[i];
+                            var want = i == 0 ? keep : 0;
+                            var done = false;
+                            for (var delta = -1; delta <= 1 && !done; delta += 2)
+                            {
+                                jump[e] = Mod4(saved[i] + delta);
+                                if (FanIndex(at) == want) done = true;
+                                if (!done) jump[e] = saved[i];
+                            }
+                            if (!done) ok = false;
+                            at = edgeA[e] == at ? edgeB[e] : edgeA[e];
+                        }
+                        if (ok && FanIndex(to) != Mod4(-sgn)) ok = false;
+                        if (!ok)
+                        {
+                            for (var i = 0; i < path.Count; i++) jump[path[i]] = saved[i];
+                            return false;
+                        }
+                        foreach (var e in path) forced[e] = true;
+                        trueTurn[from] = Quarters(from) - sgn;
+                        index[from] = keep;
+                        singular[from] = keep != 0;
+                        trueTurn[to] = sgn;
+                        index[to] = Mod4(-sgn);
+                        singular[to] = true;
+                        singularList.Add(to);
+                        return true;
+                    }
+
+                    for (var pass = 0; pass < spreadPasses; pass++)
+                    {
+                        var moved = 0;
+                        // Multiple turns at one vertex: keep one quarter, pass the others on.
+                        foreach (var v in singularList.ToArray())
+                        {
+                            while (singular[v] && Math.Abs(Quarters(v)) >= 2)
+                            {
+                                if (Mod4(-Quarters(v)) != index[v]) { stats.splitMismatch++; break; }
+                                var sgn = Math.Sign(Quarters(v));
+                                var to = Spot(v, v, true, out var path, out _);
+                                if (to < 0 || !Move(v, to, sgn, path)) { stats.splitFailed++; break; }
+                                stats.splitSingularities++;
+                                moved++;
+                            }
+                        }
+                        // Pairs of the same sign closer than spreadMinCells: the one with the better
+                        // spot moves there, a cell from the other.
+                        var pairs = new List<(float d, int a, int b)>();
+                        for (var i = 0; i < singularList.Count; i++)
+                        {
+                            var a = singularList[i];
+                            if (!singular[a]) continue;
+                            for (var j = i + 1; j < singularList.Count; j++)
+                            {
+                                var b = singularList[j];
+                                if (!singular[b] || a == b) continue;
+                                var d = (P[a] - P[b]).magnitude;
+                                if (d >= spreadMinCells * Math.Min(spacing[a], spacing[b])) continue;
+                                if (Math.Sign(Quarters(a)) != Math.Sign(Quarters(b))) continue;
+                                pairs.Add((d, a, b));
+                            }
+                        }
+                        pairs.Sort((x, y) => x.d.CompareTo(y.d));
+                        foreach (var (d0, a, b) in pairs)
+                        {
+                            if (!singular[a] || !singular[b] || (P[a] - P[b]).magnitude != d0) continue;
+                            if (Math.Abs(Quarters(a)) != 1 && Math.Abs(Quarters(b)) != 1) continue;
+                            // Move a whole unit singularity only.
+                            int toA = -1, toB = -1;
+                            List<int> pathA = null, pathB = null;
+                            double costA = double.PositiveInfinity, costB = double.PositiveInfinity;
+                            if (Math.Abs(Quarters(a)) == 1) toA = Spot(a, b, false, out pathA, out costA);
+                            if (Math.Abs(Quarters(b)) == 1) toB = Spot(b, a, false, out pathB, out costB);
+                            var ok = false;
+                            if (toA >= 0 && costA <= costB) ok = Move(a, toA, Math.Sign(Quarters(a)), pathA);
+                            else if (toB >= 0) ok = Move(b, toB, Math.Sign(Quarters(b)), pathB);
+                            if (ok) { stats.spreadMoves++; moved++; }
+                            else stats.spreadFailed++;
+                        }
+                        if (moved == 0) break;
+                    }
+                }
+                for (var v = 0; v < n; v++)
+                    if (singular[v] && Math.Abs(Quarters(v)) >= 2) stats.multipleSingularities++;
             }
 
             for (var v = 0; v < n; v++) if (singular[v]) stats.singularVertices++;
@@ -1154,8 +1397,34 @@ namespace NativeRemesher.Extraction
                 return folded;
             }
 
+            var dumpIndex = 0;
             int CountFlips()
             {
+                if (debugDumpPrefix != null)
+                {
+                    // Diagnostics: the coarse mesh with every corner's (u, v) and the singularities.
+                    var sb = new System.Text.StringBuilder();
+                    var ic = System.Globalization.CultureInfo.InvariantCulture;
+                    for (var v = 0; v < n; v++) sb.Append("v ").Append(P[v].x.ToString("R", ic)).Append(' ').Append(P[v].y.ToString("R", ic)).Append(' ').Append(P[v].z.ToString("R", ic)).Append((char)10);
+                    for (var c = 0; c < 3 * m; c++)
+                    {
+                        double cu = 0, cv = 0;
+                        for (var i = 0; i < cornerCount[c]; i++)
+                        {
+                            var t = pool[cornerStart[c] + i];
+                            double xu = x[2 * t.block], xv = x[2 * t.block + 1];
+                            if (t.rot == 0) { cu += t.sign * xu; cv += t.sign * xv; }
+                            else { cu -= t.sign * xv; cv += t.sign * xu; }
+                        }
+                        sb.Append("vt ").Append(cu.ToString("R", ic)).Append(' ').Append(cv.ToString("R", ic)).Append((char)10);
+                    }
+                    for (var f = 0; f < m; f++)
+                        sb.Append($"f {T[3 * f] + 1}/{3 * f + 1} {T[3 * f + 1] + 1}/{3 * f + 2} {T[3 * f + 2] + 1}/{3 * f + 3}" + (char)10);
+                    for (var v = 0; v < n; v++) if (singular[v]) sb.Append($"# sing {v} {index[v]} {trueTurn[v].ToString("F3", ic)}" + (char)10);
+                    for (var v = 0; v < n; v++) if (pinU[v] || pinV[v]) sb.Append($"# pin {v} {(pinU[v] ? 1 : 0)} {(pinV[v] ? 1 : 0)}" + (char)10);
+                    for (var f = 0; f < m; f++) sb.Append($"# frame {f} {gradX[3 * f].ToString("R", ic)} {gradY[3 * f].ToString("R", ic)} {gradX[3 * f + 1].ToString("R", ic)} {gradY[3 * f + 1].ToString("R", ic)} {gradX[3 * f + 2].ToString("R", ic)} {gradY[3 * f + 2].ToString("R", ic)} {fArea[f].ToString("R", ic)}" + (char)10);
+                    System.IO.File.WriteAllText($"{debugDumpPrefix}_{dumpIndex++}.obj", sb.ToString());
+                }
                 var flips = 0;
                 for (var f = 0; f < m; f++)
                 {

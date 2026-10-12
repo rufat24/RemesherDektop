@@ -956,6 +956,16 @@ namespace NativeRemesher.Extraction
         /// </summary>
         public static bool parametrizationExtractRefined = true;
 
+        /// <summary>
+        /// With <see cref="parametrization"/>, solve the cross field again on the decimated mesh, as
+        /// the smoothest field under the crease locks (see GlobalCrossField), instead of sampling the
+        /// refined one.
+        /// </summary>
+        public static bool parametrizationGlobalField = false;
+
+        /// <summary>Weight of the sampled refined field as a guide to that solve (0 = locks only).</summary>
+        public static float parametrizationGlobalFieldGuide = 0f;
+
         /// <summary>Smoothing sweeps of the cross field after it is sampled onto the decimated mesh.</summary>
         public static int parametrizationFieldSweeps = 0;
 

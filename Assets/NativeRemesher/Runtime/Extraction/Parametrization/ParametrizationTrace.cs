@@ -33,6 +33,7 @@ namespace NativeRemesher.Extraction
         public int nonIntegerTransitions;
         public int rays, traced, hitBoundary, hitFold, missedTarget, tooLong, noReverse, unpaired;
         public int polygons, quads, triangles, larger, brokenWalks;
+        public int holes, holesLeft, holeFans, holeChords, holeQuads, holeGrids, doublets;
         public long ms;
         public string debug = "";
 
@@ -40,7 +41,7 @@ namespace NativeRemesher.Extraction
             $"tris={faces} folded={foldedFaces} verts={vertices} (in {insideVertices} edge {edgeVertices} corner {cornerVertices}) " +
             $"nonIntT={nonIntegerTransitions} rays={rays} traced={traced} boundary={hitBoundary} fold={hitFold} " +
             $"missed={missedTarget} long={tooLong} noReverse={noReverse} unpaired={unpaired} " +
-            $"polys={polygons} quads={quads} tris={triangles} larger={larger} broken={brokenWalks} ms={ms}";
+            $"polys={polygons} quads={quads} tris={triangles} larger={larger} broken={brokenWalks} holes={holes}(left {holesLeft} fans {holeFans} chords {holeChords} grids {holeGrids} quads {holeQuads}) doublets={doublets} ms={ms}";
     }
 
     public static class ParametrizationTrace
@@ -71,6 +72,8 @@ namespace NativeRemesher.Extraction
             if (Math.Abs(dx) > Math.Abs(dy)) return dx > 0 ? 0 : 2;
             return dy > 0 ? 1 : 3;
         }
+
+        static int Mod4(int k) => ((k % 4) + 4) % 4;
 
         static double Cross(double ax, double ay, double bx, double by) => ax * by - ay * bx;
 
@@ -568,6 +571,312 @@ namespace NativeRemesher.Extraction
                 normals[q] = verts[q].normal;
             }
             stats.ms = watch.ElapsedMilliseconds;
+            if (debugRawPath != null)
+            {
+                // Diagnostics: the traced polygons before any capping.
+                var ic = System.Globalization.CultureInfo.InvariantCulture;
+                var sb = new System.Text.StringBuilder();
+                foreach (var p in positions) sb.Append("v ").Append(p.x.ToString("R", ic)).Append(' ').Append(p.y.ToString("R", ic)).Append(' ').Append(p.z.ToString("R", ic)).Append((char)10);
+                foreach (var f in faces) { sb.Append('f'); foreach (var v in f) sb.Append(' ').Append(v + 1); sb.Append((char)10); }
+                System.IO.File.WriteAllText(debugRawPath, sb.ToString());
+            }
+        }
+
+        /// <summary>Diagnostics: write the traced polygons, before capping, to this path.</summary>
+        public static string debugRawPath = null;
+
+        /// <summary>
+        /// Close the holes the folds leave with quads round one new vertex (see FillHoles) before
+        /// the caller's generic capping sees them.
+        /// </summary>
+        public static bool fillHoles = false;
+
+        /// <summary>Largest distance of a doublet's vertex from the merged quad's diagonal, over its length.</summary>
+        public static float doubletOffDiagonal = 0.25f;
+
+        /// <summary>Fill rims that are lattice polygons with their unit cells (see FillHoles).</summary>
+        public static bool fillGrids = true;
+
+        /// <summary>Longest even rim filled round a single vertex; longer ones are split first.</summary>
+        public static int fanMaxRim = 10;
+
+        /// <summary>
+        /// The holes a fold leaves sit round a singularity: the lattice there is a fan of quads round
+        /// one node, and the tracer lost it because the triangles under that node folded. A rim of
+        /// 2k edges takes it back exactly -- k quads round one new vertex, which is then the valence
+        /// k singularity the parametrisation meant (6 edges: a valence 3, 8: a regular vertex, 10: a
+        /// valence 5). A 4-edge rim is one quad. Longer even rims are cut by a chord into two even
+        /// ones first. Odd rims, and rims that touch themselves, are left to the generic capping.
+        /// </summary>
+        public static void FillHoles(ref Vector3[] positions, ref Vector3[] normals, List<int[]> faces,
+            ParametrizationTraceStats stats)
+        {
+            var half = new HashSet<(int, int)>();
+            foreach (var f in faces)
+                for (var i = 0; i < f.Length; i++) half.Add((f[i], f[(i + 1) % f.Length]));
+            // Hole step: for a boundary half-edge t -> h the hole runs h -> t.
+            var next = new Dictionary<int, int>();
+            var branching = new HashSet<int>();
+            foreach (var (a, b) in half)
+            {
+                if (half.Contains((b, a))) continue;
+                if (next.ContainsKey(b)) branching.Add(b);
+                else next[b] = a;
+            }
+            var newPositions = new List<Vector3>(positions);
+            var newNormals = new List<Vector3>(normals);
+            var done = new HashSet<int>();
+            var rim = new List<int>();
+            foreach (var start in new List<int>(next.Keys))
+            {
+                if (done.Contains(start)) continue;
+                rim.Clear();
+                var v = start;
+                var ok = true;
+                for (var guard = 0; guard < 1000; guard++)
+                {
+                    if (branching.Contains(v) || done.Contains(v)) { ok = false; break; }
+                    rim.Add(v);
+                    done.Add(v);
+                    if (!next.TryGetValue(v, out var w)) { ok = false; break; }
+                    v = w;
+                    if (v == start) break;
+                }
+                if (!ok || v != start) continue;
+                stats.holes++;
+                if (rim.Count % 2 == 1 || rim.Count < 4) { stats.holesLeft++; continue; }
+                FillEven(rim.ToArray());
+            }
+            // Doublets: a vertex in just two quads, which share both its edges -- the lattice folding
+            // over a cell where a fold was. The two are one quad without it.
+            for (var round = 0; round < 4; round++)
+            {
+                var facesAt = new Dictionary<int, List<int>>();
+                for (var i = 0; i < faces.Count; i++)
+                {
+                    if (faces[i] == null) continue;
+                    foreach (var v in faces[i]) { if (!facesAt.TryGetValue(v, out var l)) facesAt[v] = l = new List<int>(4); l.Add(i); }
+                }
+                var merged = 0;
+                foreach (var kv in facesAt)
+                {
+                    var l = kv.Value;
+                    if (l.Count != 2 || faces[l[0]] == null || faces[l[1]] == null) continue;
+                    var f1 = faces[l[0]];
+                    var f2 = faces[l[1]];
+                    if (f1.Length != 4 || f2.Length != 4) continue;
+                    var v = kv.Key;
+                    var i1 = Array.IndexOf(f1, v);
+                    var i2 = Array.IndexOf(f2, v);
+                    int a = f1[(i1 + 1) % 4], x = f1[(i1 + 2) % 4], b = f1[(i1 + 3) % 4];
+                    // f2 must run v -> b ... a -> v.
+                    if (f2[(i2 + 1) % 4] != b || f2[(i2 + 3) % 4] != a) continue;
+                    var y = f2[(i2 + 2) % 4];
+                    if (x == y) continue;
+                    // Only where v lies on the merged quad's diagonal: a vertex standing off it -- the
+                    // tip of a finger -- is shape, not a fold.
+                    var pa = newPositions[a];
+                    var ab = newPositions[b] - pa;
+                    var t = Mathf.Clamp01(Vector3.Dot(newPositions[v] - pa, ab) / Mathf.Max(ab.sqrMagnitude, 1e-20f));
+                    if ((newPositions[v] - (pa + t * ab)).magnitude > doubletOffDiagonal * ab.magnitude) continue;
+                    faces[l[0]] = new[] { a, x, b, y };
+                    faces[l[1]] = null;
+                    merged++;
+                }
+                faces.RemoveAll(f => f == null);
+                stats.doublets += merged;
+                if (merged == 0) break;
+            }
+
+            positions = newPositions.ToArray();
+            normals = newNormals.ToArray();
+            if (debugRawPath != null)
+            {
+                var ic = System.Globalization.CultureInfo.InvariantCulture;
+                var sb = new System.Text.StringBuilder();
+                foreach (var p in positions) sb.Append("v ").Append(p.x.ToString("R", ic)).Append(' ').Append(p.y.ToString("R", ic)).Append(' ').Append(p.z.ToString("R", ic)).Append((char)10);
+                foreach (var f in faces) { sb.Append('f'); foreach (var v in f) sb.Append(' ').Append(v + 1); sb.Append((char)10); }
+                System.IO.File.WriteAllText(debugRawPath.Replace(".obj", "_filled.obj"), sb.ToString());
+            }
+
+            float MinAngle(int[] q)
+            {
+                var worst = 180f;
+                for (var i = 0; i < q.Length; i++)
+                {
+                    var p = newPositions[q[i]];
+                    var a = newPositions[q[(i + 1) % q.Length]] - p;
+                    var b = newPositions[q[(i + q.Length - 1) % q.Length]] - p;
+                    worst = Mathf.Min(worst, Vector3.Angle(a, b));
+                }
+                return worst;
+            }
+
+            // A rim whose corners turn by a whole turn is a polygon of the lattice with nothing
+            // singular inside: the quads it is missing are its unit cells. Each corner's quarter
+            // turns are read off the surface angle the hole has there.
+            bool FillGrid(int[] r)
+            {
+                var L = r.Length;
+                var m = new int[L];
+                var turn = 0;
+                for (var i = 0; i < L; i++)
+                {
+                    var p = newPositions[r[i]];
+                    var nrm = newNormals[r[i]];
+                    var a = newPositions[r[(i + L - 1) % L]] - p;
+                    var b = newPositions[r[(i + 1) % L]] - p;
+                    var ang = Mathf.Atan2(Vector3.Dot(Vector3.Cross(b, a), nrm), Vector3.Dot(b, a)) * Mathf.Rad2Deg;
+                    if (ang < 0f) ang += 360f;
+                    m[i] = Mathf.Clamp(Mathf.RoundToInt(ang / 90f), 1, 3);
+                    turn += 2 - m[i];
+                }
+                if (turn != 4) return false;
+                // Walk it on the lattice: unit steps, a left turn of (2 - m) quarters at each corner.
+                var px = new int[L];
+                var py = new int[L];
+                int x = 0, y = 0, dx = 1, dy = 0;
+                var seen = new Dictionary<(int, int), int>();
+                for (var i = 0; i < L; i++)
+                {
+                    if (i > 0)
+                    {
+                        for (var k = 0; k < Mod4(2 - m[i]); k++) { var t = dx; dx = -dy; dy = t; }
+                    }
+                    px[i] = x;
+                    py[i] = y;
+                    if (seen.ContainsKey((x, y))) return false;
+                    seen[(x, y)] = r[i];
+                    x += dx;
+                    y += dy;
+                }
+                if (x != 0 || y != 0) return false;
+                int minX = int.MaxValue, maxX = int.MinValue, minY = int.MaxValue, maxY = int.MinValue;
+                for (var i = 0; i < L; i++)
+                {
+                    minX = Math.Min(minX, px[i]); maxX = Math.Max(maxX, px[i]);
+                    minY = Math.Min(minY, py[i]); maxY = Math.Max(maxY, py[i]);
+                }
+                bool Inside(double cx, double cy)
+                {
+                    var inside = false;
+                    for (int i = 0, j = L - 1; i < L; j = i++)
+                        if ((py[i] > cy) != (py[j] > cy)
+                            && cx < (px[j] - px[i]) * (cy - py[i]) / (double)(py[j] - py[i]) + px[i])
+                            inside = !inside;
+                    return inside;
+                }
+                // Interior lattice points become vertices, placed by Laplace with the rim held.
+                var node = new Dictionary<(int, int), int>(seen);
+                var interior = new List<(int, int)>();
+                for (var gx = minX + 1; gx < maxX; gx++)
+                for (var gy = minY + 1; gy < maxY; gy++)
+                {
+                    if (node.ContainsKey((gx, gy)) || !Inside(gx, gy)) continue;
+                    var nrm = Vector3.zero;
+                    var c = Vector3.zero;
+                    foreach (var v in r) { c += newPositions[v]; nrm += newNormals[v]; }
+                    node[(gx, gy)] = newPositions.Count;
+                    newPositions.Add(c / L);
+                    newNormals.Add(MeshMath.SafeNormalize(nrm, Vector3.up));
+                    interior.Add((gx, gy));
+                }
+                for (var sweep = 0; sweep < 50 && interior.Count > 0; sweep++)
+                    foreach (var (gx, gy) in interior)
+                    {
+                        var sum = Vector3.zero;
+                        var count = 0;
+                        foreach (var (ox, oy) in new[] { (1, 0), (-1, 0), (0, 1), (0, -1) })
+                            if (node.TryGetValue((gx + ox, gy + oy), out var w)) { sum += newPositions[w]; count++; }
+                        if (count > 0) newPositions[node[(gx, gy)]] = sum / count;
+                    }
+                var cells = 0;
+                for (var gx = minX; gx < maxX; gx++)
+                for (var gy = minY; gy < maxY; gy++)
+                {
+                    if (!Inside(gx + 0.5, gy + 0.5)) continue;
+                    if (!node.TryGetValue((gx, gy), out var a0) || !node.TryGetValue((gx + 1, gy), out var a1)
+                        || !node.TryGetValue((gx + 1, gy + 1), out var a2) || !node.TryGetValue((gx, gy + 1), out var a3))
+                        return false;
+                    faces.Add(new[] { a0, a1, a2, a3 });
+                    cells++;
+                }
+                stats.holeGrids++;
+                stats.holeQuads += cells;
+                return true;
+            }
+
+            void FillEven(int[] r)
+            {
+                var L = r.Length;
+                if (L == 4) { faces.Add(r); stats.holeQuads++; return; }
+                if (fillGrids && FillGrid(r)) return;
+                if (L > fanMaxRim)
+                {
+                    // The shortest chord leaving two even rims of at least 6 edges each.
+                    var best = (-1, -1);
+                    var bestLen = float.PositiveInfinity;
+                    for (var i = 0; i < L; i++)
+                    for (var d = 5; d <= L - 5; d += 2)
+                    {
+                        var j = (i + d) % L;
+                        var len = (newPositions[r[i]] - newPositions[r[j]]).magnitude;
+                        // Balanced halves first, then short.
+                        len *= 1f + 0.25f * Mathf.Abs(L - 2 * d) / L;
+                        if (len < bestLen) { bestLen = len; best = (i, d); }
+                    }
+                    if (best.Item1 < 0) { stats.holesLeft++; return; }
+                    var a = new int[best.Item2 + 1];
+                    var b = new int[L - best.Item2 + 1];
+                    for (var k = 0; k <= best.Item2; k++) a[k] = r[(best.Item1 + k) % L];
+                    for (var k = 0; k <= L - best.Item2; k++) b[k] = r[(best.Item1 + best.Item2 + k) % L];
+                    stats.holeChords++;
+                    FillEven(a);
+                    FillEven(b);
+                    return;
+                }
+                // One new vertex: the rim's centroid, normal the rim's.
+                var c = Vector3.zero;
+                var nrm = Vector3.zero;
+                foreach (var v in r) { c += newPositions[v]; nrm += newNormals[v]; }
+                c /= L;
+                var ci = newPositions.Count;
+                newPositions.Add(c);
+                newNormals.Add(MeshMath.SafeNormalize(nrm, Vector3.up));
+                // The spokes go to every other rim vertex; of the two ways, the squarer.
+                List<int[]> Fan(int offset)
+                {
+                    var list = new List<int[]>(L / 2);
+                    for (var k = 0; k < L / 2; k++)
+                        list.Add(new[] { ci, r[(offset + 2 * k) % L], r[(offset + 2 * k + 1) % L], r[(offset + 2 * k + 2) % L] });
+                    return list;
+                }
+                var f0 = Fan(0);
+                var f1 = Fan(1);
+                // A spoke's vertex gives the hole two quarters, the others one: the offset whose
+                // spokes sit at the wider corners, and on a tie the squarer quads.
+                float Fit(int offset)
+                {
+                    var fit = 0f;
+                    for (var k = 0; k < L; k++)
+                    {
+                        var p = newPositions[r[k]];
+                        var a = newPositions[r[(k + L - 1) % L]] - p;
+                        var b = newPositions[r[(k + 1) % L]] - p;
+                        var ang = Mathf.Atan2(Vector3.Dot(Vector3.Cross(b, a), newNormals[r[k]]), Vector3.Dot(b, a)) * Mathf.Rad2Deg;
+                        if (ang < 0f) ang += 360f;
+                        fit += ((k - offset) % 2 + 2) % 2 == 0 ? ang : -ang;
+                    }
+                    return fit;
+                }
+                float Worst(List<int[]> l) { var w = 180f; foreach (var q in l) w = Mathf.Min(w, MinAngle(q)); return w; }
+                var fit0 = Fit(0);
+                var fit1 = Fit(1);
+                var pick0 = Math.Abs(fit0 - fit1) > 90f * L / 4f ? fit0 > fit1 : Worst(f0) >= Worst(f1);
+                faces.AddRange(pick0 ? f0 : f1);
+                stats.holeFans++;
+                stats.holeQuads += L / 2;
+            }
         }
     }
 }

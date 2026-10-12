@@ -119,6 +119,7 @@ namespace NativeRemesher
 
         /// <summary>Singular faces before and after IntegerGridMap.cancelSingularPairs, and pairs tried.</summary>
         public int singularBeforeCancel, singularAfterCancel, singularPairsTried;
+        public GlobalFieldStats decimatedFieldStats;
 
         /// <summary>The caller's undecimated mesh, kept for <see cref="RemeshPipeline.projectOntoOriginal"/>.</summary>
         [NonSerialized] public Vector3[] originalPositions;
@@ -652,7 +653,55 @@ namespace NativeRemesher
 
             // Same mesh, same field on every pass of the face-count search: sampled once.
             if (result.decimatedCross != null && result.decimatedCross.Length == cross.Length) cross = result.decimatedCross;
-            else result.decimatedCross = cross;
+            else
+            {
+                // The field solved again on the decimated mesh itself, globally (see GlobalCrossField):
+                // the sampled one carries the refined field's singularity noise, and on this mesh a
+                // cluster of singularities a fraction of a cell apart is what folds the map once they
+                // are rounded onto grid nodes. Locked along the creases the grid follows; the sampled
+                // field stays as a guide of weight parametrizationGlobalFieldGuide.
+                if (Extraction.IntegerGridMap.parametrizationGlobalField)
+                {
+                    var nv = topology.vertexCount;
+                    var lockDir = new Vector3[nv];
+                    var lockWeight = new float[nv];
+                    if (featureEdges != null)
+                        foreach (var (a, b) in featureEdges)
+                        {
+                            if (a < 0 || b < 0 || a >= nv || b >= nv) continue;
+                            var d = topology.positions[b] - topology.positions[a];
+                            foreach (var v in new[] { a, b })
+                            {
+                                var nrm = topology.normals[v];
+                                var t = MeshMath.SafeNormalize(d - nrm * Vector3.Dot(nrm, d), Vector3.zero);
+                                if (t == Vector3.zero) continue;
+                                if (lockWeight[v] > 0f)
+                                {
+                                    // Summed as crosses: turned onto the first direction's quadrant.
+                                    var r = lockDir[v].normalized;
+                                    var best = t;
+                                    var bestDot = float.NegativeInfinity;
+                                    var c = t;
+                                    for (var k = 0; k < 4; k++)
+                                    {
+                                        var dd = Vector3.Dot(c, r);
+                                        if (dd > bestDot) { bestDot = dd; best = c; }
+                                        c = Vector3.Cross(nrm, c);
+                                    }
+                                    t = best;
+                                }
+                                lockDir[v] += t;
+                                lockWeight[v] = 1f;
+                            }
+                        }
+                    var guideWeight = new float[nv];
+                    for (var v = 0; v < nv; v++) guideWeight[v] = Extraction.IntegerGridMap.parametrizationGlobalFieldGuide;
+                    cross = GlobalCrossField.Solve(topology, lockDir, lockWeight, cross, guideWeight,
+                        Extraction.IntegerGridMap.globalFieldMaxIterations, Extraction.IntegerGridMap.globalFieldTolerance,
+                        out result.decimatedFieldStats);
+                }
+                result.decimatedCross = cross;
+            }
             result.parametrizationCache ??= new Extraction.ParametrizationCache();
             Extraction.SeamlessParametrization.Solve(topology, cross, v => spacing[v], featureEdges,
                 result.parametrizationCache,
