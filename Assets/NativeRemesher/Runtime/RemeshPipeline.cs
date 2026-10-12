@@ -114,12 +114,25 @@ namespace NativeRemesher
         /// <summary>The global cross-field solve, when IntegerGridMap.globalField ran it.</summary>
         public GlobalFieldStats globalFieldStats;
 
+        /// <summary>The seamless parametrisation of the kept attempt, when IntegerGridMap.parametrization ran it.</summary>
+        public Extraction.ParametrizationStats parametrizationStats;
+
         /// <summary>Singular faces before and after IntegerGridMap.cancelSingularPairs, and pairs tried.</summary>
         public int singularBeforeCancel, singularAfterCancel, singularPairsTried;
 
         /// <summary>The caller's undecimated mesh, kept for <see cref="RemeshPipeline.projectOntoOriginal"/>.</summary>
         [NonSerialized] public Vector3[] originalPositions;
         [NonSerialized] public int[] originalTriangles;
+
+        /// <summary>The decimated input before refinement; the parametrisation's mesh.</summary>
+        [NonSerialized] public Vector3[] decimatedPositions;
+        [NonSerialized] public int[] decimatedTriangles;
+        [NonSerialized] public RemeshTopology decimatedTopology;
+        [NonSerialized] public int[] decimatedToRefined;
+        [NonSerialized] public FeatureGraph decimatedFeatures;
+        [NonSerialized] public List<(int a, int b)> decimatedFeatureEdges;
+        [NonSerialized] public Vector3[] decimatedCross;
+        [NonSerialized] public Extraction.ParametrizationCache parametrizationCache;
 
         public int faceCountAttempts;
 
@@ -473,6 +486,8 @@ namespace NativeRemesher
             // needs the MAXIMUM bounded, because it carries one lattice offset per input edge and an
             // edge spanning two cells has no valid unit offset. The collapse extractor decides each
             // edge independently and does not care, so this runs only for the map.
+            var refineInputPositions = solvePositions;
+            var refineInputTriangles = solveTriangles;
             if (profile.integerGridMap)
             {
                 onProgress?.Invoke("Refining input", 0f);
@@ -491,6 +506,9 @@ namespace NativeRemesher
 
             result.originalPositions = positions;
             result.originalTriangles = triangles;
+            // The decimated mesh, before refinement: what the parametrisation solves on.
+            result.decimatedPositions = refineInputPositions;
+            result.decimatedTriangles = refineInputTriangles;
             RunCore(solvePositions, solveTriangles, settings, result, watch, onProgress,
                 autoSelectProfile);
 
@@ -551,6 +569,164 @@ namespace NativeRemesher
             return Mathf.Approximately(scale, baseScale)
                 ? result.scaleField
                 : result.scaleField.Scaled(scale / baseScale);
+        }
+
+        /// <summary>
+        /// The parametrisation path on the decimated mesh: the cross field and spacing sampled from
+        /// the refined mesh's nearest vertex, the lattice solved and extracted there.
+        /// </summary>
+        /// <remarks>
+        /// The refined mesh exists for the position field, which samples the lattice at vertices
+        /// and needs several per cell. A global parametrisation is piecewise linear over triangles
+        /// and needs only that they be no bigger than a cell, which the decimation budget already
+        /// guarantees -- and on the refined body the solve cost 6.5 s per sparse factorisation.
+        /// </remarks>
+        static void ParametrizeDecimated(RemeshResult result, PositionField solved,
+            ExtractionOptions options, out RemeshTopology topology, out OrientationField orientation,
+            out PositionField position, out ExtractionOptions coarseOptions)
+        {
+            topology = result.decimatedTopology ??= RemeshTopology.Build(result.decimatedPositions,
+                result.decimatedTriangles);
+            var fine = result.topology;
+            var nearest = result.decimatedToRefined;
+            if (nearest == null || nearest.Length != topology.vertexCount)
+            {
+                nearest = new int[topology.vertexCount];
+                var cell = Mathf.Max(fine.averageEdgeLength, 1e-9f);
+                var hash = new Dictionary<(int, int, int), List<int>>();
+                (int, int, int) Key(Vector3 p) =>
+                    (Mathf.FloorToInt(p.x / cell), Mathf.FloorToInt(p.y / cell), Mathf.FloorToInt(p.z / cell));
+                for (var i = 0; i < fine.vertexCount; i++)
+                {
+                    var k = Key(fine.positions[i]);
+                    if (!hash.TryGetValue(k, out var list)) hash[k] = list = new List<int>(4);
+                    list.Add(i);
+                }
+                for (var v = 0; v < topology.vertexCount; v++)
+                {
+                    var p = topology.positions[v];
+                    var best = 0;
+                    var bestD = float.PositiveInfinity;
+                    for (var ring = 1; ring <= 8 && float.IsPositiveInfinity(bestD); ring *= 2)
+                    {
+                        var (x, y, z) = Key(p);
+                        for (var dx = -ring; dx <= ring; dx++)
+                        for (var dy = -ring; dy <= ring; dy++)
+                        for (var dz = -ring; dz <= ring; dz++)
+                        {
+                            if (!hash.TryGetValue((x + dx, y + dy, z + dz), out var list)) continue;
+                            foreach (var i in list)
+                            {
+                                var d = (fine.positions[i] - p).sqrMagnitude;
+                                if (d < bestD) { bestD = d; best = i; }
+                            }
+                        }
+                    }
+                    nearest[v] = best;
+                }
+                result.decimatedToRefined = nearest;
+            }
+
+            var cross = new Vector3[topology.vertexCount];
+            var spacing = new float[topology.vertexCount];
+            for (var v = 0; v < topology.vertexCount; v++)
+            {
+                var n = topology.normals[v];
+                var q = result.orientation.directions[nearest[v]];
+                cross[v] = MeshMath.SafeNormalize(q - n * Vector3.Dot(n, q), OrientationField.ArbitraryTangent(n));
+                spacing[v] = solved.SpacingAt(nearest[v]);
+            }
+
+            // The sampled field carries the refined field's fine-scale noise, and on the coarser
+            // mesh that noise is singularity pairs between neighbouring vertices. A few sweeps on
+            // the decimated mesh comb it out; constrained vertices are not involved here.
+            if (Extraction.IntegerGridMap.parametrizationFieldSweeps > 0)
+                cross = OrientationField.Solve(topology, Extraction.IntegerGridMap.parametrizationFieldSweeps,
+                    null, -1, null, null, cross).directions;
+
+            // The lines the grid must follow: the open border always, and with Detect Hard Edges
+            // the coherent creases, found again on this mesh.
+            var featureEdges = Extraction.IntegerGridMap.parametrizationFeatures
+                ? result.decimatedFeatureEdges ??= DecimatedFeatureEdges(result, topology)
+                : null;
+
+            // Same mesh, same field on every pass of the face-count search: sampled once.
+            if (result.decimatedCross != null && result.decimatedCross.Length == cross.Length) cross = result.decimatedCross;
+            else result.decimatedCross = cross;
+            result.parametrizationCache ??= new Extraction.ParametrizationCache();
+            Extraction.SeamlessParametrization.Solve(topology, cross, v => spacing[v], featureEdges,
+                result.parametrizationCache,
+                out var nodes, out var axes, out var cells,
+                out var cornerNodes, out var cornerUv, out var cornerUvExact, out var faceUAxis, out var cornerRank, out var singularFaces,
+                out var halfEdgeAcross, out var halfEdgeTurn,
+                out result.parametrizationStats);
+
+            // Solved coarse, extracted fine: see ParametrizationTransfer.
+            if (Extraction.IntegerGridMap.parametrizationExtractRefined && !Extraction.IntegerGridMap.parametrizationTrace)
+            {
+                var transferWatch = System.Diagnostics.Stopwatch.StartNew();
+                Extraction.ParametrizationTransfer.ToRefined(result.topology, topology, cornerUv, faceUAxis,
+                    halfEdgeAcross, halfEdgeTurn, solved.SpacingAt,
+                    out var fineNodes, out var fineAxes, out var fineCells,
+                    out var fineCornerNodes, out var fineCornerUv, out var fineFaceUAxis,
+                    out var fineCornerRank, out var fineSingular, out var unmapped);
+                result.parametrizationStats.transferMs = transferWatch.ElapsedMilliseconds;
+                result.parametrizationStats.refinedSingularFaces = fineSingular.Length;
+                result.parametrizationStats.unmappedFaces = unmapped;
+                topology = result.topology;
+                position = solved.OnRefinedVertices(fineNodes, fineCells);
+                position.cornerNodes = fineCornerNodes;
+                position.cornerUv = fineCornerUv;
+                position.faceUAxis = fineFaceUAxis;
+                position.cornerRank = fineCornerRank;
+                position.singularFaces = fineSingular;
+                orientation = new OrientationField { directions = fineAxes };
+                coarseOptions = options;
+                return;
+            }
+
+            position = solved.OnRefinedVertices(nodes, cells);
+            position.cornerNodes = cornerNodes;
+            position.cornerUv = cornerUv;
+            position.cornerUvExact = cornerUvExact;
+            position.faceUAxis = faceUAxis;
+            position.cornerRank = cornerRank;
+            position.singularFaces = singularFaces;
+            orientation = new OrientationField { directions = axes };
+
+            coarseOptions = options.Clone();
+            coarseOptions.creaseLoopPositions = options.featurePositions;
+            coarseOptions.featurePositions = topology.positions;
+            coarseOptions.features = result.decimatedFeatures ??= FeatureGraph.Detect(topology,
+                result.profile.featureAngleDegrees);
+        }
+
+        static List<(int a, int b)> DecimatedFeatureEdges(RemeshResult result, RemeshTopology topology)
+        {
+            var edges = new List<(int a, int b)>();
+            void Add(FeatureGraph graph)
+            {
+                if (graph == null) return;
+                for (var c = 0; c < graph.polylineCount; c++)
+                    for (var i = graph.polylineStart[c] + 1; i < graph.polylineStart[c + 1]; i++)
+                        edges.Add((graph.polylineVertices[i - 1], graph.polylineVertices[i]));
+            }
+            // Boundaries, and the profile's own creases where it has any.
+            Add(FeatureGraph.Detect(topology, result.profile.featureAngleDegrees));
+            if (Extraction.IntegerGridMap.coherentCreases && result.profile.featureAngleDegrees <= 0f)
+            {
+                var cell = topology.EdgeLengthForQuadCount(Mathf.Max(1, result.effectiveTargetQuadCount));
+                var creases = FeatureGraph.Detect(topology, Extraction.IntegerGridMap.coherentCreaseAngle)
+                    .KeepCoherentCurves(topology, Extraction.IntegerGridMap.parametrizationCreaseMinCells * cell,
+                        Extraction.IntegerGridMap.coherentCreaseStraightness, out _, out _);
+                // Two grid lines closer than a cell squash the cells between them flat.
+                if (Extraction.IntegerGridMap.parametrizationCreaseSeparationCells > 0f)
+                    creases = creases.KeepSeparatedCurves(topology,
+                        Extraction.IntegerGridMap.parametrizationCreaseSeparationCells * cell,
+                        Extraction.IntegerGridMap.coherentCreaseMaxShared, out _);
+                Add(creases);
+            }
+            return edges;
         }
 
         static SpatialGrid SurfaceFor(RemeshResult result, Vector3[] positions, int[] triangles) =>
@@ -1222,12 +1398,49 @@ namespace NativeRemesher
                     watch.Restart();
                     var solved = SolvePositions(result, scale, field, settings.positionIterations,
                         p => onProgress?.Invoke(label, p), levels);
+
+                    // The global seamless parametrisation, when asked for, replaces the position
+                    // field's lattice with one solved for the whole surface at once; the extraction
+                    // downstream is unchanged. See SeamlessParametrization.
+                    var extractOrientation = result.orientation;
+                    var extractTopology = result.topology;
+                    var extractOptions = extractionOptions;
+                    var parametrize = Extraction.IntegerGridMap.parametrization
+                        && (Extraction.IntegerGridMap.parametrizationOnOpenMeshes || result.topology.boundaryEdgeCount == 0);
+                    if (parametrize && Extraction.IntegerGridMap.parametrizationOnDecimated
+                        && result.decimatedPositions != null)
+                    {
+                        onProgress?.Invoke("Parametrising", 0f);
+                        ParametrizeDecimated(result, solved, extractionOptions,
+                            out extractTopology, out extractOrientation, out solved, out extractOptions);
+                    }
+                    else if (parametrize)
+                    {
+                        onProgress?.Invoke("Parametrising", 0f);
+                        Extraction.SeamlessParametrization.Solve(result.topology,
+                            result.orientation.directions, solved.SpacingAt, null, null,
+                            out var nodes, out var axes, out var cells,
+                            out var cornerNodes, out var cornerUv, out var cornerUvExact, out var faceUAxis, out var cornerRank, out var singularFaces,
+                            out _, out _, out result.parametrizationStats);
+                        solved = solved.OnRefinedVertices(nodes, cells);
+                        if (Extraction.IntegerGridMap.parametrizationOffsets)
+                        {
+                            solved.cornerNodes = cornerNodes;
+                            solved.cornerUv = cornerUv;
+                            solved.faceUAxis = faceUAxis;
+                            solved.cornerRank = cornerRank;
+                            solved.singularFaces = singularFaces;
+                        }
+                        extractOrientation = new OrientationField { directions = axes };
+                    }
                     positionTotal += watch.ElapsedMilliseconds;
 
                     onProgress?.Invoke(attempt == 1 ? "Extracting quads" : $"Extracting quads (pass {attempt})", 0f);
                     watch.Restart();
-                    var extracted = QuadExtractor.Extract(result.topology, result.orientation,
-                        solved, extractionOptions);
+                    var extracted = QuadExtractor.Extract(extractTopology, extractOrientation,
+                        solved, extractOptions);
+                    if (extracted.parametrizationTraceStats != null && result.parametrizationStats != null)
+                        result.parametrizationStats.trace = extracted.parametrizationTraceStats.ToString();
                     extractionTotal += watch.ElapsedMilliseconds;
 
                     var achieved = extracted.faceCount;

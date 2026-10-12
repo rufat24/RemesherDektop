@@ -318,6 +318,15 @@ namespace NativeRemesher.Extraction
             g.Q.AddRange(orientation.directions);
             g.O.AddRange(position.positions);
             if (position.spacing != null) g.S = new List<float>(position.spacing);
+            if (position.cornerNodes != null && position.cornerNodes.Length == topology.triangles.Length
+                && position.faceUAxis != null && position.faceUAxis.Length * 3 == topology.triangles.Length)
+            {
+                g.m_CornerNodes = position.cornerNodes;
+                g.m_CornerUv = position.cornerUv;
+                g.m_FaceUAxis = position.faceUAxis;
+                g.m_CornerRank = position.cornerRank;
+                g.m_SingularFaces = position.singularFaces;
+            }
 
             g.F.AddRange(topology.triangles);
             g.E2E.AddRange(topology.halfEdgeTwin);
@@ -356,6 +365,17 @@ namespace NativeRemesher.Extraction
             return g;
         }
 
+        // A global parametrisation's lattice, when Build was handed one: see BuildEdgeInfo.
+        Vector2Int[] m_CornerNodes;
+        Vector2[] m_CornerUv;
+        Vector3[] m_FaceUAxis;
+        // Per corner, the quarter-turns that carry the vertex's cross onto its face chart's u
+        // axis; the flow's per-face rotations are read from these when present, so they agree
+        // with the offsets exactly.
+        int[] m_FaceRank;
+        int[] m_CornerRank;
+        int[] m_SingularFaces;
+
         /// <summary>
         /// Faces whose three crosses cannot be combed continuously. Also normalises the sign of one
         /// cross per singular face so the accumulated index sits in [0, 4), as the reference does.
@@ -364,6 +384,40 @@ namespace NativeRemesher.Extraction
         {
             singularities.Clear();
             var faces = faceCount;
+
+            // From a parametrisation: its singular faces, each with the index its neighbours'
+            // ranks give it. No cross is re-signed -- the ranks are relative to the crosses as given.
+            if (m_CornerRank != null && m_SingularFaces != null)
+            {
+                foreach (var f in m_SingularFaces)
+                {
+                    var index = 0;
+                    for (var k = 0; k < 3; k++)
+                    {
+                        var h = 3 * f + k;
+                        var twin = E2E[h];
+                        // The edge i -> j as its neighbour states it: there it runs j -> i.
+                        int ri, rj;
+                        if (twin >= 0)
+                        {
+                            var g = twin / 3;
+                            rj = m_CornerRank[twin];
+                            ri = m_CornerRank[3 * g + (twin % 3 == 2 ? 0 : twin % 3 + 1)];
+                        }
+                        else
+                        {
+                            ri = m_CornerRank[h];
+                            rj = m_CornerRank[3 * f + (k == 2 ? 0 : k + 1)];
+                        }
+                        if (ri < 0 || rj < 0) continue;
+                        index += rj - ri;
+                    }
+                    var mod = Mod4(index);
+                    if (mod == 1 || mod == 3) singularities[f] = mod;
+                }
+                stats.singularFaces = singularities.Count;
+                return;
+            }
 
             for (var f = 0; f < faces; f++)
             {
@@ -413,6 +467,40 @@ namespace NativeRemesher.Extraction
                     n[k] = N[i];
                     o[k] = O[i];
                     v[k] = V[i];
+                }
+
+                // From a global parametrisation: each corner's cross turned onto the face chart's u
+                // axis, and the offsets read straight off the chart's rounded nodes. They close round
+                // the face exactly, and agree across every edge -- across a cut the charts differ by
+                // a quarter-turn and an integer shift, which the ranks and the lattice absorb.
+                if (m_CornerNodes != null)
+                {
+                    var axis = m_FaceUAxis[f];
+                    for (var k = 0; k < 3; k++)
+                    {
+                        var target = axis - n[k] * Vector3.Dot(n[k], axis);
+                        var rank = 0;
+                        var bestAlign = float.NegativeInfinity;
+                        for (var r = 0; r < 4; r++)
+                        {
+                            var d = Vector3.Dot(Rotate90By(q[k], n[k], r), target);
+                            if (d > bestAlign) { bestAlign = d; rank = r; }
+                        }
+                        posRank[3 * f + k] = m_CornerRank != null && m_CornerRank[3 * f + k] >= 0
+                            ? m_CornerRank[3 * f + k]
+                            : rank;
+                    }
+                    m_FaceRank ??= new int[faces * 3];
+                    for (var k = 0; k < 3; k++) m_FaceRank[3 * f + k] = posRank[3 * f + k];
+                    for (var k = 0; k < 3; k++)
+                    {
+                        var kn = k == 2 ? 0 : k + 1;
+                        posIndex[3 * f + k] = m_CornerNodes[3 * f + kn] - m_CornerNodes[3 * f + k];
+                        posResidual[3 * f + k] = m_CornerUv != null
+                            ? (m_CornerUv[3 * f + kn] - m_CornerUv[3 * f + k]) - (Vector2)posIndex[3 * f + k]
+                            : Vector2.zero;
+                    }
+                    continue;
                 }
 
                 // The joint alignment of three crosses: the triple of representatives whose worst
@@ -826,6 +914,68 @@ namespace NativeRemesher.Extraction
         public static bool globalField = false;
 
         /// <summary>
+        /// Place the lattice by a global seamless parametrisation (mixed-integer, MIQ) instead of
+        /// the Instant Meshes position field. See SeamlessParametrization.
+        /// </summary>
+        /// <remarks>
+        /// Off in code (tests and scripted runs keep the old lattice); the editor window turns it on
+        /// with its Global Parametrization toggle. Means over 4600/5000/5400, window path:
+        ///   body    p05 58.1 -> 62.5, irregular 2.12 -> 1.96 %, Hausdorff 0.0090 -> 0.0094,
+        ///           orth 9.1 -> 7.9, loop turn 4.92 -> 4.48, 32.6 -> 28.8 s.
+        ///   head    p05 49.3 -> 52.5, irregular 4.38 -> 4.05 %, Hausdorff 0.0156 -> 0.0110,
+        ///           orth 11.8 -> 10.4, loop turn 7.19 -> 6.91, 50.8 -> 64.8 s.
+        ///   ccnb    p05 45.2 -> 43.7, irregular 6.94 -> 6.65 %, Hausdorff 0.0174 -> 0.0167,
+        ///           long faces 11.3 -> 14.0 per run, needle fans at the scan's jagged border --
+        ///           hence <see cref="parametrizationOnOpenMeshes"/>.
+        /// </remarks>
+        public static bool parametrization = false;
+
+        /// <summary>
+        /// With <see cref="parametrization"/>, use it on meshes with an open border too. Off: a mesh
+        /// with boundary edges keeps the position-field lattice, which handles a ragged scan border
+        /// better (see the ccnb row above).
+        /// </summary>
+        public static bool parametrizationOnOpenMeshes = false;
+
+        /// <summary>
+        /// With <see cref="parametrization"/>, trace the quads straight off the parametrisation's
+        /// integer grid on the decimated mesh (see ParametrizationTrace) instead of handing its
+        /// lattice to this map's collapse.
+        /// </summary>
+        public static bool parametrizationTrace = false;
+
+        /// <summary>
+        /// With <see cref="parametrization"/>, solve and extract on the decimated mesh rather than
+        /// the refined one. See RemeshPipeline.ParametrizeDecimated.
+        /// </summary>
+        public static bool parametrizationOnDecimated = true;
+
+        /// <summary>
+        /// With <see cref="parametrizationOnDecimated"/>, carry the solved map back onto the refined
+        /// mesh and extract there. See ParametrizationTransfer.
+        /// </summary>
+        public static bool parametrizationExtractRefined = true;
+
+        /// <summary>Smoothing sweeps of the cross field after it is sampled onto the decimated mesh.</summary>
+        public static int parametrizationFieldSweeps = 0;
+
+        /// <summary>Make the border and the coherent creases grid lines of the parametrisation.</summary>
+        public static bool parametrizationFeatures = true;
+
+        /// <summary>Shortest coherent crease, in cells, made a grid line of the parametrisation.</summary>
+        public static float parametrizationCreaseMinCells = 3f;
+
+        /// <summary>Creases closer than this many cells to a longer parallel one are not made grid lines.</summary>
+        public static float parametrizationCreaseSeparationCells = 0f;
+
+        /// <summary>
+        /// With <see cref="parametrization"/>, read the edge offsets straight off the
+        /// parametrisation's rounded nodes rather than re-rounding each edge from the lattice
+        /// points it produced.
+        /// </summary>
+        public static bool parametrizationOffsets = true;
+
+        /// <summary>
         /// Cancel pairs of opposite cross-field singularities closer than
         /// <see cref="cancelPairCells"/> by re-solving the field in a disk round each. See
         /// GlobalCrossField.CancelPairs.
@@ -1066,6 +1216,11 @@ namespace NativeRemesher.Extraction
                 SingularityAnalysis.Compat4Index(Q[v0], N[v0], Q[v2], N[v2], out var a2, out var b2);
                 var rank1 = Mod4(a1 - b1);   // v1 -> v0
                 var rank2 = Mod4(a2 - b2);   // v2 -> v0
+                if (m_FaceRank != null && 3 * i + 2 < m_FaceRank.Length && !singularities.ContainsKey(i))
+                {
+                    rank1 = Mod4(m_FaceRank[3 * i] - m_FaceRank[3 * i + 1]);
+                    rank2 = Mod4(m_FaceRank[3 * i] - m_FaceRank[3 * i + 2]);
+                }
 
                 // The face frame is v0's raw frame. Each slot's rotation carries the edge's stored
                 // offset (from its lower endpoint, in that endpoint's frame) into v0's frame, in the

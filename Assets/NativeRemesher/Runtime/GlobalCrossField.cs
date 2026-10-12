@@ -392,7 +392,7 @@ namespace NativeRemesher
         /// <paramref name="to"/> (Rodrigues). Written out rather than through Quaternion, whose
         /// FromToRotation is a native engine call and so unusable off the main thread.
         /// </summary>
-        static Vector3 Transport(Vector3 v, Vector3 from, Vector3 to)
+        internal static Vector3 Transport(Vector3 v, Vector3 from, Vector3 to)
         {
             var c = Vector3.Dot(from, to);
             if (c <= -0.999999f) return -v;
@@ -511,7 +511,7 @@ namespace NativeRemesher
             var adjStart = topology.adjacencyStart;
             var adj = topology.adjacency;
             var lists = new List<int>[n];
-            var seen = new HashSet<long>();
+            var seen = new HashSet<long>(Extraction.EdgeKey.Comparer);
             for (var i = 0; i < n; i++)
             {
                 for (var k = adjStart[i]; k < adjStart[i + 1]; k++)

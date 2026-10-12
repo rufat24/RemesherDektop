@@ -43,6 +43,36 @@ namespace NativeRemesher
 
         public bool isGraded => spacing != null;
 
+        /// <summary>
+        /// Per triangle corner (3f + k), the lattice node of that corner in its face's chart, when
+        /// the lattice came from a global parametrisation; null for a position field. The integer
+        /// grid map then reads its edge offsets from these instead of rounding each edge on its
+        /// own. See Extraction.SeamlessParametrization.
+        /// </summary>
+        public Vector2Int[] cornerNodes;
+
+        /// <summary>Per corner, the chart coordinates the nodes were rounded from.</summary>
+        public Vector2[] cornerUv;
+
+        /// <summary>
+        /// Per corner, the same coordinates in double precision, (u, v) interleaved -- exact enough
+        /// that a pinned crease's vertices sit on their grid line. What
+        /// Extraction.ParametrizationTrace reads.
+        /// </summary>
+        public double[] cornerUvExact;
+
+        /// <summary>Per face, the chart's u direction in space.</summary>
+        public Vector3[] faceUAxis;
+
+        /// <summary>
+        /// Per corner, the quarter-turns from the vertex's cross to its face chart, or -1 where
+        /// the parametrisation could not say (a second fan component).
+        /// </summary>
+        public int[] cornerRank;
+
+        /// <summary>Faces the parametrisation's singularities sit in, for the grid map.</summary>
+        public int[] singularFaces;
+
         /// <summary>Lattice spacing at one vertex, whether or not the field is graded.</summary>
         public float SpacingAt(int vertex)
         {

@@ -64,6 +64,7 @@ namespace NativeRemesher
         [SerializeField] bool m_AdaptQuadCount = true;
         [SerializeField] float m_AdaptiveSize = 50f;
         [SerializeField] bool m_DetectHardEdges = true;
+        [SerializeField] bool m_GlobalParametrization = true;
 
         [SerializeField] bool m_SaveAsAsset = true;
         [SerializeField] bool m_ShowField = true;
@@ -248,6 +249,15 @@ namespace NativeRemesher
                         "QuadRemesher's hard-edge detection does. Short creases from scan noise " +
                         "are ignored. Applies to the scan profiles, which otherwise detect none."),
                     m_DetectHardEdges);
+                m_GlobalParametrization = EditorGUILayout.Toggle(
+                    new GUIContent("Global Parametrization",
+                        "Place the quad grid with one global seamless parametrisation (the " +
+                        "mixed-integer method FreeRemesher is built on) instead of the local " +
+                        "position field: straighter loops, no shear bands between singularities, " +
+                        "creases as exact grid lines. Meshes with an open border (scans) keep " +
+                        "the previous extractor, which handles a ragged border better. Off is the " +
+                        "previous extractor everywhere."),
+                    m_GlobalParametrization);
             }
 
             if (m_ExtractorChoice == RemeshExtractor.IntegerGrid)
@@ -582,6 +592,7 @@ namespace NativeRemesher
             Extraction.IntegerGridMap.adaptiveQuadCount = m_AdaptQuadCount;
             Extraction.IntegerGridMap.adaptiveSize = m_AdaptiveSize / 100f;
             Extraction.IntegerGridMap.coherentCreases = m_DetectHardEdges;
+            Extraction.IntegerGridMap.parametrization = m_GlobalParametrization;
             var autoProfile = m_AutoProfile;
 
             // Main thread, and the only place the Mesh API is touched on the way in.

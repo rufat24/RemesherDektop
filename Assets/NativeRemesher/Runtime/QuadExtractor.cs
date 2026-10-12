@@ -29,6 +29,9 @@ namespace NativeRemesher
 {
     public sealed class QuadExtractionResult
     {
+        /// <summary>Set when the quads were traced off a parametrisation (see ParametrizationTrace).</summary>
+        public Extraction.ParametrizationTraceStats parametrizationTraceStats;
+
         /// <summary>Output vertex positions — one per lattice point.</summary>
         public Vector3[] positions;
 
@@ -185,6 +188,16 @@ namespace NativeRemesher
 
     public sealed class ExtractionOptions
     {
+        /// <summary>A shallow copy, for a caller that extracts the same settings off another mesh.</summary>
+        public ExtractionOptions Clone() => (ExtractionOptions)MemberwiseClone();
+
+        /// <summary>
+        /// Positions <see cref="creaseLoops"/> is indexed by, when that is not the mesh being
+        /// extracted (the parametrisation extracts off the decimated mesh while the creases were
+        /// found on the refined one). Null means <see cref="featurePositions"/>.
+        /// </summary>
+        public Vector3[] creaseLoopPositions;
+
         /// <summary>
         /// Record the irregular-vertex count after every stage into
         /// <see cref="QuadExtractionResult.census"/>. Off by default: it walks the whole face set
@@ -624,6 +637,24 @@ namespace NativeRemesher
         {
             var watch = System.Diagnostics.Stopwatch.StartNew();
 
+            Vector3[] positions;
+            Vector3[] normals;
+            List<int[]> faces;
+            IntegerGridStats igStats;
+            if (IntegerGridMap.parametrizationTrace && position.cornerUvExact != null
+                && position.cornerUvExact.Length == 2 * topology.triangles.Length)
+            {
+                // The parametrisation's own integer grid, traced: no collapse, no rounding, no flip
+                // repair -- see ParametrizationTrace.
+                Extraction.ParametrizationTrace.Extract(topology, position.cornerUvExact,
+                    out positions, out normals, out faces, out var traceStats);
+                result.parametrizationTraceStats = traceStats;
+                igStats = new IntegerGridStats();
+                igStats.totalMs = watch.ElapsedMilliseconds;
+                result.integerGridStats = igStats;
+            }
+            else
+            {
             var map = IntegerGridMap.Build(topology, orientation, position, features);
             var initialDiff = IntegerGridMap.debugChangedEdgesPath != null ? map.edgeDiff.ToArray() : null;
             var initialX = initialDiff != null ? map.edgeX.ToArray() : null;
@@ -663,10 +694,12 @@ namespace NativeRemesher
             var grid = map.Extract(features, topology.vertexCount);
             map.stats.totalMs = watch.ElapsedMilliseconds;
             result.integerGridStats = map.stats;
+            igStats = map.stats;
 
-            var positions = grid.positions;
-            var normals = grid.normals;
-            var faces = grid.faces;
+            positions = grid.positions;
+            normals = grid.normals;
+            faces = grid.faces;
+            }
             result.positions = positions;
             result.normals = normals;
 
@@ -683,7 +716,7 @@ namespace NativeRemesher
 
             result.repairStats = FaceRepair.Run(faces, positions);
             RemoveDebris(faces, positions.Length, Extraction.IntegerGridMap.debrisBelowFaces,
-                out map.stats.debrisPieces, out map.stats.debrisFaces);
+                out igStats.debrisPieces, out igStats.debrisFaces);
             // An open scan gets the tighter threshold: its torn strips -- cells glued across many
             // cells where the flip repair gave up -- run 3-5 median edges, under the closed-mesh
             // threshold. See IntegerGridMap.needleEdgeOverMedianOpen.
@@ -691,7 +724,7 @@ namespace NativeRemesher
                               && Extraction.IntegerGridMap.needleEdgeOverMedianOpen > 0f
                 ? Extraction.IntegerGridMap.needleEdgeOverMedianOpen
                 : Extraction.IntegerGridMap.needleEdgeOverMedian;
-            map.stats.needlesRemoved = RemoveNeedles(faces, positions, needleLimit);
+            igStats.needlesRemoved = RemoveNeedles(faces, positions, needleLimit);
 
             // Close what the map left open. The extractor builds every quad from two half-cells
             // meeting on a diagonal, drops a half-cell that finds no partner, and its own hole pass
@@ -754,8 +787,8 @@ namespace NativeRemesher
                 // two re-tiled quads came out sharing two edges. Such faces go and the gap they
                 // leave -- now a simple rim -- is capped again. A three-edge gap is a blemish; a
                 // three-face edge breaks every tool downstream that walks the mesh.
-                map.stats.capsDroppedNonManifold = DropNonManifoldNew(faces, extracted);
-                if (map.stats.capsDroppedNonManifold > 0) Cap();
+                igStats.capsDroppedNonManifold = DropNonManifoldNew(faces, extracted);
+                if (igStats.capsDroppedNonManifold > 0) Cap();
 
                 result.trianglePairingStats = TrianglePairing.Run(faces, positions,
                     options.trianglePairingQualityThreshold, options.trianglePairingMaxChainQuads,
@@ -776,25 +809,25 @@ namespace NativeRemesher
                 {
                     var dropped = DropNonManifoldNew(faces, extracted, round > 0);
                     if (dropped == 0) break;
-                    map.stats.capsDroppedNonManifold += dropped;
+                    igStats.capsDroppedNonManifold += dropped;
                     Cap();
                 }
                 // Whatever rim the repairs above opened and nothing re-capped.
                 FaceOrienter.Run(faces, positions, normals);
                 Cap();
-                map.stats.capsDroppedNonManifold += DropNonManifoldNew(faces, extracted);
-                map.stats.smallLoopsCapped = CapSmallLoopsUndirected(faces, 8);
+                igStats.capsDroppedNonManifold += DropNonManifoldNew(faces, extracted);
+                igStats.smallLoopsCapped = CapSmallLoopsUndirected(faces, 8);
                 // Longer rims the directed walk abandoned at a fold -- up to 51 edges, 66 open edges
                 // on the head at 4,600 with Adapt Quad Count -- zipped shut with a ladder of quads.
                 if (Extraction.IntegerGridMap.ladderCapMaxEdges > 8)
-                    map.stats.smallLoopsCapped += CapSmallLoopsUndirected(faces,
+                    igStats.smallLoopsCapped += CapSmallLoopsUndirected(faces,
                         Extraction.IntegerGridMap.ladderCapMaxEdges, positions);
-                map.stats.capsDroppedNonManifold += DropNonManifoldNew(faces, extracted);
+                igStats.capsDroppedNonManifold += DropNonManifoldNew(faces, extracted);
 
                 // A rim too curved for a flat grid is capped as one n-gon. ToMesh would fan it into
                 // slivers, so it is cut into quads here, one more triangle when the count is odd.
                 SplitPolygons(faces);
-                EdgeCensus(faces, out map.stats.openAfterClose, out map.stats.nonManifoldAfterClose);
+                EdgeCensus(faces, out igStats.openAfterClose, out igStats.nonManifoldAfterClose);
                 Stage("close");
             }
 
@@ -809,7 +842,8 @@ namespace NativeRemesher
                     options.relaxFeatureAngleDegrees, options.relaxMaxDrift);
             Stage("relax");
 
-            if (options.creaseLoops != null && options.featurePositions != null)
+            var creaseLoopPositions = options.creaseLoopPositions ?? options.featurePositions;
+            if (options.creaseLoops != null && creaseLoopPositions != null)
             {
                 // In rounds: the snapped vertices are then held while the rest relax around them,
                 // which makes room for the neighbours a guard refused, and the next round takes
@@ -820,7 +854,7 @@ namespace NativeRemesher
                 var rounds = Mathf.Max(1, Extraction.IntegerGridMap.creaseLoopSnapRounds);
                 for (var round = 0; round < rounds; round++)
                 {
-                    var stats = CreaseLoopSnap.Run(faces, positions, options.featurePositions,
+                    var stats = CreaseLoopSnap.Run(faces, positions, creaseLoopPositions,
                         options.creaseLoops, position.scale, Extraction.IntegerGridMap.creaseLoopSnapCells,
                         snappedCurve: snappedCurve, snappedTangent: snappedTangent);
                     if (result.creaseLoopStats == null) result.creaseLoopStats = stats;
@@ -843,7 +877,7 @@ namespace NativeRemesher
                     options.snapMaxCells, options.snapMinEdgeCells);
 
             result.shadingNormals = NormalRecalculator.Compute(faces, positions, normals);
-            EdgeCensus(faces, out map.stats.openAtEnd, out map.stats.nonManifoldAtEnd);
+            EdgeCensus(faces, out igStats.openAtEnd, out igStats.nonManifoldAtEnd);
             Stage("finish");
             result.stageTimes = stageTimes.ToString();
 
