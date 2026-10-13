@@ -641,7 +641,8 @@ namespace NativeRemesher
             Vector3[] normals;
             List<int[]> faces;
             IntegerGridStats igStats;
-            if (IntegerGridMap.parametrizationLayout && position.layoutFaces != null && position.layoutFaces.Count > 0)
+            var usedLayout = IntegerGridMap.parametrizationLayout && position.layoutFaces != null && position.layoutFaces.Count > 0;
+            if (usedLayout)
             {
                 // The quantised layout, meshed patch by patch: see QuantizedLayout.
                 positions = position.layoutPositions;
@@ -737,7 +738,9 @@ namespace NativeRemesher
                               && Extraction.IntegerGridMap.needleEdgeOverMedianOpen > 0f
                 ? Extraction.IntegerGridMap.needleEdgeOverMedianOpen
                 : Extraction.IntegerGridMap.needleEdgeOverMedian;
-            igStats.needlesRemoved = RemoveNeedles(faces, positions, needleLimit);
+            // The layout's quads are grid cells of rectangles, long only where a patch is: removing
+            // them opens holes the cap then fills badly (body at 5k: 37 at a knee, a 76-edge hole).
+            if (!usedLayout) igStats.needlesRemoved = RemoveNeedles(faces, positions, needleLimit);
 
             // Close what the map left open. The extractor builds every quad from two half-cells
             // meeting on a diagonal, drops a half-cell that finds no partner, and its own hole pass

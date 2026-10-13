@@ -34,6 +34,7 @@ namespace NativeRemesher.Extraction
         public int constraintRows, zeroArcs, violatedRows, clampedArcs, quantSolves, quantFactorFailures, propagated, propagationConflicts, repairs, repairFailed, repairExpanded;
         public double quantDeviation, freeResidual;
         public int quads, mergedPoints, flatFaces, unequalFaces, degenerateQuads, walkFailed, walkCrossings, clamped;
+        public int offFaces, longPatches, walkReplaced;
         public int creaseTraces, creaseLoops, creaseExtensions, creaseClashes, crossings, layoutAttempts, duplicateEnds, creaseDropped, spirals, ringsClosed, truncated, truncatedJunctions;
         public long ms;
         public string debug = "";
@@ -41,7 +42,7 @@ namespace NativeRemesher.Extraction
         public override string ToString() => debug +
             $"tris={faces} folded={foldedFaces} singular={singularVertices} coneMismatch={coneMismatch} " +
             $"creases={creaseTraces}(loops {creaseLoops} extensions {creaseExtensions} clashes {creaseClashes}) attempts={layoutAttempts} crossings={crossings} dupEnds={duplicateEnds} creaseDropped={creaseDropped} spirals={spirals} rings={ringsClosed} truncated={truncated}/{truncatedJunctions} traces={traces} steps={steps} hit[trace {hitTrace} collinear {hitCollinear} self {hitSelf} boundary {hitBoundary} fold {hitFold} limit {hitLimit}] " +
-            $"nodes={nodes} arcs={arcs} faces={layoutFaces} (rect {rectangles} annuli {annuli} other {otherFaces} reflex {reflexCorners} open {openWalks}) corners[{faceCorners}] quant[rows {constraintRows} free residual {freeResidual:G3} deviation {quantDeviation:F1} zero {zeroArcs} clamped {clampedArcs} violated {violatedRows} propagated {propagated} conflicts {propagationConflicts} repairs {repairs} repairFailed {repairFailed} (expanded {repairExpanded}) solves {quantSolves} failed {quantFactorFailures}] mesh[quads {quads} merged {mergedPoints} flat {flatFaces} unequal {unequalFaces} degenerate {degenerateQuads} walkFailed {walkFailed} crossings {walkCrossings} clamped {clamped}] ms={ms}";
+            $"nodes={nodes} arcs={arcs} faces={layoutFaces} (rect {rectangles} annuli {annuli} other {otherFaces} reflex {reflexCorners} open {openWalks}) corners[{faceCorners}] quant[rows {constraintRows} free residual {freeResidual:G3} deviation {quantDeviation:F1} zero {zeroArcs} clamped {clampedArcs} violated {violatedRows} propagated {propagated} conflicts {propagationConflicts} repairs {repairs} repairFailed {repairFailed} (expanded {repairExpanded}) solves {quantSolves} failed {quantFactorFailures}] mesh[quads {quads} merged {mergedPoints} flat {flatFaces} unequal {unequalFaces} degenerate {degenerateQuads} walkFailed {walkFailed} crossings {walkCrossings} clamped {clamped} replaced {walkReplaced}] ms={ms}";
     }
 
     /// <summary>
@@ -277,6 +278,12 @@ namespace NativeRemesher.Extraction
         /// it -- a loop round a cylinder whose twist was held to zero closes on itself.
         /// </summary>
         public static double collinearTolerance = 1e-3;
+
+        /// <summary>Diagnostics: log patches with a grid edge longer than this (0 = off).</summary>
+        public static float debugLongQuads = 0f;
+
+        /// <summary>Diagnostics: write the layout's quads, before any repair, to this path.</summary>
+        public static string debugMeshPath = null;
 
         /// <summary>Diagnostics: write the layout's arcs to this path.</summary>
         public static string debugArcPath = null;
@@ -1289,6 +1296,16 @@ namespace NativeRemesher.Extraction
             var arcPos = new Vector3[arcs.Count];
             for (var i = 0; i < arcs.Count; i++) arcPos[i] = 0.5f * (nodePos[arcs[i].node0] + nodePos[arcs[i].node1]);
             var ell = Quantize(arcLength, rows, arcPos, stats);
+            {
+                var order = new List<int>();
+                for (var i = 0; i < arcs.Count; i++) order.Add(i);
+                order.Sort((a, b) => Math.Abs(ell[b] - arcLength[b]).CompareTo(Math.Abs(ell[a] - arcLength[a])));
+                for (var k = 0; k < Math.Min(4, order.Count); k++)
+                {
+                    var i = order[k];
+                    stats.debug += $"[dev a{i} tr{arcs[i].trace} L {arcLength[i]:F2} l {ell[i]} n{arcs[i].node0}->n{arcs[i].node1} v{nodes[arcs[i].node0].vertex}/{nodes[arcs[i].node1].vertex}] ";
+                }
+            }
             for (var i = 0; i < arcs.Count; i++)
             {
                 stats.quantDeviation += Math.Abs(ell[i] - arcLength[i]);
@@ -1560,6 +1577,11 @@ namespace NativeRemesher.Extraction
                 var W = sidePts[0].Count - 1;
                 var H = sidePts[1].Count - 1;
                 if (W != sidePts[2].Count - 1 || H != sidePts[3].Count - 1) { stats.unequalFaces++; continue; }
+                {
+                    double rw0 = sideReal[0][W], rw2 = sideReal[2][W], rh1 = sideReal[1][H], rh3 = sideReal[3][H];
+                    if (Math.Max(Math.Max(Math.Abs(W - rw0), Math.Abs(W - rw2)), Math.Max(Math.Abs(H - rh1), Math.Abs(H - rh3))) > 3 && stats.offFaces++ < 4)
+                        stats.debug += $"[off W{W} ({rw0:F1},{rw2:F1}) H{H} ({rh1:F1},{rh3:F1}) arcs {sides[0].Count}/{sides[1].Count}/{sides[2].Count}/{sides[3].Count}] ";
+                }
                 // Grid (i, j): bottom side 0 runs i = 0..W at j = 0; side 1 runs j = 0..H at i = W;
                 // side 2 runs back along j = H; side 3 back along i = 0.
                 var grid = new int[W + 1, H + 1];
@@ -1583,6 +1605,18 @@ namespace NativeRemesher.Extraction
                     var d0 = h0 % 2 == 0 ? start.dir : Mod4(start.dir + 2);
                     var Lb = sideReal[0][W];
                     var Lr = sideReal[1][H];
+                    // Bilinear blend of the side points in space, and the spacing along the sides.
+                    Vector3 G(int gi, int gj) => pointPos[grid[gi, gj]];
+                    Vector3 Coons3(int gi, int gj)
+                    {
+                        float a = (float)gi / W, b = (float)gj / H;
+                        return (1 - b) * G(gi, 0) + b * G(gi, H) + (1 - a) * G(0, gj) + a * G(W, gj)
+                               - ((1 - a) * (1 - b) * G(0, 0) + a * (1 - b) * G(W, 0) + (1 - a) * b * G(0, H) + a * b * G(W, H));
+                    }
+                    float sideSum = 0;
+                    for (var gi = 0; gi < W; gi++) sideSum += (G(gi + 1, 0) - G(gi, 0)).magnitude + (G(gi + 1, H) - G(gi, H)).magnitude;
+                    for (var gj = 0; gj < H; gj++) sideSum += (G(0, gj + 1) - G(0, gj)).magnitude + (G(W, gj + 1) - G(W, gj)).magnitude;
+                    var cell3 = sideSum / (2 * (W + H));
                     for (var i = 1; i < W; i++)
                         for (var j = 1; j < H; j++)
                         {
@@ -1597,12 +1631,42 @@ namespace NativeRemesher.Extraction
                             var w1 = Walk(start.face, start.x, start.y, d0, u);
                             var w2 = Walk(w1.face, w1.x, w1.y, Mod4(w1.dir + 1), v);
                             Surface(w2.face, w2.x, w2.y, out var p, out var nrm);
+                            // The same point blended in space from the sides: where the walk went
+                            // astray (a seam a hair off, a sliver it slipped past) it lands cells
+                            // away, and the blend -- put back on the surface by the relaxation --
+                            // is the better guess.
+                            var blend = Coons3(i, j);
+                            if ((p - blend).magnitude > 3f * cell3)
+                            {
+                                p = blend;
+                                stats.walkReplaced++;
+                            }
                             grid[i, j] = NewPoint(p, nrm);
                         }
                 }
                 for (var i = 0; i < W; i++)
                     for (var j = 0; j < H; j++)
                         faceQuads.Add(new[] { grid[i, j], grid[i + 1, j], grid[i + 1, j + 1], grid[i, j + 1] });
+                if (debugLongQuads > 0)
+                {
+                    var worst = 0f;
+                    for (var i = 0; i <= W; i++)
+                        for (var j = 0; j <= H; j++)
+                        {
+                            if (i < W) worst = Mathf.Max(worst, (pointPos[grid[i + 1, j]] - pointPos[grid[i, j]]).magnitude);
+                            if (j < H) worst = Mathf.Max(worst, (pointPos[grid[i, j + 1]] - pointPos[grid[i, j]]).magnitude);
+                        }
+                    if (worst > debugLongQuads && stats.longPatches++ < 4)
+                    {
+                        stats.debug += $"[long W{W} H{H} worst {worst:F3} real ({sideReal[0][W]:F1},{sideReal[1][H]:F1},{sideReal[2][W]:F1},{sideReal[3][H]:F1}) sides";
+                        for (var sIdx = 0; sIdx < 4; sIdx++)
+                        {
+                            stats.debug += " |";
+                            foreach (var hh in sides[sIdx]) stats.debug += $" a{hh / 2}{(hh % 2 == 0 ? ">" : "<")}l{arcPoints[hh / 2].Length - 1}L{arcLength[hh / 2]:F1}t{arcs[hh / 2].trace}";
+                        }
+                        stats.debug += $" p00 {pointPos[grid[0, 0]]} pW0 {pointPos[grid[W, 0]]} p0H {pointPos[grid[0, H]]}] ";
+                    }
+                }
             }
 
             // Glue, compact, and drop quads that glued onto themselves.
@@ -1626,6 +1690,14 @@ namespace NativeRemesher.Extraction
             positions = outPos.ToArray();
             normals = outNrm.ToArray();
             stats.quads = quads.Count;
+            if (debugMeshPath != null)
+            {
+                var ic = System.Globalization.CultureInfo.InvariantCulture;
+                var sb = new System.Text.StringBuilder();
+                foreach (var p in positions) sb.Append("v ").Append(p.x.ToString("R", ic)).Append(' ').Append(p.y.ToString("R", ic)).Append(' ').Append(p.z.ToString("R", ic)).Append((char)10);
+                foreach (var q in quads) sb.Append($"f {q[0] + 1} {q[1] + 1} {q[2] + 1} {q[3] + 1}").Append((char)10);
+                System.IO.File.WriteAllText(debugMeshPath, sb.ToString());
+            }
 
             stats.ms = watch.ElapsedMilliseconds;
             return stats;

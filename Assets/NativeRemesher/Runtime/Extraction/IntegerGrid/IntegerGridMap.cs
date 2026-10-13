@@ -951,6 +951,13 @@ namespace NativeRemesher.Extraction
         public static bool parametrizationLayout = false;
 
         /// <summary>
+        /// With <see cref="parametrizationLayout"/>, creases closer than this many cells to a longer
+        /// parallel one are not laid as patch borders. Head at 3.5k: 0 -> 1 cell took Hausdorff
+        /// 0.0145 -> 0.0111, p05 50.5 -> 52.4, and the helmet rim's spikes went.
+        /// </summary>
+        public static float layoutCreaseSeparationCells = 1f;
+
+        /// <summary>
         /// With <see cref="parametrization"/>, solve and extract on the decimated mesh rather than
         /// the refined one. See RemeshPipeline.ParametrizeDecimated.
         /// </summary>

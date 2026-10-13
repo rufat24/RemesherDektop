@@ -79,7 +79,7 @@ namespace NativeRemesher.Extraction
         [NonSerialized] public Vector3[] layoutPositions, layoutNormals;
         [NonSerialized] public List<int[]> layoutFaces;
         public int splitSingularities, splitFailed, splitMismatch, spreadMoves, spreadFailed, multipleSingularities;
-        public int featureEdgesDroppedV, loopRows, loopPasses;
+        public int featureEdgesDroppedV, loopRows, loopPasses, featureEdgesSquashed;
         public bool reusedLayout;
         public int releasedFeatureGroups, releasedFeatureCoordinates;
         public float closureWorst;
@@ -93,7 +93,7 @@ namespace NativeRemesher.Extraction
         public long ms;
 
         public override string ToString() =>
-            $"faces={faces} singular={singularVertices} cancelled={cancelledPairs}+{cancelledFarPairs}(fail {pairCancelFailed}) split={splitSingularities}(fail {splitFailed}, mismatch {splitMismatch}) spread={spreadMoves}(fail {spreadFailed}) multiple={multipleSingularities} poles={roundedSingularities} stiff={stiffenIterationsRun}/{stiffened} reused={reusedFreeSolve} features={featureEdges}(skip {featureEdgesSkipped}, nearPoles {featureEdgesNearPoles}, pins {pinnedFeatureCoordinates}, droppedV {featureEdgesDroppedV}, loops {loopRows}/{loopPasses}, released {releasedFeatureGroups}/{releasedFeatureCoordinates}) cut={cutEdges}(of {cutEdgesBeforePrune}) chains={chains} " +
+            $"faces={faces} singular={singularVertices} cancelled={cancelledPairs}+{cancelledFarPairs}(fail {pairCancelFailed}) split={splitSingularities}(fail {splitFailed}, mismatch {splitMismatch}) spread={spreadMoves}(fail {spreadFailed}) multiple={multipleSingularities} poles={roundedSingularities} stiff={stiffenIterationsRun}/{stiffened} reused={reusedFreeSolve} features={featureEdges}(skip {featureEdgesSkipped}, nearPoles {featureEdgesNearPoles}, pins {pinnedFeatureCoordinates}, droppedV {featureEdgesDroppedV}, squashed {featureEdgesSquashed}, loops {loopRows}/{loopPasses}, released {releasedFeatureGroups}/{releasedFeatureCoordinates}) cut={cutEdges}(of {cutEdgesBeforePrune}) chains={chains} " +
             $"blocks={blocks} closures={closureConstraints} cg={cgIterations} res={residual:G3} " +
             $"rounds={roundingRounds} rounded={roundedVariables} maxRound={maxRoundingMove:F3} " +
             $"flipped={flippedFaces} stages={flipsByStage}closuresOpen={closuresOpen} propagated={propagatedChains} nonInt={closureNonInteger} forced={forcedChains} free={freeChains} tree={treeChains} freedPoles={freedPoles} regRoots={regularRoots} unsolved={unsolvedTree} kinds={closureKinds}worst={closureWorst:F2} nnzL={factorNonZeros} symbolic={symbolicMs} factor={factorMs}/{factorizations} failed={factorFailures} ms={ms} (split {split}structure {structureMs} expr {expressionMs} asm {assemblyMs}) transfer={transferMs} fineSingular={refinedSingularFaces} unmapped={unmappedFaces} trace[{trace}] ulog[{untangleLog}] layout[{layout}]";
@@ -114,6 +114,7 @@ namespace NativeRemesher.Extraction
         internal double[] stiff;
         internal double[] freeSolution;
         internal double[] layoutSolution;
+        internal HashSet<long> layoutDropped;
         internal object loopRows;
     }
 
@@ -276,6 +277,12 @@ namespace NativeRemesher.Extraction
 
         static int FreeUntangleRounds => IntegerGridMap.parametrizationLayout
             ? Math.Max(untangleFreeRounds, layoutUntangleRounds) : untangleFreeRounds;
+
+        /// <summary>Smallest width, in cells, of a crease triangle before its creases are let go.</summary>
+        public static float layoutSquashLimit = 0.15f;
+
+        /// <summary>Rounds of letting go of crushing creases (0 = off).</summary>
+        public static int layoutSquashRounds = 2;
 
         /// <summary>With the layout meshed, skip rounding this map's own integers.</summary>
         public static bool layoutSkipRounding = true;
@@ -1911,9 +1918,66 @@ namespace NativeRemesher.Extraction
                 for (var i = 0; i < vars; i++) x[i] = fixedVar[i] ? x[i] : cache.layoutSolution[i] * reuseRatio;
                 if (cache.loopRows is List<(List<(Term t, double coef)> row, int comp, double target)> cachedRows)
                     loopRows.AddRange(cachedRows);
+                // And the creases it let go: laid as arcs they would not be iso-lines of this map.
+                if (cache.layoutDropped != null && layoutDropped != null)
+                {
+                    foreach (var key in cache.layoutDropped) layoutDropped.Add(key);
+                    constrainedFeatureEdges.RemoveAll(e => layoutDropped.Contains(((long)Math.Min(e.a, e.b) << 32) | (uint)Math.Max(e.a, e.b)));
+                }
                 stats.reusedLayout = true;
             }
             else if (FreeUntangleRounds > 0) BarrierUntangle(FreeUntangleRounds, untangleInner, "barrierFree");
+
+            // Creases crushing the map: held as exact iso-lines, two that converge squash the
+            // triangles between them flat across (body at 5k: 1 cell of the map over 12 of surface,
+            // and a band of long quads). Their edges at a triangle squashed under
+            // layoutSquashLimit of a cell across are let go, and the map solved again.
+            for (var round = 0; IntegerGridMap.parametrizationLayout && !reused && round < layoutSquashRounds; round++)
+            {
+                var release = new HashSet<int>();
+                for (var f = 0; f < m; f++)
+                {
+                    if (!(fArea[f] > 0f) || !(fh[f] > 0f)) continue;
+                    var touches = false;
+                    for (var k = 0; k < 3; k++) touches |= pinU[T[3 * f + k]] || pinV[T[3 * f + k]];
+                    if (!touches) continue;
+                    double ma = 0, mb = 0, mc = 0, md = 0;
+                    for (var k = 0; k < 3; k++)
+                    {
+                        var corner = 3 * f + k;
+                        double cu = 0, cv = 0;
+                        for (var i = 0; i < cornerCount[corner]; i++)
+                        {
+                            var t = pool[cornerStart[corner] + i];
+                            double xu = x[2 * t.block], xv = x[2 * t.block + 1];
+                            if (t.rot == 0) { cu += t.sign * xu; cv += t.sign * xv; }
+                            else { cu -= t.sign * xv; cv += t.sign * xu; }
+                        }
+                        ma += gradX[corner] * cu; mb += gradY[corner] * cu;
+                        mc += gradX[corner] * cv; md += gradY[corner] * cv;
+                    }
+                    double h = fh[f];
+                    ma *= h; mb *= h; mc *= h; md *= h;
+                    // Smaller singular value of M.
+                    var tr = ma * ma + mb * mb + mc * mc + md * md;
+                    var det = Math.Abs(ma * md - mb * mc);
+                    var disc = Math.Sqrt(Math.Max(0, tr * tr / 4 - det * det));
+                    var smin = Math.Sqrt(Math.Max(0, tr / 2 - disc));
+                    if (smin >= layoutSquashLimit) continue;
+                    for (var k = 0; k < 3; k++) release.Add(T[3 * f + k]);
+                }
+                var before = layoutDropped.Count;
+                foreach (var (a, b) in featureEdges)
+                    if (release.Contains(a) || release.Contains(b))
+                        layoutDropped.Add(((long)Math.Min(a, b) << 32) | (uint)Math.Max(a, b));
+                var freed = layoutDropped.Count - before;
+                if (freed == 0) break;
+                stA.featureEdgesSquashed += freed;
+                constrainedFeatureEdges.RemoveAll(e => layoutDropped.Contains(((long)Math.Min(e.a, e.b) << 32) | (uint)Math.Max(e.a, e.b)));
+                matrix = Assemble();
+                SolveSystem(firstIterations);
+                if (FreeUntangleRounds > 0) BarrierUntangle(FreeUntangleRounds, untangleInner, "barrierSquash");
+            }
             for (var loopPass = 0; layoutDiagnostics || IntegerGridMap.parametrizationLayout; loopPass++)
             {
                 var freeUv = new double[6 * m];
@@ -1978,6 +2042,7 @@ namespace NativeRemesher.Extraction
             if (cache != null && !reused && IntegerGridMap.parametrizationLayout)
             {
                 cache.layoutSolution = (double[])x.Clone();
+                cache.layoutDropped = layoutDropped != null ? new HashSet<long>(layoutDropped) : null;
                 cache.loopRows = new List<(List<(Term t, double coef)> row, int comp, double target)>(loopRows);
             }
 

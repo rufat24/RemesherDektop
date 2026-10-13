@@ -773,9 +773,14 @@ namespace NativeRemesher
                     .KeepCoherentCurves(topology, Extraction.IntegerGridMap.parametrizationCreaseMinCells * cell,
                         Extraction.IntegerGridMap.coherentCreaseStraightness, out _, out _);
                 // Two grid lines closer than a cell squash the cells between them flat.
-                if (Extraction.IntegerGridMap.parametrizationCreaseSeparationCells > 0f)
+                // The layout lays every crease as a patch border, so it always wants them apart:
+                // the helmet rim's cable and lip a fraction of a cell apart came out as spikes.
+                var separation = Extraction.IntegerGridMap.parametrizationLayout
+                    ? Mathf.Max(Extraction.IntegerGridMap.parametrizationCreaseSeparationCells, Extraction.IntegerGridMap.layoutCreaseSeparationCells)
+                    : Extraction.IntegerGridMap.parametrizationCreaseSeparationCells;
+                if (separation > 0f)
                     creases = creases.KeepSeparatedCurves(topology,
-                        Extraction.IntegerGridMap.parametrizationCreaseSeparationCells * cell,
+                        separation * cell,
                         Extraction.IntegerGridMap.coherentCreaseMaxShared, out _);
                 Add(creases);
             }
