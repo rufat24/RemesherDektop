@@ -33,14 +33,28 @@ namespace NativeRemesher.Extraction
         public string faceCorners = "";
         public int constraintRows, zeroArcs, violatedRows, clampedArcs, quantSolves, quantFactorFailures, propagated, propagationConflicts, repairs, repairFailed, repairExpanded;
         public double quantDeviation, freeResidual;
-        public int quads, mergedPoints, flatFaces, unequalFaces, degenerateQuads, walkFailed;
+        public int quads, mergedPoints, flatFaces, unequalFaces, degenerateQuads, walkFailed, walkCrossings;
+        public int creaseTraces, creaseLoops, creaseExtensions, creaseClashes, crossings, layoutAttempts, duplicateEnds, creaseDropped, spirals, ringsClosed, truncated, truncatedJunctions;
         public long ms;
         public string debug = "";
 
         public override string ToString() => debug +
             $"tris={faces} folded={foldedFaces} singular={singularVertices} coneMismatch={coneMismatch} " +
-            $"traces={traces} steps={steps} hit[trace {hitTrace} collinear {hitCollinear} self {hitSelf} boundary {hitBoundary} fold {hitFold} limit {hitLimit}] " +
-            $"nodes={nodes} arcs={arcs} faces={layoutFaces} (rect {rectangles} annuli {annuli} other {otherFaces} reflex {reflexCorners} open {openWalks}) corners[{faceCorners}] quant[rows {constraintRows} free residual {freeResidual:G3} deviation {quantDeviation:F1} zero {zeroArcs} clamped {clampedArcs} violated {violatedRows} propagated {propagated} conflicts {propagationConflicts} repairs {repairs} repairFailed {repairFailed} (expanded {repairExpanded}) solves {quantSolves} failed {quantFactorFailures}] mesh[quads {quads} merged {mergedPoints} flat {flatFaces} unequal {unequalFaces} degenerate {degenerateQuads} walkFailed {walkFailed}] ms={ms}";
+            $"creases={creaseTraces}(loops {creaseLoops} extensions {creaseExtensions} clashes {creaseClashes}) attempts={layoutAttempts} crossings={crossings} dupEnds={duplicateEnds} creaseDropped={creaseDropped} spirals={spirals} rings={ringsClosed} truncated={truncated}/{truncatedJunctions} traces={traces} steps={steps} hit[trace {hitTrace} collinear {hitCollinear} self {hitSelf} boundary {hitBoundary} fold {hitFold} limit {hitLimit}] " +
+            $"nodes={nodes} arcs={arcs} faces={layoutFaces} (rect {rectangles} annuli {annuli} other {otherFaces} reflex {reflexCorners} open {openWalks}) corners[{faceCorners}] quant[rows {constraintRows} free residual {freeResidual:G3} deviation {quantDeviation:F1} zero {zeroArcs} clamped {clampedArcs} violated {violatedRows} propagated {propagated} conflicts {propagationConflicts} repairs {repairs} repairFailed {repairFailed} (expanded {repairExpanded}) solves {quantSolves} failed {quantFactorFailures}] mesh[quads {quads} merged {mergedPoints} flat {flatFaces} unequal {unequalFaces} degenerate {degenerateQuads} walkFailed {walkFailed} crossings {walkCrossings}] ms={ms}";
+    }
+
+    /// <summary>
+    /// A separatrix that came back round to a triangle it crossed before, going the same way but
+    /// shifted sideways: the map's twist round a cylinder, which makes its iso-lines spiral.
+    /// </summary>
+    public sealed class LayoutLoop
+    {
+        public int face;              // the triangle met twice, whose chart the shift is in
+        public int dir;               // the separatrix's direction there
+        public double shift;          // sideways offset, in cells
+        public int[] crossed;         // half-edges crossed in between, in order
+        public int[] turns;           // their transitions' quarter turns
     }
 
     public static class QuantizedLayout
@@ -258,6 +272,18 @@ namespace NativeRemesher.Extraction
             return x;
         }
 
+        /// <summary>
+        /// Sideways distance, in cells, under which a separatrix running along another one meets
+        /// it -- a loop round a cylinder whose twist was held to zero closes on itself.
+        /// </summary>
+        public static double collinearTolerance = 1e-3;
+
+        /// <summary>Diagnostics: write the layout's arcs to this path.</summary>
+        public static string debugArcPath = null;
+
+        /// <summary>Extra layout passes that add lines into faces that are not rectangles.</summary>
+        public static int layoutAttempts = 3;
+
         /// <summary>Triangles a separatrix may cross before it is given up.</summary>
         public static int maxSteps = 20000;
 
@@ -265,6 +291,8 @@ namespace NativeRemesher.Extraction
         static readonly int[] DirY = { 0, 1, 0, -1 };
 
         static int Mod4(int k) => ((k % 4) + 4) % 4;
+
+        static int Mod4Of(int k, int m) => m <= 0 ? 0 : ((k % m) + m) % m;
 
         static void Rot(int k, double x, double y, out double rx, out double ry)
         {
@@ -298,6 +326,10 @@ namespace NativeRemesher.Extraction
             public bool active = true;
             // Nodes along it: (length from the start, node).
             public readonly List<(double s, int node)> points = new List<(double, int)>();
+            // Half-edges crossed so far, and the first visit of each triangle: (crossed count, side).
+            public readonly List<int> crossed = new List<int>();
+            public Dictionary<int, (int count, double side)> visited;
+            public bool looped;
             // Its pieces, in order: (face, start, end, direction, length at the start).
             public readonly List<(int face, double ax, double ay, double bx, double by, int dir, double s0)> path
                 = new List<(int, double, double, double, double, int, double)>();
@@ -328,15 +360,23 @@ namespace NativeRemesher.Extraction
         /// this; for now it is the layout and its statistics.
         /// </summary>
         public static QuantizedLayoutStats Build(RemeshTopology topology, double[] uv)
-            => Build(topology, uv, out _, out _, out _);
+            => Build(topology, uv, null, out _, out _, out _);
 
         /// <summary>
         /// Traces, quantises and meshes the layout of <paramref name="uv"/> (per corner, interleaved)
         /// on <paramref name="topology"/>. The quads are wound like the input.
         /// </summary>
         public static QuantizedLayoutStats Build(RemeshTopology topology, double[] uv,
+            List<(int a, int b)> featureEdges,
             out Vector3[] positions, out Vector3[] normals, out List<int[]> quads)
+            => Build(topology, uv, featureEdges, out positions, out normals, out quads, out _);
+
+        public static QuantizedLayoutStats Build(RemeshTopology topology, double[] uv,
+            List<(int a, int b)> featureEdges,
+            out Vector3[] positions, out Vector3[] normals, out List<int[]> quads, out List<LayoutLoop> loops)
         {
+            loops = new List<LayoutLoop>();
+            var loopsFound = loops;
             positions = null;
             normals = null;
             quads = null;
@@ -428,285 +468,733 @@ namespace NativeRemesher.Extraction
                 if (valence[v] != 4) stats.singularVertices++;
             }
 
-            // --- separatrices -------------------------------------------------------------------
-            var nodes = new List<Node>();
-            var traces = new List<Trace>();
-            var segs = new List<Segment>[m];
-            var queue = new SortedSet<(double s, int trace)>();
-
-            for (var v = 0; v < n; v++)
-            {
-                if (fan[v] == null || valence[v] == 4 || valence[v] <= 0) continue;
-                var node = new Node { vertex = v, quarterTurns = valence[v] };
-                nodes.Add(node);
-                var nodeId = nodes.Count - 1;
-                var pos = 0;
-                foreach (var c in fan[v])
-                {
-                    var f = c / 3;
-                    if (!valid[f]) continue;
-                    int c1 = 3 * f + (c % 3 + 1) % 3, c2 = 3 * f + (c % 3 + 2) % 3;
-                    double e1x = U(c1) - U(c), e1y = V(c1) - V(c), e2x = U(c2) - U(c), e2y = V(c2) - V(c);
-                    // Directions in [e1, e2): counter-clockwise from e1, the first one at or after it.
-                    var found = new List<(double ang, int d)>();
-                    for (var d = 0; d < 4; d++)
-                    {
-                        if (Cross(e1x, e1y, DirX[d], DirY[d]) < 0) continue;
-                        if (Cross(e1x, e1y, DirX[d], DirY[d]) == 0 && e1x * DirX[d] + e1y * DirY[d] <= 0) continue;
-                        if (Cross(DirX[d], DirY[d], e2x, e2y) <= 0) continue;
-                        found.Add((Math.Atan2(Cross(e1x, e1y, DirX[d], DirY[d]), e1x * DirX[d] + e1y * DirY[d]), d));
-                    }
-                    found.Sort((p, q) => p.ang.CompareTo(q.ang));
-                    foreach (var (_, d) in found)
-                    {
-                        var tr = new Trace { startNode = nodeId, face = f, dir = d, px = U(c), py = V(c) };
-                        tr.points.Add((0, nodeId));
-                        traces.Add(tr);
-                        node.ends.Add((-1 - (traces.Count - 1), 0, pos++));   // trace start, resolved to an arc later
-                        queue.Add((0, traces.Count - 1));
-                    }
-                }
-                if (pos != valence[v]) stats.debug += $"[v{v} valence {valence[v]} seps {pos}] ";
-            }
-            stats.traces = traces.Count;
-
             const double tiny = 1e-9;
             const double onLine = 1e-9;
 
-            // A new node where trace `id` ends on trace `hitTrace` at length sHit, in face f's chart.
-            int Junction(int id, int hitTrace, double sHit, int f, double x, double y, int hitDir, int arriveDir)
+            // --- the layout, again until every face is a rectangle --------------------------------
+            List<Node> nodes = null;
+            List<Trace> traces = null;
+            List<Arc> arcs = null;
+            List<(List<int> half, List<int> turns)> rectFaces = null;
+            HashSet<int> badArcs = null;
+            var extraEmits = new List<(int v, int pos)>();
+            var continueThrough = new HashSet<int>();
+            for (var attempt = 0; ; attempt++)
             {
-                var node = new Node { face = f, u = x, v = y };
-                nodes.Add(node);
-                var nodeId = nodes.Count - 1;
-                traces[hitTrace].points.Add((sHit, nodeId));
-                // Positions are directions in f's chart: along the hit trace both ways, and back along
-                // the arriving one.
-                node.ends.Add((-1 - hitTrace, 2, Mod4(hitDir)));          // hit trace, forwards
-                node.ends.Add((-1 - hitTrace, 3, Mod4(hitDir + 2)));      // hit trace, backwards
-                node.ends.Add((-1 - id, 1, Mod4(arriveDir + 2)));         // the arriving trace's end
-                return nodeId;
-            }
+                stats.traces = stats.steps = stats.hitTrace = stats.hitCollinear = stats.hitBoundary = stats.hitFold = stats.hitLimit = stats.hitSelf = 0;
+                stats.nodes = stats.arcs = stats.layoutFaces = stats.rectangles = stats.annuli = stats.otherFaces = stats.reflexCorners = stats.openWalks = 0;
+                stats.creaseTraces = stats.creaseLoops = stats.creaseExtensions = stats.creaseClashes = stats.crossings = stats.duplicateEnds = stats.creaseDropped = stats.ringsClosed = stats.truncated = stats.truncatedJunctions = 0;
+                stats.faceCorners = "";
+                var crossedOnce = new HashSet<int>();
+                // --- separatrices -------------------------------------------------------------------
+                nodes = new List<Node>();
+                traces = new List<Trace>();
+                var segs = new List<Segment>[m];
+                var queue = new SortedSet<(double s, int trace)>();
 
-            while (queue.Count > 0)
-            {
-                var (s, id) = queue.Min;
-                queue.Remove(queue.Min);
-                var tr = traces[id];
-                if (!tr.active) continue;
-                var f = tr.face;
-                if (!valid[f]) { stats.hitFold++; tr.active = false; continue; }
-                if (++tr.steps > maxSteps) { stats.hitLimit++; tr.active = false; continue; }
-                stats.steps++;
-                double dx = DirX[tr.dir], dy = DirY[tr.dir];
-                // Exit edge: tail right of the ray, head left of it (on the line counts as right: the
-                // ray runs just left of it).
-                var exit = -1;
-                double qx = 0, qy = 0;
-                for (var k = 0; k < 3; k++)
+                // Every lattice direction leaving a vertex, with its position round the fan in quarter
+                // turns; and the position at which each corner's sector starts.
+                var sectorStart = new double[3 * m];
+                for (var v = 0; v < n; v++)
                 {
-                    int a = 3 * f + k, b = 3 * f + (k + 1) % 3;
-                    var sa = Cross(dx, dy, U(a) - tr.px, V(a) - tr.py);
-                    var sb = Cross(dx, dy, U(b) - tr.px, V(b) - tr.py);
-                    if (!(sa <= onLine) || sb <= onLine) continue;
-                    var lambda = sa >= 0 ? 0 : -sa / (sb - sa);
-                    var ix = U(a) + lambda * (U(b) - U(a));
-                    var iy = V(a) + lambda * (V(b) - V(a));
-                    // Ahead of the point (or at it, leaving a corner).
-                    if ((ix - tr.px) * dx + (iy - tr.py) * dy < -1e-12) continue;
-                    exit = a;
-                    qx = ix;
-                    qy = iy;
-                    break;
+                    if (fan[v] == null) continue;
+                    // Measured from the first corner's +u axis, so that axis directions sit on integers.
+                    var c0 = fan[v][0];
+                    var n0 = 3 * (c0 / 3) + (c0 % 3 + 1) % 3;
+                    double cum = Math.Atan2(V(n0) - V(c0), U(n0) - U(c0)) / (0.5 * Math.PI);
+                    foreach (var c in fan[v]) { sectorStart[c] = cum; cum += CornerAngle(c) / (0.5 * Math.PI); }
                 }
-                if (exit < 0) { stats.hitFold++; tr.active = false; stats.debug += stats.hitFold <= 3 ? $"[noexit t{id} f{f}] " : ""; continue; }
-                var len = Math.Abs(qx - tr.px) + Math.Abs(qy - tr.py);
-
-                // The earliest separatrix already in this triangle that the step meets.
-                var hitT = double.PositiveInfinity;
-                var hitIndex = -1;
-                var hitCollinear = false;
-                var list = segs[f];
-                if (list != null)
+                List<(int c, int d, int pos)> Directions(int v)
                 {
-                    for (var i = 0; i < list.Count; i++)
+                    var list = new List<(int, int, int)>();
+                    foreach (var c in fan[v])
                     {
-                        var sg = list[i];
-                        if (sg.trace == id && Math.Abs(sg.s0 + Math.Abs(sg.bx - sg.ax) + Math.Abs(sg.by - sg.ay) - tr.length) < 1e-12) continue;
-                        // Distance along the step to the segment's line, and where on it.
-                        if (Mod4(sg.dir - tr.dir) % 2 == 1)
+                        var f = c / 3;
+                        if (!valid[f]) continue;
+                        int c1 = 3 * f + (c % 3 + 1) % 3, c2 = 3 * f + (c % 3 + 2) % 3;
+                        double e1x = U(c1) - U(c), e1y = V(c1) - V(c), e2x = U(c2) - U(c), e2y = V(c2) - V(c);
+                        for (var d = 0; d < 4; d++)
                         {
-                            // Perpendicular: the segment is a line across the step.
-                            double t, along, lo, hi;
-                            if (dx != 0) { t = (sg.ax - tr.px) * dx; along = tr.py; lo = Math.Min(sg.ay, sg.by); hi = Math.Max(sg.ay, sg.by); }
-                            else { t = (sg.ay - tr.py) * dy; along = tr.px; lo = Math.Min(sg.ax, sg.bx); hi = Math.Max(sg.ax, sg.bx); }
-                            if (t <= tiny || t > len + tiny) continue;
-                            if (along < lo - onLine || along > hi + onLine) continue;
-                            if (t < hitT) { hitT = t; hitIndex = i; hitCollinear = false; }
+                            var cr = Cross(e1x, e1y, DirX[d], DirY[d]);
+                            if (cr < 0) continue;
+                            if (cr == 0 && e1x * DirX[d] + e1y * DirY[d] <= 0) continue;
+                            if (Cross(DirX[d], DirY[d], e2x, e2y) <= 0) continue;
+                            var ang = Math.Atan2(cr, e1x * DirX[d] + e1y * DirY[d]) / (0.5 * Math.PI);
+                            list.Add((c, d, Mod4Of((int)Math.Round(sectorStart[c] + ang), valence[v])));
+                        }
+                    }
+                    return list;
+                }
+
+                var vertexNode = new Dictionary<int, int>();
+                int NodeOf(int v)
+                {
+                    if (vertexNode.TryGetValue(v, out var id)) return id;
+                    nodes.Add(new Node { vertex = v, quarterTurns = valence[v] });
+                    vertexNode[v] = nodes.Count - 1;
+                    return nodes.Count - 1;
+                }
+                void Emit(int v, int c, int d, int pos)
+                {
+                    var nodeId = NodeOf(v);
+                    var tr = new Trace { startNode = nodeId, face = c / 3, dir = d, px = U(c), py = V(c) };
+                    tr.points.Add((0, nodeId));
+                    traces.Add(tr);
+                    nodes[nodeId].ends.Add((-1 - (traces.Count - 1), 0, pos));
+                    queue.Add((0, traces.Count - 1));
+                }
+
+                // --- creases: traces laid in advance, along mesh edges ------------------------------
+                if (featureEdges != null)
+                {
+                    var halfOf = new Dictionary<(int, int), int>();
+                    for (var h = 0; h < 3 * m; h++) halfOf[(T[h], T[3 * (h / 3) + (h % 3 + 1) % 3])] = h;
+                    var adjacent = new Dictionary<int, List<int>>();
+                    var edgeSet = new HashSet<(int, int)>();
+                    foreach (var (a, b) in featureEdges)
+                    {
+                        if (a == b || fan[a] == null || fan[b] == null) continue;
+                        if (!halfOf.ContainsKey((a, b)) || !halfOf.ContainsKey((b, a))) continue;
+                        if (!edgeSet.Add((Math.Min(a, b), Math.Max(a, b)))) continue;
+                        (adjacent.TryGetValue(a, out var la) ? la : adjacent[a] = new List<int>()).Add(b);
+                        (adjacent.TryGetValue(b, out var lb) ? lb : adjacent[b] = new List<int>()).Add(a);
+                    }
+                    int PosToward(int v, int w) => Mod4Of((int)Math.Round(sectorStart[halfOf[(v, w)]]), valence[v]);
+                    // Two crease edges leaving a vertex the same way cannot both be arcs: the shorter
+                    // in (u, v) is left out.
+                    foreach (var kv in new List<KeyValuePair<int, List<int>>>(adjacent))
+                    {
+                        var l = kv.Value;
+                        for (var i = 0; i < l.Count; i++)
+                            for (var j = i + 1; j < l.Count; j++)
+                            {
+                                if (PosToward(kv.Key, l[i]) != PosToward(kv.Key, l[j])) continue;
+                                double Len(int w)
+                                {
+                                    var hh = halfOf[(kv.Key, w)];
+                                    var nx = 3 * (hh / 3) + (hh % 3 + 1) % 3;
+                                    return Math.Abs(U(nx) - U(hh)) + Math.Abs(V(nx) - V(hh));
+                                }
+                                var drop = Len(l[i]) < Len(l[j]) ? l[i] : l[j];
+                                l.Remove(drop);
+                                adjacent[drop].Remove(kv.Key);
+                                stats.creaseDropped++;
+                                i = -1;
+                                break;
+                            }
+                    }
+                    bool Break(int v)
+                    {
+                        var l = adjacent[v];
+                        if (l.Count != 2 || valence[v] != 4) return true;
+                        return Mod4Of(PosToward(v, l[0]) - PosToward(v, l[1]), 4) != 2;
+                    }
+                    foreach (var kv in adjacent)
+                    {
+                        var seen = new Dictionary<int, int>();
+                        foreach (var w in kv.Value)
+                        {
+                            var pw = PosToward(kv.Key, w);
+                            if (seen.ContainsKey(pw) && stats.creaseClashes++ < 4)
+                            {
+                                stats.debug += $"[clash v{kv.Key} val{valence[kv.Key]} deg{kv.Value.Count}:";
+                                foreach (var x in kv.Value)
+                                {
+                                    var hh = halfOf[(kv.Key, x)];
+                                    var nx = 3 * (hh / 3) + (hh % 3 + 1) % 3;
+                                    stats.debug += $" ->{x}@{PosToward(kv.Key, x)} d({U(nx) - U(hh):F3},{V(nx) - V(hh):F3}) start {sectorStart[hh]:F2}";
+                                }
+                                stats.debug += "] ";
+                            }
+                            seen[pw] = w;
+                        }
+                    }
+                    var usedEdge = new HashSet<(int, int)>();
+                    void Lay(int v0, int w0)
+                    {
+                        var id = traces.Count;
+                        var tr = new Trace { startNode = NodeOf(v0), active = false };
+                        traces.Add(tr);
+                        tr.points.Add((0, tr.startNode));
+                        nodes[tr.startNode].ends.Add((-1 - id, 0, PosToward(v0, w0)));
+                        int v = v0, w = w0;
+                        while (true)
+                        {
+                            usedEdge.Add((Math.Min(v, w), Math.Max(v, w)));
+                            var h = halfOf[(v, w)];
+                            var o = halfOf[(w, v)];
+                            // The piece in both triangles at the edge, each in its own chart.
+                            double length = 0;
+                            foreach (var (hc, cv, cw) in new[] { (h, h, 3 * (h / 3) + (h % 3 + 1) % 3), (o, 3 * (o / 3) + (o % 3 + 1) % 3, o) })
+                            {
+                                var f = hc / 3;
+                                double ax = U(cv), ay = V(cv), bx = U(cw), by = V(cw);
+                                double trueAx = ax, trueAy = ay, trueBx = bx, trueBy = by;
+                                int dir;
+                                if (Math.Abs(bx - ax) >= Math.Abs(by - ay))
+                                {
+                                    var y = 0.5 * (ay + by);
+                                    ay = by = y;
+                                    dir = bx >= ax ? 0 : 2;
+                                }
+                                else
+                                {
+                                    var x = 0.5 * (ax + bx);
+                                    ax = bx = x;
+                                    dir = by >= ay ? 1 : 3;
+                                }
+                                (segs[f] ??= new List<Segment>()).Add(new Segment { trace = id, ax = ax, ay = ay, bx = bx, by = by, dir = dir, s0 = tr.length });
+                                if (hc == h)
+                                {
+                                    // Located on the edge itself, not on the averaged line: points placed on
+                                    // it then lie in the triangle.
+                                    tr.path.Add((f, trueAx, trueAy, trueBx, trueBy, dir, tr.length));
+                                    length = Math.Abs(bx - ax) + Math.Abs(by - ay);
+                                }
+                            }
+                            tr.length += length;
+                            if (Break(w) || w == v0)
+                            {
+                                tr.endNode = NodeOf(w);
+                                tr.points.Add((tr.length, tr.endNode));
+                                nodes[tr.endNode].ends.Add((-1 - id, 1, PosToward(w, v)));
+                                stats.creaseTraces++;
+                                return;
+                            }
+                            var next = -1;
+                            foreach (var x in adjacent[w]) if (x != v) next = x;
+                            if (next < 0 || usedEdge.Contains((Math.Min(w, next), Math.Max(w, next))))
+                            {
+                                tr.endNode = NodeOf(w);
+                                tr.points.Add((tr.length, tr.endNode));
+                                nodes[tr.endNode].ends.Add((-1 - id, 1, PosToward(w, v)));
+                                stats.creaseTraces++;
+                                return;
+                            }
+                            v = w;
+                            w = next;
+                        }
+                    }
+                    foreach (var kv in adjacent)
+                    {
+                        if (!Break(kv.Key)) continue;
+                        foreach (var w in kv.Value)
+                            if (!usedEdge.Contains((Math.Min(kv.Key, w), Math.Max(kv.Key, w)))) Lay(kv.Key, w);
+                    }
+                    // Closed loops with no break on them: cut at any vertex.
+                    foreach (var kv in adjacent)
+                        foreach (var w in kv.Value)
+                            if (!usedEdge.Contains((Math.Min(kv.Key, w), Math.Max(kv.Key, w)))) { Lay(kv.Key, w); stats.creaseLoops++; }
+                }
+
+                // --- separatrices, and the continuations a crease node needs --------------------------
+                // A singularity sends one along every direction a crease does not already take. A
+                // crease end or corner sends the fewest that leave no angle at it wider than two
+                // quarters, which a rectangle could not hold.
+                for (var v = 0; v < n; v++)
+                {
+                    if (fan[v] == null || valence[v] <= 0) continue;
+                    var singular = valence[v] != 4;
+                    var isNode = vertexNode.ContainsKey(v);
+                    if (!singular && !isNode) continue;
+                    var occupied = new HashSet<int>();
+                    if (isNode) foreach (var e in nodes[vertexNode[v]].ends) occupied.Add(e.pos);
+                    var dirs = Directions(v);
+                    if (singular)
+                    {
+                        foreach (var (c, d, pos) in dirs)
+                            if (occupied.Add(pos)) Emit(v, c, d, pos);
+                        var count = 0;
+                        foreach (var _ in dirs) count++;
+                        if (count != valence[v]) stats.debug += $"[v{v} valence {valence[v]} seps {count}] ";
+                        continue;
+                    }
+                    for (var guard = 0; guard < 4; guard++)
+                    {
+                        var sorted = new List<int>(occupied);
+                        sorted.Sort();
+                        var want = -1;
+                        for (var i = 0; i < sorted.Count; i++)
+                        {
+                            var a = sorted[i];
+                            var b = i + 1 < sorted.Count ? sorted[i + 1] : sorted[0] + 4;
+                            if (b - a > 2) { want = Mod4Of(a + 2, 4); break; }
+                        }
+                        if (want < 0) break;
+                        var emitted = false;
+                        foreach (var (c, d, pos) in dirs)
+                            if (pos == want) { Emit(v, c, d, pos); occupied.Add(pos); emitted = true; stats.creaseExtensions++; break; }
+                        if (!emitted) { stats.debug += $"[ext v{v} pos {want} missing] "; break; }
+                    }
+                }
+                // Lines added by earlier attempts, into faces that came out other than rectangles.
+                foreach (var (v, want) in extraEmits)
+                    foreach (var (c, d, pos) in Directions(v))
+                    {
+                        if (pos != want) continue;
+                        var taken = false;
+                        foreach (var e in nodes[NodeOf(v)].ends) if (e.pos == want) taken = true;
+                        if (!taken) Emit(v, c, d, pos);
+                        break;
+                    }
+                stats.traces = traces.Count;
+
+
+                // A new node where trace `id` ends on trace `hitTrace` at length sHit, in face f's chart.
+                int Junction(int id, int hitTrace, double sHit, int f, double x, double y, int hitDir, int arriveDir)
+                {
+                    var node = new Node { face = f, u = x, v = y };
+                    nodes.Add(node);
+                    var nodeId = nodes.Count - 1;
+                    traces[hitTrace].points.Add((sHit, nodeId));
+                    // Positions are directions in f's chart: along the hit trace both ways, and back along
+                    // the arriving one.
+                    node.ends.Add((-1 - hitTrace, 2, Mod4(hitDir)));          // hit trace, forwards
+                    node.ends.Add((-1 - hitTrace, 3, Mod4(hitDir + 2)));      // hit trace, backwards
+                    node.ends.Add((-1 - id, 1, Mod4(arriveDir + 2)));         // the arriving trace's end
+                    return nodeId;
+                }
+
+                // For a trace meeting segment sg of another (or itself) going the same way: the position
+                // at the other's start node it would arrive at, if it may end there (within a cell of
+                // that start, and the position free); else -1.
+                // Cuts trace `id` back to length s: its pieces beyond, in its path and in the triangles.
+                void Truncate(int id, double sCut)
+                {
+                    var t0 = traces[id];
+                    for (var i = t0.path.Count - 1; i >= 0; i--)
+                    {
+                        var pc = t0.path[i];
+                        var plen = Math.Abs(pc.bx - pc.ax) + Math.Abs(pc.by - pc.ay);
+                        var list0 = segs[pc.face];
+                        if (pc.s0 >= sCut - tiny)
+                        {
+                            t0.path.RemoveAt(i);
+                            list0?.RemoveAll(q => q.trace == id && Math.Abs(q.s0 - pc.s0) < 1e-12);
+                            continue;
+                        }
+                        if (pc.s0 + plen > sCut)
+                        {
+                            var w = (sCut - pc.s0) / Math.Max(plen, 1e-300);
+                            var nbx = pc.ax + w * (pc.bx - pc.ax);
+                            var nby = pc.ay + w * (pc.by - pc.ay);
+                            t0.path[i] = (pc.face, pc.ax, pc.ay, nbx, nby, pc.dir, pc.s0);
+                            if (list0 != null)
+                                for (var q = 0; q < list0.Count; q++)
+                                    if (list0[q].trace == id && Math.Abs(list0[q].s0 - pc.s0) < 1e-12)
+                                    {
+                                        var sq = list0[q];
+                                        sq.bx = nbx;
+                                        sq.by = nby;
+                                        list0[q] = sq;
+                                    }
+                        }
+                        break;
+                    }
+                    var dropped = t0.points.RemoveAll(q => q.s > sCut + tiny);
+                    stats.truncated++;
+                    stats.truncatedJunctions += dropped;
+                    t0.length = sCut;
+                }
+
+                int MergeTarget(int id, Segment sg)
+                {
+                    if (sg.s0 > 1.0) return -1;
+                    var h = traces[sg.trace];
+                    var nd = nodes[h.startNode];
+                    var leave = -1;
+                    foreach (var e in nd.ends) if (e.arc == -1 - sg.trace && e.end == 0) leave = e.pos;
+                    if (leave < 0) return -1;
+                    var want = Mod4Of(leave + 2, nd.quarterTurns);
+                    foreach (var e in nd.ends) if (e.pos == want) return -1;
+                    return want;
+                }
+
+                while (queue.Count > 0)
+                {
+                    var (s, id) = queue.Min;
+                    queue.Remove(queue.Min);
+                    var tr = traces[id];
+                    if (!tr.active) continue;
+                    var f = tr.face;
+                    if (!valid[f]) { stats.hitFold++; tr.active = false; continue; }
+                    if (++tr.steps > maxSteps) { stats.hitLimit++; tr.active = false; continue; }
+                    stats.steps++;
+                    double dx = DirX[tr.dir], dy = DirY[tr.dir];
+                    // Exit edge: tail right of the ray, head left of it (on the line counts as right: the
+                    // ray runs just left of it).
+                    var exit = -1;
+                    double qx = 0, qy = 0;
+                    for (var k = 0; k < 3; k++)
+                    {
+                        int a = 3 * f + k, b = 3 * f + (k + 1) % 3;
+                        var sa = Cross(dx, dy, U(a) - tr.px, V(a) - tr.py);
+                        var sb = Cross(dx, dy, U(b) - tr.px, V(b) - tr.py);
+                        if (!(sa <= onLine) || sb <= onLine) continue;
+                        var lambda = sa >= 0 ? 0 : -sa / (sb - sa);
+                        var ix = U(a) + lambda * (U(b) - U(a));
+                        var iy = V(a) + lambda * (V(b) - V(a));
+                        // Ahead of the point (or at it, leaving a corner).
+                        if ((ix - tr.px) * dx + (iy - tr.py) * dy < -1e-12) continue;
+                        exit = a;
+                        qx = ix;
+                        qy = iy;
+                        break;
+                    }
+                    if (exit < 0) { stats.hitFold++; tr.active = false; stats.debug += stats.hitFold <= 3 ? $"[noexit t{id} f{f}] " : ""; continue; }
+                    var len = Math.Abs(qx - tr.px) + Math.Abs(qy - tr.py);
+
+                    // The earliest separatrix already in this triangle that the step meets.
+                    var hitT = double.PositiveInfinity;
+                    var hitIndex = -1;
+                    var hitCollinear = false;
+                    var list = segs[f];
+                    if (list != null)
+                    {
+                        for (var i = 0; i < list.Count; i++)
+                        {
+                            var sg = list[i];
+                            // A line through this trace's own start node, met within a hundredth of a cell:
+                            // the start itself, off by the crease's rounding.
+                            var near = tr.length < 1e-2 && (traces[sg.trace].startNode == tr.startNode || traces[sg.trace].endNode == tr.startNode);
+                            if (sg.trace == id && Math.Abs(sg.s0 + Math.Abs(sg.bx - sg.ax) + Math.Abs(sg.by - sg.ay) - tr.length) < 1e-12) continue;
+                            // Distance along the step to the segment's line, and where on it.
+                            if (Mod4(sg.dir - tr.dir) % 2 == 1)
+                            {
+                                // Perpendicular: the segment is a line across the step.
+                                double t, along, lo, hi;
+                                if (dx != 0) { t = (sg.ax - tr.px) * dx; along = tr.py; lo = Math.Min(sg.ay, sg.by); hi = Math.Max(sg.ay, sg.by); }
+                                else { t = (sg.ay - tr.py) * dy; along = tr.px; lo = Math.Min(sg.ax, sg.bx); hi = Math.Max(sg.ax, sg.bx); }
+                                if (t <= tiny || t > len + tiny) continue;
+                                if (near && tr.length + t < 1e-2) continue;
+                                if (along < lo - onLine || along > hi + onLine) continue;
+                                if (t < hitT) { hitT = t; hitIndex = i; hitCollinear = false; }
+                            }
+                            else
+                            {
+                                // Parallel: only on the same line, met at its nearest end.
+                                var off = dx != 0 ? sg.ay - tr.py : sg.ax - tr.px;
+                                if (Math.Abs(off) > collinearTolerance) continue;
+                                var ta = (sg.ax - tr.px) * dx + (sg.ay - tr.py) * dy;
+                                var tb = (sg.bx - tr.px) * dx + (sg.by - tr.py) * dy;
+                                var t = Math.Min(ta, tb);
+                                if (t <= tiny || t > len + tiny) continue;
+                                if (near && tr.length + t < 1e-2) continue;
+                                // Going the same way along another line: only a ring closing on its own
+                                // start is met (it ends there, see below); anything else runs on.
+                                if (sg.dir == tr.dir && MergeTarget(id, sg) < 0) continue;
+                                if (t < hitT) { hitT = t; hitIndex = i; hitCollinear = true; }
+                            }
+                        }
+                    }
+
+                    if (hitIndex >= 0)
+                    {
+                        var sg = list[hitIndex];
+                        var hx = tr.px + hitT * dx;
+                        var hy = tr.py + hitT * dy;
+                        // Along the hit line only: a parallel line met is up to collinearTolerance off it.
+                        var sHit = sg.s0 + (sg.dir % 2 == 0 ? Math.Abs(hx - sg.ax) : Math.Abs(hy - sg.ay));
+                        // The last piece, up to the meeting point.
+                        (segs[f] ??= new List<Segment>()).Add(new Segment { trace = id, ax = tr.px, ay = tr.py, bx = hx, by = hy, dir = tr.dir, s0 = tr.length });
+                        tr.path.Add((f, tr.px, tr.py, hx, hy, tr.dir, tr.length));
+                        tr.length += hitT;
+                        tr.active = false;
+                        if (sg.trace == id) stats.hitSelf++;
+                        if (hitCollinear && sg.dir == tr.dir)
+                        {
+                            // A ring closing on the start of the line it runs along: it ends at that
+                            // start, arriving from the side the line leaves by.
+                            stats.ringsClosed++;
+                            var target = MergeTarget(id, sg);
+                            var start = traces[sg.trace].startNode;
+                            tr.endNode = start;
+                            nodes[start].ends.Add((-1 - id, 1, target));
+                        }
+                        else if (hitCollinear)
+                        {
+                            // Head on, along one line: the two are one arc; they meet at the other's tip,
+                            // which stops there too.
+                            stats.hitCollinear++;
+                            var other = traces[sg.trace];
+                            var nodeId = Junction(id, sg.trace, sHit, f, hx, hy, sg.dir, tr.dir);
+                            // The other one stops here too -- cut back if it already ran on into the
+                            // next triangle, where this one would meet its track a second time.
+                            if (other.endNode < 0 || other.length > sHit + collinearTolerance)
+                            {
+                                if (other.length > sHit + collinearTolerance) Truncate(sg.trace, sHit);
+                                other.active = false;
+                                other.endNode = nodeId;
+                            }
+                            tr.endNode = nodeId;
+                        }
+                        else if (continueThrough.Contains(id) && !crossedOnce.Contains(id))
+                        {
+                            // Crossing: a node with the hit trace both ways and this one both ways, and on.
+                            crossedOnce.Add(id);
+                            stats.crossings++;
+                            var node = new Node { face = f, u = hx, v = hy };
+                            nodes.Add(node);
+                            var nodeId = nodes.Count - 1;
+                            traces[sg.trace].points.Add((sHit, nodeId));
+                            tr.points.Add((tr.length, nodeId));
+                            node.ends.Add((-1 - sg.trace, 2, Mod4(sg.dir)));
+                            node.ends.Add((-1 - sg.trace, 3, Mod4(sg.dir + 2)));
+                            node.ends.Add((-1 - id, 3, Mod4(tr.dir + 2)));
+                            node.ends.Add((-1 - id, 2, Mod4(tr.dir)));
+                            tr.active = true;
+                            tr.px = hx;
+                            tr.py = hy;
+                            // Off the crossed line, so it is not met again at once.
+                            tr.length += 0;
+                            queue.Add((tr.length, id));
+                            continue;
                         }
                         else
                         {
-                            // Parallel: only on the same line, met at its nearest end.
-                            var off = dx != 0 ? sg.ay - tr.py : sg.ax - tr.px;
-                            if (Math.Abs(off) > 1e-7) continue;
-                            var ta = (sg.ax - tr.px) * dx + (sg.ay - tr.py) * dy;
-                            var tb = (sg.bx - tr.px) * dx + (sg.by - tr.py) * dy;
-                            var t = Math.Min(ta, tb);
-                            if (t <= tiny || t > len + tiny) continue;
-                            if (t < hitT) { hitT = t; hitIndex = i; hitCollinear = true; }
+                            stats.hitTrace++;
+                            tr.endNode = Junction(id, sg.trace, sHit, f, hx, hy, sg.dir, tr.dir);
                         }
+                        tr.points.Add((tr.length, tr.endNode));
+                        continue;
                     }
+
+                    (segs[f] ??= new List<Segment>()).Add(new Segment { trace = id, ax = tr.px, ay = tr.py, bx = qx, by = qy, dir = tr.dir, s0 = tr.length });
+                    tr.path.Add((f, tr.px, tr.py, qx, qy, tr.dir, tr.length));
+                    tr.length += len;
+                    var o = twin[exit];
+                    if (o < 0) { stats.hitBoundary++; tr.active = false; continue; }
+                    // Spirals: this triangle met before, the same way, shifted sideways.
+                    if (attempt == 0 && !tr.looped)
+                    {
+                        tr.visited ??= new Dictionary<int, (int, double)>();
+                        var side = tr.dir % 2 == 0 ? tr.py : tr.px;
+                        var key = f * 4 + tr.dir;
+                        if (tr.visited.TryGetValue(key, out var first))
+                        {
+                            var shift = side - first.side;
+                            if (Math.Abs(shift) > collinearTolerance)
+                            {
+                                var cr = new int[tr.crossed.Count - first.count];
+                                var tq = new int[cr.Length];
+                                for (var i = 0; i < cr.Length; i++) { cr[i] = tr.crossed[first.count + i]; tq[i] = rot[cr[i]]; }
+                                loopsFound.Add(new LayoutLoop { face = f, dir = tr.dir, shift = shift, crossed = cr, turns = tq });
+                                stats.spirals++;
+                                if (stats.spirals <= 6) stats.debug += $"[spiral t{id} f{f} d{tr.dir} shift {shift:F4} crossed {cr.Length}] ";
+                            }
+                            tr.looped = true;
+                        }
+                        else tr.visited[key] = (tr.crossed.Count, side);
+                    }
+                    tr.crossed.Add(exit);
+                    var nxp = qx;
+                    var nyp = qy;
+                    Rot(rot[exit], nxp, nyp, out var rx, out var ry);
+                    tr.px = rx + tu[exit];
+                    tr.py = ry + tv[exit];
+                    tr.dir = Mod4(tr.dir + rot[exit]);
+                    tr.face = o / 3;
+                    queue.Add((tr.length, id));
                 }
 
-                if (hitIndex >= 0)
+                // --- arcs: each trace cut at its nodes ---------------------------------------------
+                arcs = new List<Arc>();
+                // (trace, which end-kind, node) -> arc, for resolving the node ends.
+                var traceArcs = new List<Arc>[traces.Count];
+                for (var id = 0; id < traces.Count; id++)
                 {
-                    var sg = list[hitIndex];
-                    var hx = tr.px + hitT * dx;
-                    var hy = tr.py + hitT * dy;
-                    var sHit = sg.s0 + Math.Abs(hx - sg.ax) + Math.Abs(hy - sg.ay);
-                    // The last piece, up to the meeting point.
-                    (segs[f] ??= new List<Segment>()).Add(new Segment { trace = id, ax = tr.px, ay = tr.py, bx = hx, by = hy, dir = tr.dir, s0 = tr.length });
-                    tr.path.Add((f, tr.px, tr.py, hx, hy, tr.dir, tr.length));
-                    tr.length += hitT;
-                    tr.active = false;
-                    if (sg.trace == id) stats.hitSelf++;
-                    if (hitCollinear)
+                    var tr = traces[id];
+                    tr.points.Sort((p, q) => p.s.CompareTo(q.s));
+                    var list = traceArcs[id] = new List<Arc>();
+                    for (var i = 0; i + 1 < tr.points.Count; i++)
                     {
-                        // Head on, along one line: the two are one arc; they meet at the other's tip,
-                        // which stops there too.
-                        stats.hitCollinear++;
-                        var other = traces[sg.trace];
-                        var nodeId = Junction(id, sg.trace, sHit, f, hx, hy, sg.dir, tr.dir);
-                        if (other.active && Math.Abs(sHit - other.length) < 1e-7)
+                        var a = new Arc { trace = id, s0 = tr.points[i].s, s1 = tr.points[i + 1].s, node0 = tr.points[i].node, node1 = tr.points[i + 1].node };
+                        arcs.Add(a);
+                        list.Add(a);
+                    }
+                    if (tr.endNode < 0) stats.openWalks++;
+                }
+                var arcIndex = new Dictionary<Arc, int>();
+                for (var i = 0; i < arcs.Count; i++) arcIndex[arcs[i]] = i;
+
+                // Resolve every node end to a concrete arc and whether the arc leaves or arrives there.
+                var resolved = new List<(int arc, bool leaves, int pos)>[nodes.Count];
+                for (var nid = 0; nid < nodes.Count; nid++)
+                {
+                    var r = resolved[nid] = new List<(int, bool, int)>();
+                    foreach (var (code, kind, pos) in nodes[nid].ends)
+                    {
+                        var id = -1 - code;
+                        var list = traceArcs[id];
+                        Arc found = null;
+                        var leaves = true;
+                        foreach (var a in list)
                         {
-                            other.active = false;
-                            other.endNode = nodeId;
+                            // 0: the trace's start; 1: its end; 2: the arc leaving a node on it; 3: arriving.
+                            if ((kind == 0 || kind == 2) && a.node0 == nid) { found = a; leaves = true; break; }
+                            if ((kind == 1 || kind == 3) && a.node1 == nid) { found = a; leaves = false; break; }
                         }
-                        tr.endNode = nodeId;
+                        if (found == null) continue;
+                        r.Add((arcIndex[found], leaves, pos));
+                    }
+                    r.Sort((p, q) => p.pos.CompareTo(q.pos));
+                    for (var i = 0; i + 1 < r.Count; i++)
+                        if (r[i].pos == r[i + 1].pos && stats.duplicateEnds++ < 4)
+                        {
+                            var nd = nodes[nid];
+                            stats.debug += $"[dup n{nid} v{nd.vertex} val{(nd.vertex >= 0 ? valence[nd.vertex] : 4)}:";
+                            foreach (var e in nd.ends)
+                            {
+                                var t0 = traces[-1 - e.arc];
+                                stats.debug += $" tr{-1 - e.arc}({(t0.path.Count > 0 && t0.face == 0 && t0.dir == 0 && t0.steps == 0 ? "crease" : "trace")} kind{e.end} pos{e.pos} start n{t0.startNode})";
+                            }
+                            stats.debug += "] ";
+                        }
+                }
+                stats.nodes = nodes.Count;
+                stats.arcs = arcs.Count;
+
+                // --- faces: walk with the face on the left, turning clockwise at every node -----------
+                // Half-edge 2a + 0 runs node0 -> node1, 2a + 1 back.
+                var used = new bool[2 * arcs.Count];
+                var cornerHist = new SortedDictionary<string, int>();
+                rectFaces = new List<(List<int> half, List<int> turns)>();
+                var fixes = 0;
+                badArcs = new HashSet<int>();
+                for (var h0 = 0; h0 < 2 * arcs.Count; h0++)
+                {
+                    if (used[h0]) continue;
+                    var h = h0;
+                    var turns = new List<int>();
+                    var halfs = new List<int>();
+                    var ok = false;
+                    for (var guard = 0; guard < 100000; guard++)
+                    {
+                        used[h] = true;
+                        halfs.Add(h);
+                        var a = arcs[h / 2];
+                        var forward = h % 2 == 0;
+                        var at = forward ? a.node1 : a.node0;
+                        var r = resolved[at];
+                        // The end we arrive through: the arc a, arriving if forward, leaving if not.
+                        var k = -1;
+                        for (var i = 0; i < r.Count; i++)
+                            if (r[i].arc == h / 2 && r[i].leaves == !forward) { k = i; break; }
+                        if (k < 0) break;
+                        // Next: clockwise from it, i.e. the previous position.
+                        var j = (k - 1 + r.Count) % r.Count;
+                        var gap = r[k].pos - r[j].pos;
+                        if (gap <= 0) gap += nodes[at].quarterTurns;
+                        turns.Add(gap);
+                        var nh = 2 * r[j].arc + (r[j].leaves ? 0 : 1);
+                        h = nh;
+                        if (h == h0) { ok = true; break; }
+                        if (used[h]) break;
+                    }
+                    if (!ok) { stats.openWalks++; continue; }
+                    stats.layoutFaces++;
+                    var corners = 0;
+                    var sum = 0;
+                    var reflex = false;
+                    foreach (var t in turns)
+                    {
+                        if (t == 1) corners++;
+                        if (t >= 3) reflex = true;
+                        sum += 2 - t;
+                    }
+                    if (reflex)
+                    {
+                        stats.reflexCorners++;
+                        if (stats.reflexCorners <= 6)
+                        {
+                            // The node after each half-edge with a turn of 3 or more.
+                            for (var i = 0; i < turns.Count; i++)
+                            {
+                                if (turns[i] < 3) continue;
+                                var ah = arcs[halfs[i] / 2];
+                                var at = halfs[i] % 2 == 0 ? ah.node1 : ah.node0;
+                                var nd = nodes[at];
+                                var tr0 = traces[ah.trace];
+                                stats.debug += $"[reflex t{turns[i]} node{at} v{nd.vertex} f{nd.face} val{(nd.vertex >= 0 ? valence[nd.vertex] : 4)} ends:";
+                                foreach (var e in resolved[at]) stats.debug += $" a{e.arc}{(e.leaves ? ">" : "<")}@{e.pos}{(traces[arcs[e.arc].trace].active || traces[arcs[e.arc].trace].path.Count == 0 ? "" : "")}";
+                                stats.debug += $" raw {nd.ends.Count}] ";
+                            }
+                        }
+                    }
+                    if (!(corners == 4 && !reflex && sum == 4)) foreach (var hb in halfs) badArcs.Add(hb / 2);
+                    if (corners == 4 && !reflex && sum == 4) { stats.rectangles++; rectFaces.Add((halfs, turns)); }
+                    else if (attempt < layoutAttempts)
+                    {
+                        // One more line into this face, from the first node where its side runs
+                        // straight or bends back: a junction's arriving trace carried on through, or a
+                        // vertex sending one more along the middle of the angle.
+                        for (var i = 0; i < turns.Count; i++)
+                        {
+                            if (turns[i] < 2) continue;
+                            var ah = arcs[halfs[i] / 2];
+                            var at = halfs[i] % 2 == 0 ? ah.node1 : ah.node0;
+                            var nd = nodes[at];
+                            var r = resolved[at];
+                            var k = -1;
+                            for (var q = 0; q < r.Count; q++)
+                                if (r[q].arc == halfs[i] / 2 && r[q].leaves == (halfs[i] % 2 != 0)) { k = q; break; }
+                            if (k < 0) continue;
+                            var j = (k - 1 + r.Count) % r.Count;
+                            if (nd.vertex >= 0)
+                            {
+                                var want = Mod4Of(r[j].pos + 1, nd.quarterTurns);
+                                if (extraEmits.Contains((nd.vertex, want))) continue;
+                                extraEmits.Add((nd.vertex, want));
+                                fixes++;
+                                break;
+                            }
+                            // A junction: the trace that arrived there (its end, kind 1).
+                            var arrived = -1;
+                            foreach (var e in nd.ends) if (e.end == 1) arrived = -1 - e.arc;
+                            if (arrived < 0 || turns[i] != 2 || continueThrough.Contains(arrived)) continue;
+                            continueThrough.Add(arrived);
+                            fixes++;
+                            break;
+                        }
+                    }
+                    else if (sum == 0)
+                    {
+                        stats.annuli++;
+                        if (attempt >= 1 && stats.annuli <= 1)
+                        {
+                            stats.debug += $"[annulus a{attempt} len {turns.Count}:";
+                            for (var i = 0; i < turns.Count && i < 30; i++)
+                            {
+                                var ah = arcs[halfs[i] / 2];
+                                var at = halfs[i] % 2 == 0 ? ah.node1 : ah.node0;
+                                var nd = nodes[at];
+                                stats.debug += $" n{at}(v{nd.vertex} t{turns[i]} tr{ah.trace}{(traces[ah.trace].path.Count > 0 && !traces[ah.trace].active ? "" : "")} ends{nd.ends.Count})";
+                            }
+                            stats.debug += "] ";
+                        }
                     }
                     else
                     {
-                        stats.hitTrace++;
-                        tr.endNode = Junction(id, sg.trace, sHit, f, hx, hy, sg.dir, tr.dir);
+                        stats.otherFaces++;
+                        if (stats.otherFaces <= 2)
+                        {
+                            stats.debug += $"[other c{corners} sum{sum}:";
+                            for (var i = 0; i < turns.Count; i++)
+                            {
+                                var ah = arcs[halfs[i] / 2];
+                                var at = halfs[i] % 2 == 0 ? ah.node1 : ah.node0;
+                                stats.debug += $" a{halfs[i] / 2}{(halfs[i] % 2 == 0 ? ">" : "<")}n{at}(v{nodes[at].vertex},t{turns[i]},len {ah.s1 - ah.s0:F2},tr{ah.trace}{(traces[ah.trace].active ? "" : "")})";
+                            }
+                            stats.debug += "] ";
+                        }
                     }
-                    tr.points.Add((tr.length, tr.endNode));
-                    continue;
+                    var key = $"{corners}c/{sum}";
+                    cornerHist[key] = cornerHist.TryGetValue(key, out var cnt) ? cnt + 1 : 1;
                 }
-
-                (segs[f] ??= new List<Segment>()).Add(new Segment { trace = id, ax = tr.px, ay = tr.py, bx = qx, by = qy, dir = tr.dir, s0 = tr.length });
-                tr.path.Add((f, tr.px, tr.py, qx, qy, tr.dir, tr.length));
-                tr.length += len;
-                var o = twin[exit];
-                if (o < 0) { stats.hitBoundary++; tr.active = false; continue; }
-                var nxp = qx;
-                var nyp = qy;
-                Rot(rot[exit], nxp, nyp, out var rx, out var ry);
-                tr.px = rx + tu[exit];
-                tr.py = ry + tv[exit];
-                tr.dir = Mod4(tr.dir + rot[exit]);
-                tr.face = o / 3;
-                queue.Add((tr.length, id));
+                foreach (var kv in cornerHist) stats.faceCorners += $"{kv.Key}:{kv.Value} ";
+                stats.layoutAttempts = attempt + 1;
+                if (fixes == 0) break;
             }
-
-            // --- arcs: each trace cut at its nodes ---------------------------------------------
-            var arcs = new List<Arc>();
-            // (trace, which end-kind, node) -> arc, for resolving the node ends.
-            var traceArcs = new List<Arc>[traces.Count];
-            for (var id = 0; id < traces.Count; id++)
-            {
-                var tr = traces[id];
-                tr.points.Sort((p, q) => p.s.CompareTo(q.s));
-                var list = traceArcs[id] = new List<Arc>();
-                for (var i = 0; i + 1 < tr.points.Count; i++)
-                {
-                    var a = new Arc { trace = id, s0 = tr.points[i].s, s1 = tr.points[i + 1].s, node0 = tr.points[i].node, node1 = tr.points[i + 1].node };
-                    arcs.Add(a);
-                    list.Add(a);
-                }
-                if (tr.endNode < 0) stats.openWalks++;
-            }
-            var arcIndex = new Dictionary<Arc, int>();
-            for (var i = 0; i < arcs.Count; i++) arcIndex[arcs[i]] = i;
-
-            // Resolve every node end to a concrete arc and whether the arc leaves or arrives there.
-            var resolved = new List<(int arc, bool leaves, int pos)>[nodes.Count];
-            for (var nid = 0; nid < nodes.Count; nid++)
-            {
-                var r = resolved[nid] = new List<(int, bool, int)>();
-                foreach (var (code, kind, pos) in nodes[nid].ends)
-                {
-                    var id = -1 - code;
-                    var list = traceArcs[id];
-                    Arc found = null;
-                    var leaves = true;
-                    foreach (var a in list)
-                    {
-                        // 0: the trace's start; 1: its end; 2: the arc leaving a node on it; 3: arriving.
-                        if ((kind == 0 || kind == 2) && a.node0 == nid) { found = a; leaves = true; break; }
-                        if ((kind == 1 || kind == 3) && a.node1 == nid) { found = a; leaves = false; break; }
-                    }
-                    if (found == null) continue;
-                    r.Add((arcIndex[found], leaves, pos));
-                }
-                r.Sort((p, q) => p.pos.CompareTo(q.pos));
-            }
-            stats.nodes = nodes.Count;
-            stats.arcs = arcs.Count;
-
-            // --- faces: walk with the face on the left, turning clockwise at every node -----------
-            // Half-edge 2a + 0 runs node0 -> node1, 2a + 1 back.
-            var used = new bool[2 * arcs.Count];
-            var cornerHist = new SortedDictionary<string, int>();
-            var rectFaces = new List<(List<int> half, List<int> turns)>();
-            for (var h0 = 0; h0 < 2 * arcs.Count; h0++)
-            {
-                if (used[h0]) continue;
-                var h = h0;
-                var turns = new List<int>();
-                var halfs = new List<int>();
-                var ok = false;
-                for (var guard = 0; guard < 100000; guard++)
-                {
-                    used[h] = true;
-                    halfs.Add(h);
-                    var a = arcs[h / 2];
-                    var forward = h % 2 == 0;
-                    var at = forward ? a.node1 : a.node0;
-                    var r = resolved[at];
-                    // The end we arrive through: the arc a, arriving if forward, leaving if not.
-                    var k = -1;
-                    for (var i = 0; i < r.Count; i++)
-                        if (r[i].arc == h / 2 && r[i].leaves == !forward) { k = i; break; }
-                    if (k < 0) break;
-                    // Next: clockwise from it, i.e. the previous position.
-                    var j = (k - 1 + r.Count) % r.Count;
-                    var gap = r[k].pos - r[j].pos;
-                    if (gap <= 0) gap += nodes[at].quarterTurns;
-                    turns.Add(gap);
-                    var nh = 2 * r[j].arc + (r[j].leaves ? 0 : 1);
-                    h = nh;
-                    if (h == h0) { ok = true; break; }
-                    if (used[h]) break;
-                }
-                if (!ok) { stats.openWalks++; continue; }
-                stats.layoutFaces++;
-                var corners = 0;
-                var sum = 0;
-                var reflex = false;
-                foreach (var t in turns)
-                {
-                    if (t == 1) corners++;
-                    if (t >= 3) reflex = true;
-                    sum += 2 - t;
-                }
-                if (reflex) stats.reflexCorners++;
-                if (corners == 4 && !reflex && sum == 4) { stats.rectangles++; rectFaces.Add((halfs, turns)); }
-                else if (sum == 0) stats.annuli++;
-                else stats.otherFaces++;
-                var key = $"{corners}c/{sum}";
-                cornerHist[key] = cornerHist.TryGetValue(key, out var cnt) ? cnt + 1 : 1;
-            }
-            foreach (var kv in cornerHist) stats.faceCorners += $"{kv.Key}:{kv.Value} ";
 
             // --- quantisation -----------------------------------------------------------------
             // An integer length per arc, each rectangle's opposite sides equal, none negative:
@@ -825,16 +1313,45 @@ namespace NativeRemesher.Extraction
                     if (path[mid].s0 <= s) lo = mid; else hi = mid - 1;
                 }
                 var sg = path[lo];
-                var len = Math.Abs(sg.bx - sg.ax) + Math.Abs(sg.by - sg.ay);
+                var len = Math.Abs(DirX[sg.dir]) * Math.Abs(sg.bx - sg.ax) + Math.Abs(DirY[sg.dir]) * Math.Abs(sg.by - sg.ay);
                 var t = Math.Max(0, Math.Min(len, s - sg.s0));
-                return (sg.face, sg.ax + t * DirX[sg.dir], sg.ay + t * DirY[sg.dir], sg.dir);
+                var w = len > 0 ? t / len : 0;
+                return (sg.face, sg.ax + w * (sg.bx - sg.ax), sg.ay + w * (sg.by - sg.ay), sg.dir);
             }
 
             // From (f, x, y), straight along direction d for distance dist through the charts.
+            // At a corner of f, the triangle of that vertex's fan whose angle holds direction d (the
+            // point and direction carried into its chart); unchanged when the point is no corner.
+            void IntoSector(ref int f, ref double x, ref double y, ref int d)
+            {
+                var c = -1;
+                for (var k = 0; k < 3; k++)
+                    if (Math.Abs(U(3 * f + k) - x) + Math.Abs(V(3 * f + k) - y) < 1e-3) c = 3 * f + k;
+                if (c < 0) return;
+                for (var step = 0; step < 64; step++)
+                {
+                    var ff = c / 3;
+                    int c1 = 3 * ff + (c % 3 + 1) % 3, c2 = 3 * ff + (c % 3 + 2) % 3;
+                    double e1x = U(c1) - U(c), e1y = V(c1) - V(c), e2x = U(c2) - U(c), e2y = V(c2) - V(c);
+                    var cr = Cross(e1x, e1y, DirX[d], DirY[d]);
+                    var inside = (cr > 0 || (cr == 0 && e1x * DirX[d] + e1y * DirY[d] > 0)) && Cross(DirX[d], DirY[d], e2x, e2y) > 0;
+                    if (inside) { f = ff; x = U(c); y = V(c); return; }
+                    // Counter-clockwise to the next triangle round the vertex, across edge (c2 -> c).
+                    var h = c2;
+                    var o = twin[h];
+                    if (o < 0) return;
+                    d = Mod4(d + rot[h]);
+                    c = o;                                   // in the triangle across, the vertex is o's tail
+                }
+            }
+
             (int face, double x, double y, int dir) Walk(int f, double x, double y, int d, double dist)
             {
+                var crossings = 0;
+                IntoSector(ref f, ref x, ref y, ref d);
                 for (var guard = 0; guard < 10000 && dist > 1e-12; guard++)
                 {
+                    if (guard > 0) IntoSector(ref f, ref x, ref y, ref d);
                     double dx = DirX[d], dy = DirY[d];
                     var exit = -1;
                     double qx = 0, qy = 0;
@@ -851,7 +1368,35 @@ namespace NativeRemesher.Extraction
                         exit = a; qx = ix; qy = iy;
                         break;
                     }
-                    if (exit < 0) { stats.walkFailed++; break; }
+                    if (exit < 0)
+                    {
+                        // Starting on an edge with the triangle on the wrong side of the ray (a crease
+                        // arc walked backwards): across that edge, and again.
+                        var crossed = false;
+                        for (var k = 0; k < 3 && !crossed; k++)
+                        {
+                            int a = 3 * f + k, b = 3 * f + (k + 1) % 3;
+                            double ex = U(b) - U(a), ey = V(b) - V(a);
+                            var el = Math.Sqrt(ex * ex + ey * ey);
+                            if (el <= 0) continue;
+                            var dist0 = Math.Abs(Cross(ex, ey, x - U(a), y - V(a))) / el;
+                            var along = ((x - U(a)) * ex + (y - V(a)) * ey) / (el * el);
+                            if (dist0 > 1e-3 || along < -1e-3 || along > 1 + 1e-3) continue;
+                            var o2 = twin[a];
+                            if (o2 < 0) continue;
+                            Rot(rot[a], x, y, out var cx, out var cy);
+                            x = cx + tu[a];
+                            y = cy + tv[a];
+                            d = Mod4(d + rot[a]);
+                            f = o2 / 3;
+                            crossed = true;
+                        }
+                        if (crossed && ++crossings <= 4) { stats.walkCrossings++; continue; }
+                        stats.walkFailed++;
+                        if (stats.walkFailed <= 2)
+                            stats.debug += $"[walk f{f} p({x:F4},{y:F4}) d{d} left {dist:F3} tri ({U(3 * f):F4},{V(3 * f):F4}) ({U(3 * f + 1):F4},{V(3 * f + 1):F4}) ({U(3 * f + 2):F4},{V(3 * f + 2):F4})] ";
+                        break;
+                    }
                     var step = Math.Abs(qx - x) + Math.Abs(qy - y);
                     if (step >= dist) { x += dist * dx; y += dist * dy; dist = 0; break; }
                     dist -= step;
@@ -866,6 +1411,27 @@ namespace NativeRemesher.Extraction
                 return (f, x, y, d);
             }
 
+            if (debugArcPath != null)
+            {
+                // Diagnostics: every arc as a polyline on the surface ("# bad" before the arcs of
+                // faces that are not rectangles), every node as a point.
+                var ic = System.Globalization.CultureInfo.InvariantCulture;
+                var sb = new System.Text.StringBuilder();
+                for (var i = 0; i < arcs.Count; i++)
+                {
+                    var a = arcs[i];
+                    sb.Append(badArcs.Contains(i) ? "# bad " : "# arc ").Append(i).Append(' ').Append(a.trace).Append((char)10);
+                    var steps = Math.Max(2, (int)Math.Ceiling((a.s1 - a.s0) * 4));
+                    for (var k = 0; k <= steps; k++)
+                    {
+                        var (f, x, y, _) = Locate(a.trace, a.s0 + (a.s1 - a.s0) * k / steps);
+                        if (f < 0) continue;
+                        Surface(f, x, y, out var p, out _);
+                        sb.Append("p ").Append(p.x.ToString("R", ic)).Append(' ').Append(p.y.ToString("R", ic)).Append(' ').Append(p.z.ToString("R", ic)).Append((char)10);
+                    }
+                }
+                System.IO.File.WriteAllText(debugArcPath, sb.ToString());
+            }
             var nodePoint = new int[nodes.Count];
             for (var i = 0; i < nodes.Count; i++)
             {

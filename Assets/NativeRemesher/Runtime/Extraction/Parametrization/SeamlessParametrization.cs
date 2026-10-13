@@ -79,6 +79,7 @@ namespace NativeRemesher.Extraction
         [NonSerialized] public Vector3[] layoutPositions, layoutNormals;
         [NonSerialized] public List<int[]> layoutFaces;
         public int splitSingularities, splitFailed, splitMismatch, spreadMoves, spreadFailed, multipleSingularities;
+        public int featureEdgesDroppedV, loopRows, loopPasses;
         public int releasedFeatureGroups, releasedFeatureCoordinates;
         public float closureWorst;
         public long factorNonZeros;
@@ -91,7 +92,7 @@ namespace NativeRemesher.Extraction
         public long ms;
 
         public override string ToString() =>
-            $"faces={faces} singular={singularVertices} cancelled={cancelledPairs}+{cancelledFarPairs}(fail {pairCancelFailed}) split={splitSingularities}(fail {splitFailed}, mismatch {splitMismatch}) spread={spreadMoves}(fail {spreadFailed}) multiple={multipleSingularities} poles={roundedSingularities} stiff={stiffenIterationsRun}/{stiffened} reused={reusedFreeSolve} features={featureEdges}(skip {featureEdgesSkipped}, nearPoles {featureEdgesNearPoles}, pins {pinnedFeatureCoordinates}, released {releasedFeatureGroups}/{releasedFeatureCoordinates}) cut={cutEdges}(of {cutEdgesBeforePrune}) chains={chains} " +
+            $"faces={faces} singular={singularVertices} cancelled={cancelledPairs}+{cancelledFarPairs}(fail {pairCancelFailed}) split={splitSingularities}(fail {splitFailed}, mismatch {splitMismatch}) spread={spreadMoves}(fail {spreadFailed}) multiple={multipleSingularities} poles={roundedSingularities} stiff={stiffenIterationsRun}/{stiffened} reused={reusedFreeSolve} features={featureEdges}(skip {featureEdgesSkipped}, nearPoles {featureEdgesNearPoles}, pins {pinnedFeatureCoordinates}, droppedV {featureEdgesDroppedV}, loops {loopRows}/{loopPasses}, released {releasedFeatureGroups}/{releasedFeatureCoordinates}) cut={cutEdges}(of {cutEdgesBeforePrune}) chains={chains} " +
             $"blocks={blocks} closures={closureConstraints} cg={cgIterations} res={residual:G3} " +
             $"rounds={roundingRounds} rounded={roundedVariables} maxRound={maxRoundingMove:F3} " +
             $"flipped={flippedFaces} stages={flipsByStage}closuresOpen={closuresOpen} propagated={propagatedChains} nonInt={closureNonInteger} forced={forcedChains} free={freeChains} tree={treeChains} freedPoles={freedPoles} regRoots={regularRoots} unsolved={unsolvedTree} kinds={closureKinds}worst={closureWorst:F2} nnzL={factorNonZeros} symbolic={symbolicMs} factor={factorMs}/{factorizations} failed={factorFailures} ms={ms} (split {split}structure {structureMs} expr {expressionMs} asm {assemblyMs}) transfer={transferMs} fineSingular={refinedSingularFaces} unmapped={unmappedFaces} trace[{trace}] ulog[{untangleLog}] layout[{layout}]";
@@ -244,7 +245,7 @@ namespace NativeRemesher.Extraction
         public static int untangleFinalRounds = 0;
 
         /// <summary>L-BFGS iterations per untangling round.</summary>
-        public static int untangleInner = 200;
+        public static int untangleInner = 25;
 
         /// <summary>Least relative shrink of the barrier's eps per round (the paper's 0.1).</summary>
         public static float untangleSigmaMin = 0.1f;
@@ -257,6 +258,15 @@ namespace NativeRemesher.Extraction
 
         /// <summary>Weight of the area term inside the barrier.</summary>
         public static float untangleTheta = 0.5f;
+
+        /// <summary>Re-solves holding spiral loops' twist to whole cells (see the layout pass).</summary>
+        public static int layoutLoopPasses = 2;
+
+        /// <summary>With the layout meshed, skip rounding this map's own integers.</summary>
+        public static bool layoutSkipRounding = true;
+
+        /// <summary>Crease row weight when the layout is meshed (creases become layout arcs).</summary>
+        public static float layoutFeatureWeight = 1e5f;
 
         /// <summary>Diagnostics: trace the quad layout of the free map (see QuantizedLayout).</summary>
         public static bool layoutDiagnostics = false;
@@ -1172,6 +1182,9 @@ namespace NativeRemesher.Extraction
             // Each constrained feature edge as the two pinned (vertex, master coordinate) slots it
             // ties, 2v + comp: a crease line in u and one in v meeting at a corner stay apart.
             var usedFeatureEdges = new List<(int a, int b)>();
+            var constrainedFeatureEdges = new List<(int a, int b)>();
+            var loopRows = new List<(List<(Term t, double coef)> row, int comp, double target)>();
+            HashSet<long> layoutDropped = null;
             var pinU = new bool[n];
             var pinV = new bool[n];
             var stA = stats;
@@ -1199,6 +1212,15 @@ namespace NativeRemesher.Extraction
                         AddRow(comp == d ? 1.0 / fh[f] : 0.0, w);
                     }
             }
+            // Spiral loops (see the layout): held hard, like a closure.
+            foreach (var (row, comp, target) in loopRows)
+            {
+                rowVar.Clear();
+                rowCoef.Clear();
+                foreach (var (t, coef) in row) Emit(t, comp, coef);
+                AddRow(target, Math.Sqrt(1e5));
+            }
+
             // Closures, in cells; weighted against a face's energy, which is about one per face.
             var closureW = Math.Sqrt(closureWeight);
             foreach (var row in closureRows)
@@ -1215,7 +1237,8 @@ namespace NativeRemesher.Extraction
             // feature vertex records which master-chart coordinate it pins.
             if (featureEdges != null)
             {
-                var featureW = Math.Sqrt(featureWeight);
+                // The layout lays its creases along iso-lines: there they must be exact.
+                var featureW = Math.Sqrt(IntegerGridMap.parametrizationLayout ? Math.Max(featureWeight, layoutFeatureWeight) : featureWeight);
                 var faceOfEdge = new Dictionary<long, int>(3 * m, EdgeKey.Comparer);
                 for (var f = 0; f < m; f++)
                     for (var k = 0; k < 3; k++)
@@ -1224,9 +1247,52 @@ namespace NativeRemesher.Extraction
                         var key = ((long)Math.Min(a, b) << 32) | (uint)Math.Max(a, b);
                         if (!faceOfEdge.ContainsKey(key)) faceOfEdge[key] = 3 * f + k;
                     }
+                // For the layout: two crease edges at a vertex less than 45 degrees apart -- a sharp
+                // V in a zigzag crease -- are held along one grid direction, squash the triangle
+                // between them flat and leave the vertex twice the same way. The less aligned of the
+                // two is left free.
+                HashSet<long> dropped = null;
+                if (IntegerGridMap.parametrizationLayout && firstAssembly)
+                {
+                    dropped = new HashSet<long>();
+                    var byVertex = new Dictionary<int, List<(int w, int comp, float align, long key)>>();
+                    foreach (var (a, b) in featureEdges)
+                    {
+                        if (a == b) continue;
+                        var key = ((long)Math.Min(a, b) << 32) | (uint)Math.Max(a, b);
+                        if (!faceOfEdge.TryGetValue(key, out var half)) continue;
+                        var f = half / 3;
+                        var d = (P[b] - P[a]).normalized;
+                        var alongU = Mathf.Abs(Vector3.Dot(d, fr[f]));
+                        var alongV = Mathf.Abs(Vector3.Dot(d, Vector3.Cross(fn[f], fr[f])));
+                        var align = Mathf.Max(alongU, alongV);
+                        if (align < featureMinAlignment) continue;
+                        var comp = alongU >= alongV ? 1 : 0;
+                        (byVertex.TryGetValue(a, out var la) ? la : byVertex[a] = new List<(int, int, float, long)>()).Add((b, comp, align, key));
+                        (byVertex.TryGetValue(b, out var lb) ? lb : byVertex[b] = new List<(int, int, float, long)>()).Add((a, comp, align, key));
+                    }
+                    foreach (var kv in byVertex)
+                    {
+                        var l = kv.Value;
+                        for (var i = 0; i < l.Count; i++)
+                            for (var j = i + 1; j < l.Count; j++)
+                            {
+                                if (dropped.Contains(l[i].key) || dropped.Contains(l[j].key)) continue;
+                                // Less than 45 degrees apart: one grid direction for both, whichever
+                                // coordinate each was given in its own triangle's frame.
+                                var di = (P[l[i].w] - P[kv.Key]).normalized;
+                                var dj = (P[l[j].w] - P[kv.Key]).normalized;
+                                if (Vector3.Dot(di, dj) <= 0.7071f) continue;
+                                dropped.Add(l[i].align < l[j].align ? l[i].key : l[j].key);
+                                stA.featureEdgesDroppedV++;
+                            }
+                    }
+                    layoutDropped = dropped;
+                }
                 foreach (var (a, b) in featureEdges)
                 {
                     if (a == b) continue;
+                    if (layoutDropped != null && layoutDropped.Contains(((long)Math.Min(a, b) << 32) | (uint)Math.Max(a, b))) continue;
                     if (featureSkipNearSingularRings > 0 && (nearPole[a] || nearPole[b]))
                     {
                         if (firstAssembly) stA.featureEdgesNearPoles++;
@@ -1250,6 +1316,7 @@ namespace NativeRemesher.Extraction
                     AddRow(0.0, featureW);
                     if (!firstAssembly) continue;
                     stA.featureEdges++;
+                    constrainedFeatureEdges.Add((a, b));
                     var slotA = -1;
                     var slotB = -1;
                     // Which master coordinate that is at each end: the corner's chart is the master's
@@ -1547,21 +1614,25 @@ namespace NativeRemesher.Extraction
                     return dmin;
                 }
 
-                // Energy at xs; with g != null its gradient too (zero on held variables).
+                // Energy at xs; with g != null its gradient too (zero on held variables). The matrix
+                // product, the corners and the faces run in parallel; the scatter into g does not.
+                var faceE = new double[m];
+                var dCu = new double[3 * m];
+                var dCv = new double[3 * m];
                 double Energy(double[] xs, double[] g)
                 {
                     // Least squares: x^T A x - 2 b^T x + b0, b0 the targets' own square (the face rows'
                     // 1/h), so that the energy is the sum of squares itself and never negative.
-                    double e = lsConstant;
-                    for (var r = 0; r < vars; r++)
+                    System.Threading.Tasks.Parallel.For(0, vars, r =>
                     {
                         double sum = 0;
                         for (var j = matrix.start[r]; j < matrix.start[r + 1]; j++) sum += matrix.val[j] * xs[matrix.col[j]];
                         ax[r] = sum;
-                        e += xs[r] * sum - 2 * rhs[r] * xs[r];
-                    }
+                    });
+                    double e = lsConstant;
+                    for (var r = 0; r < vars; r++) e += xs[r] * ax[r] - 2 * rhs[r] * xs[r];
                     if (g != null) for (var r = 0; r < vars; r++) g[r] = 2 * (ax[r] - rhs[r]);
-                    for (var c = 0; c < 3 * m; c++)
+                    System.Threading.Tasks.Parallel.For(0, 3 * m, c =>
                     {
                         double a = 0, b = 0;
                         for (var i = 0; i < cornerCount[c]; i++)
@@ -1573,11 +1644,14 @@ namespace NativeRemesher.Extraction
                         }
                         cu[c] = a;
                         cv[c] = b;
-                    }
-                    for (var f = 0; f < m; f++)
+                    });
+                    var withGrad = g != null;
+                    var epsNow = eps;
+                    System.Threading.Tasks.Parallel.For(0, m, f =>
                     {
+                        faceE[f] = 0;
                         var w = faceW[f];
-                        if (w == 0) continue;
+                        if (w == 0) { for (var k = 0; k < 3; k++) { dCu[3 * f + k] = 0; dCv[3 * f + k] = 0; } return; }
                         double h = fh[f];
                         double ma = 0, mb = 0, mc = 0, md = 0;
                         for (var k = 0; k < 3; k++)
@@ -1588,12 +1662,12 @@ namespace NativeRemesher.Extraction
                         }
                         ma *= h; mb *= h; mc *= h; md *= h;
                         var D = ma * md - mb * mc;
-                        var sq = Math.Sqrt(eps * eps + D * D);
+                        var sq = Math.Sqrt(epsNow * epsNow + D * D);
                         var chi = 0.5 * (D + sq);
                         var num = ma * ma + mb * mb + mc * mc + md * md + theta * (D * D + 1);
                         var fval = num / (2 * chi);
-                        e += w * fval;
-                        if (g == null) continue;
+                        faceE[f] = w * fval;
+                        if (!withGrad) return;
                         var dchi = 0.5 * (1 + D / sq);
                         // df/dM = (2M + 2 theta D cof) / (2 chi) - f chi' cof / chi
                         var kD = theta * D / chi - fval * dchi / chi;
@@ -1604,17 +1678,25 @@ namespace NativeRemesher.Extraction
                         for (var k = 0; k < 3; k++)
                         {
                             var c = 3 * f + k;
-                            var du = h * (ga * gradX[c] + gb * gradY[c]);
-                            var dv = h * (gc * gradX[c] + gd * gradY[c]);
-                            for (var i = 0; i < cornerCount[c]; i++)
-                            {
-                                var t = pool[cornerStart[c] + i];
-                                if (t.rot == 0) { g[2 * t.block] += t.sign * du; g[2 * t.block + 1] += t.sign * dv; }
-                                else { g[2 * t.block + 1] -= t.sign * du; g[2 * t.block] += t.sign * dv; }
-                            }
+                            dCu[c] = h * (ga * gradX[c] + gb * gradY[c]);
+                            dCv[c] = h * (gc * gradX[c] + gd * gradY[c]);
+                        }
+                    });
+                    for (var f = 0; f < m; f++) e += faceE[f];
+                    if (g == null) return e;
+                    for (var c = 0; c < 3 * m; c++)
+                    {
+                        var du = dCu[c];
+                        var dv = dCv[c];
+                        if (du == 0 && dv == 0) continue;
+                        for (var i = 0; i < cornerCount[c]; i++)
+                        {
+                            var t = pool[cornerStart[c] + i];
+                            if (t.rot == 0) { g[2 * t.block] += t.sign * du; g[2 * t.block + 1] += t.sign * dv; }
+                            else { g[2 * t.block + 1] -= t.sign * du; g[2 * t.block] += t.sign * dv; }
                         }
                     }
-                    if (g != null) for (var r = 0; r < vars; r++) if (fixedVar[r]) g[r] = 0;
+                    for (var r = 0; r < vars; r++) if (fixedVar[r]) g[r] = 0;
                     return e;
                 }
 
@@ -1800,7 +1882,7 @@ namespace NativeRemesher.Extraction
                 cache.freeSolution = (double[])x.Clone();
             }
             if (untangleFreeRounds > 0) BarrierUntangle(untangleFreeRounds, untangleInner, "barrierFree");
-            if (layoutDiagnostics || IntegerGridMap.parametrizationLayout)
+            for (var loopPass = 0; layoutDiagnostics || IntegerGridMap.parametrizationLayout; loopPass++)
             {
                 var freeUv = new double[6 * m];
                 for (var c = 0; c < 3 * m; c++)
@@ -1816,9 +1898,49 @@ namespace NativeRemesher.Extraction
                     freeUv[2 * c] = a;
                     freeUv[2 * c + 1] = b;
                 }
-                var layoutStats = QuantizedLayout.Build(topology, freeUv,
-                    out stats.layoutPositions, out stats.layoutNormals, out stats.layoutFaces);
-                stats.layout = layoutStats.ToString();
+                var layoutStats = QuantizedLayout.Build(topology, freeUv, constrainedFeatureEdges,
+                    out stats.layoutPositions, out stats.layoutNormals, out stats.layoutFaces, out var loops);
+                stats.layout += "<<" + layoutStats.debug.Substring(0, Math.Min(layoutStats.debug.Length, 600)) + ">> ";
+                if (loopPass == 0) stats.layout = "";
+                stats.layout += layoutStats.ToString();
+                if (loops.Count == 0 || loopPass >= layoutLoopPasses) break;
+
+                // Spirals: a separatrix came back round a cylinder shifted sideways, because the
+                // map is twisted there -- its translation round that loop is not a whole number of
+                // cells across. That translation is linear in the unknowns: carried round the loop,
+                // a point of the start chart comes back as itself plus the sum of each crossing's
+                // translation turned by the crossings after it. Its sideways part is held to the
+                // nearest integer, and the map solved and untangled again.
+                foreach (var loop in loops)
+                {
+                    var turnSum = 0;
+                    foreach (var k in loop.turns) turnSum += k;
+                    if (Mod4(turnSum) != 0) continue;
+                    var comp = loop.dir % 2 == 0 ? 1 : 0;      // sideways to the separatrix
+                    var row = new List<(Term t, double coef)>();
+                    var after = 0;                              // quarter turns of the later crossings
+                    for (var j = loop.crossed.Length - 1; j >= 0; j--)
+                    {
+                        var h = loop.crossed[j];
+                        var o = across[h] < 0 ? -1 : 3 * across[h] + acrossCorner[h];
+                        if (o < 0) { row = null; break; }
+                        // t_j = corner of the vertex at h's tail in the face across, minus that corner
+                        // in h's own face turned by the crossing.
+                        var cf = h;
+                        var cg = 3 * (o / 3) + (o % 3 + 1) % 3;
+                        for (var i = 0; i < cornerCount[cg]; i++) row.Add((Turn(pool[cornerStart[cg] + i], after), 1.0));
+                        for (var i = 0; i < cornerCount[cf]; i++) row.Add((Turn(pool[cornerStart[cf] + i], after + loop.turns[j]), -1.0));
+                        after += loop.turns[j];
+                    }
+                    if (row == null) continue;
+                    // Closed rings where the twist is under a cell; a whole number of cells otherwise.
+                    loopRows.Add((row, comp, Math.Abs(loop.shift) < 1 ? 0 : Math.Round(loop.shift)));
+                    stA.loopRows++;
+                }
+                stA.loopPasses++;
+                matrix = Assemble();
+                SolveSystem(firstIterations);
+                if (untangleFreeRounds > 0) BarrierUntangle(untangleFreeRounds, untangleInner, "barrierLoop");
             }
 
             // Rounds every chain's translation so that every fan closure still closes. The closure at
@@ -2067,6 +2189,10 @@ namespace NativeRemesher.Extraction
                 stA.roundingRounds++;
                 SolveSystem(roundIterations);
             }
+
+            // The layout has its own integers; rounding this map's would only be thrown away.
+            if (IntegerGridMap.parametrizationLayout && layoutSkipRounding && stats.layoutFaces != null && stats.layoutFaces.Count > 0)
+                goto readLattice;
 
             // --- 7a. singularities onto grid nodes ----------------------------------------------
             // A singularity whose (u, v) is not an integer sits inside a cell -- often its centre,
@@ -2429,6 +2555,7 @@ namespace NativeRemesher.Extraction
                 stats.closureWorst = Mathf.Max(stats.closureWorst, r);
             }
 
+            readLattice:
             // --- 8. read the lattice off ---------------------------------------------------------
             double U(int corner, int comp)
             {
