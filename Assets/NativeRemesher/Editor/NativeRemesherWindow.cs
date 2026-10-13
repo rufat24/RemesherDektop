@@ -65,7 +65,11 @@ namespace NativeRemesher
         [SerializeField] float m_AdaptiveSize = 50f;
         [SerializeField] bool m_DetectHardEdges = true;
         [SerializeField] bool m_GlobalParametrization = true;
-        [SerializeField] bool m_QuadLayout;
+        // Renamed from m_QuadLayout so an open window picks up the new default (on) instead of its
+        // serialised off: the layout measured better than the per-singularity rounding on the head
+        // and the body at 2k, 3.5k and 5k (Benchmarks/round5-parametrization.md, round 9).
+        [SerializeField] bool m_QuadLayoutOn = true;
+        [SerializeField] bool m_ShowAdvanced;
 
         [SerializeField] bool m_SaveAsAsset = true;
         [SerializeField] bool m_ShowField = true;
@@ -115,6 +119,135 @@ namespace NativeRemesher
             EditorGUILayout.Space();
 
             var mesh = GetSelectedMesh(out var selected, out var error);
+            if (error != null)
+                EditorGUILayout.HelpBox(error, MessageType.Info);
+
+            // The settings QuadRemesher shows, in its order; the rest is under Advanced.
+            m_TargetQuadCount = Mathf.Max(4, EditorGUILayout.IntField(
+                new GUIContent("Target Quad Count",
+                    "The number of quads wanted. With Adapt Quad Count on, curved areas get extra " +
+                    "quads on top of it, as in QuadRemesher."),
+                m_TargetQuadCount));
+            m_AdaptiveSize = EditorGUILayout.Slider(
+                new GUIContent("Adaptive Size %",
+                    "How much smaller quads get where the surface curves, as in QuadRemesher " +
+                    "(default 50). 0 is an even grid everywhere; higher spends more of the " +
+                    "budget on fingers, rims and folds."),
+                m_AdaptiveSize, 0f, 100f);
+            m_AdaptQuadCount = EditorGUILayout.Toggle(
+                new GUIContent("Adapt Quad Count",
+                    "As QuadRemesher's option of the same name (on by default there): the " +
+                    "target sizes the quads on flat areas and curved areas get extra quads on " +
+                    "top, so the result can have up to 3x the target. Off holds the count."),
+                m_AdaptQuadCount);
+            m_DetectHardEdges = EditorGUILayout.Toggle(
+                new GUIContent("Detect Hard Edges",
+                    "Find creases that run as long clean lines - grooves between fingers, " +
+                    "seams, pocket and panel edges - and lay edge loops along them, as " +
+                    "QuadRemesher's hard-edge detection does. Short creases from scan noise " +
+                    "are ignored."),
+                m_DetectHardEdges);
+            using (new EditorGUI.DisabledScope(!m_GlobalParametrization || m_ExtractorChoice != RemeshExtractor.IntegerGrid))
+                m_QuadLayoutOn = EditorGUILayout.Toggle(
+                    new GUIContent("Quad Layout",
+                        "Split the surface into rectangular patches along the separatrices and creases, " +
+                        "give every patch side a whole number of quads together, and fill each patch " +
+                        "with a regular grid - instead of rounding each singularity on its own. Close " +
+                        "singularities come out a whole number of cells apart instead of folding, " +
+                        "creases are patch borders, limbs get closed rings. Closed meshes only; an " +
+                        "open one (a scan) uses the previous extractor."),
+                    m_QuadLayoutOn);
+
+            EditorGUILayout.Space();
+            m_SaveAsAsset = EditorGUILayout.Toggle(
+                new GUIContent("Save As Asset",
+                    "Write the result to a .asset file. Without this the mesh lives only in " +
+                    "memory and does not survive a domain reload or a scene save."),
+                m_SaveAsAsset);
+            m_QuadTopology = EditorGUILayout.Toggle(
+                new GUIContent("Quad Topology In Asset",
+                    "Keep the quads as quad topology in the Unity mesh. That needs a second " +
+                    "submesh for the faces which are not quads, so the object asks for two " +
+                    "materials. Off gives one triangle submesh and one material; the exported " +
+                    ".fbx keeps the quads either way."),
+                m_QuadTopology);
+
+            EditorGUILayout.Space();
+            m_ShowAdvanced = EditorGUILayout.Foldout(m_ShowAdvanced, "Advanced", true);
+            var profile = RemeshProfile.For(m_ProfileKind);
+            if (m_ShowAdvanced)
+            {
+                using (new EditorGUI.IndentLevelScope())
+                    DrawAdvanced(mesh, selected, ref profile);
+            }
+            EditorGUILayout.Space();
+
+            // Warn when the request sits outside the band the solver can serve, instead of quietly
+            // producing a poor result and leaving the user to wonder why.
+            if (m_Topology != null && !profile.preDecimate)
+            {
+                m_Topology.UsefulQuadCountRange(out var coarsest, out var finest);
+                if (m_TargetQuadCount < coarsest)
+                    EditorGUILayout.HelpBox(
+                        $"{m_TargetQuadCount:N0} quads is coarser than this mesh can serve well " +
+                        $"({coarsest:N0} is about the limit). Quality falls off sharply past that " +
+                        "point. Enable a profile with pre-decimation, which raises the input's edge " +
+                        "length instead of the lattice spacing and keeps the ratio in range.",
+                        MessageType.Warning);
+            }
+
+            // A run in flight replaces the button with its own progress bar and a cancel control,
+            // drawn in this window rather than through EditorUtility.DisplayProgressBar. The modal
+            // bar only advances when the caller yields, so during a solve it sat at whatever
+            // fraction it was last given and the whole editor appeared hung.
+            if (isRunning)
+            {
+                var elapsed = m_JobWatch != null ? m_JobWatch.Elapsed.TotalSeconds : 0.0;
+                var rect = EditorGUILayout.GetControlRect(false, 22f);
+                EditorGUI.ProgressBar(rect, Mathf.Clamp01(m_JobProgress),
+                    $"{m_JobStage}  ({elapsed:F1}s)");
+
+                if (GUILayout.Button("Cancel"))
+                    m_Cancel?.Cancel();
+            }
+            else
+            {
+                using (new EditorGUI.DisabledScope(mesh == null))
+                {
+                    if (GUILayout.Button("Remesh", GUILayout.Height(28)))
+                        RunPipeline();
+                }
+            }
+
+            // The profile mismatch that cost a user several rounds of "it still looks wrong". A
+            // dihedral threshold cannot tell a crease from scan noise, so on a scan under a profile
+            // meant for modelled geometry it marks a third of the mesh as creased - and every one of
+            // those pins a vertex against surface relaxation. Silently. The result looked dented in
+            // exactly the soft folds where relaxation had been refused, and every geometric metric
+            // in the project said the mesh was fine, because it was: the defect was in which
+            // vertices were allowed to move.
+            if (m_LastResult != null && m_LastResult.featureDetectionSuspect)
+                EditorGUILayout.HelpBox(
+                    $"Feature detection marked {m_LastResult.featureVertexFraction * 100f:F0} % of " +
+                    $"the input as creased, at {m_LastResult.profile.featureAngleDegrees:F0} " +
+                    "degrees. That is the signature of a scan rather than modelled geometry - a " +
+                    "dihedral test cannot tell a crease from noise, and each false crease holds a " +
+                    "vertex still against surface relaxation. Turn Auto Profile back on, or pick " +
+                    "Photogrammetry or Character yourself - both declare no creases.",
+                    MessageType.Warning);
+
+            if (m_Extraction != null)
+                EditorGUILayout.HelpBox(m_Extraction.ToString(), MessageType.None);
+
+            if (!string.IsNullOrEmpty(m_Status))
+                EditorGUILayout.LabelField(m_Status, EditorStyles.wordWrappedMiniLabel);
+        }
+
+        // Development and comparison settings: the step-by-step field solve, the profile, the
+        // extractor and its older options. Kept, not shown by default.
+        void DrawAdvanced(Mesh mesh, GameObject selected, ref RemeshProfile profile)
+        {
+            EditorGUILayout.LabelField("Step by step (inspection)", EditorStyles.miniBoldLabel);
 
             using (new EditorGUI.DisabledScope(mesh == null))
             {
@@ -122,20 +255,12 @@ namespace NativeRemesher
                     BuildTopology(selected, mesh);
             }
 
-            if (error != null)
-                EditorGUILayout.HelpBox(error, MessageType.Info);
 
             if (m_Topology != null)
             {
                 EditorGUILayout.HelpBox(m_Topology.ToString(), MessageType.None);
 
-                var suggested = m_Topology.EdgeLengthForQuadCount(m_TargetQuadCount);
-                m_TargetQuadCount = Mathf.Max(4, EditorGUILayout.IntField(
-                    new GUIContent("Target Quad Count",
-                        "Used to derive the target edge length for the position field (stage 4)."),
-                    m_TargetQuadCount));
-                EditorGUILayout.LabelField("   target edge length", suggested.ToString("F4"),
-                    EditorStyles.miniLabel);
+
             }
 
             EditorGUILayout.Space();
@@ -171,7 +296,7 @@ namespace NativeRemesher
             }
 
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Remesh", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Pipeline", EditorStyles.boldLabel);
 
             m_AutoProfile = EditorGUILayout.Toggle(
                 new GUIContent("Auto Profile",
@@ -190,7 +315,7 @@ namespace NativeRemesher
                     m_ProfileKind);
             }
 
-            var profile = RemeshProfile.For(m_ProfileKind);
+            profile = RemeshProfile.For(m_ProfileKind);
 
             // What the auto path decided LAST run, not a prediction of the next one. The decision
             // is made after decimation, on the mesh the solver actually sees, so there is nothing
@@ -209,13 +334,7 @@ namespace NativeRemesher
                 EditorGUILayout.LabelField(" ", profile.Describe(), EditorStyles.miniLabel);
             }
 
-            m_QuadTopology = EditorGUILayout.Toggle(
-                new GUIContent("Quad Topology In Asset",
-                    "Keep the quads as quad topology in the Unity mesh. That needs a second " +
-                    "submesh for the faces which are not quads, so the object asks for two " +
-                    "materials. Off gives one triangle submesh and one material; the exported " +
-                    ".fbx keeps the quads either way."),
-                m_QuadTopology);
+
 
             m_ExtractorChoice = (RemeshExtractor)EditorGUILayout.EnumPopup(
                 new GUIContent("Extractor",
@@ -231,25 +350,7 @@ namespace NativeRemesher
 
             if (m_ExtractorChoice == RemeshExtractor.IntegerGrid)
             {
-                m_AdaptiveSize = EditorGUILayout.Slider(
-                    new GUIContent("Adaptive Size %",
-                        "How much smaller quads get where the surface curves, as in QuadRemesher " +
-                        "(default 50). 0 is an even grid everywhere; higher spends more of the " +
-                        "budget on fingers, rims and folds."),
-                    m_AdaptiveSize, 0f, 100f);
-                m_AdaptQuadCount = EditorGUILayout.Toggle(
-                    new GUIContent("Adapt Quad Count",
-                        "As QuadRemesher's option of the same name (on by default there): the " +
-                        "target sizes the quads on flat areas and curved areas get extra quads on " +
-                        "top, so the result can have up to 3x the target. Off holds the count."),
-                    m_AdaptQuadCount);
-                m_DetectHardEdges = EditorGUILayout.Toggle(
-                    new GUIContent("Detect Hard Edges",
-                        "Find creases that run as long clean lines - grooves between fingers, " +
-                        "seams, pocket and panel edges - and lay edge loops along them, as " +
-                        "QuadRemesher's hard-edge detection does. Short creases from scan noise " +
-                        "are ignored. Applies to the scan profiles, which otherwise detect none."),
-                    m_DetectHardEdges);
+
                 m_GlobalParametrization = EditorGUILayout.Toggle(
                     new GUIContent("Global Parametrization",
                         "Place the quad grid with one global seamless parametrisation (the " +
@@ -259,16 +360,7 @@ namespace NativeRemesher
                         "the previous extractor, which handles a ragged border better. Off is the " +
                         "previous extractor everywhere."),
                     m_GlobalParametrization);
-                using (new EditorGUI.DisabledScope(!m_GlobalParametrization))
-                    m_QuadLayout = EditorGUILayout.Toggle(
-                        new GUIContent("Quad Layout (experimental)",
-                            "With Global Parametrization: split the surface into rectangular patches " +
-                            "along the separatrices and creases, give every patch side a whole number " +
-                            "of quads together, and fill each patch with a regular grid - instead of " +
-                            "rounding each singularity on its own. Close singularities then come out " +
-                            "a whole number of cells apart instead of folding, creases are patch " +
-                            "borders, and limbs get closed rings. Slower; closed meshes only."),
-                        m_QuadLayout);
+
             }
 
             if (m_ExtractorChoice == RemeshExtractor.IntegerGrid)
@@ -291,71 +383,8 @@ namespace NativeRemesher
                         "edge can come out jagged, so leave it off there."),
                     m_PatchCurves);
 
-            m_SaveAsAsset = EditorGUILayout.Toggle(
-                new GUIContent("Save As Asset",
-                    "Write the result to a .asset file. Without this the mesh lives only in " +
-                    "memory and does not survive a domain reload or a scene save."),
-                m_SaveAsAsset);
 
-            // Warn when the request sits outside the band the solver can serve, instead of quietly
-            // producing a poor result and leaving the user to wonder why.
-            if (m_Topology != null && !profile.preDecimate)
-            {
-                m_Topology.UsefulQuadCountRange(out var coarsest, out var finest);
-                if (m_TargetQuadCount < coarsest)
-                    EditorGUILayout.HelpBox(
-                        $"{m_TargetQuadCount:N0} quads is coarser than this mesh can serve well " +
-                        $"({coarsest:N0} is about the limit). Quality falls off sharply past that " +
-                        "point. Enable a profile with pre-decimation, which raises the input's edge " +
-                        "length instead of the lattice spacing and keeps the ratio in range.",
-                        MessageType.Warning);
-            }
 
-            // A run in flight replaces the button with its own progress bar and a cancel control,
-            // drawn in this window rather than through EditorUtility.DisplayProgressBar. The modal
-            // bar only advances when the caller yields, so during a solve it sat at whatever
-            // fraction it was last given and the whole editor appeared hung.
-            if (isRunning)
-            {
-                var elapsed = m_JobWatch != null ? m_JobWatch.Elapsed.TotalSeconds : 0.0;
-                var rect = EditorGUILayout.GetControlRect(false, 22f);
-                EditorGUI.ProgressBar(rect, Mathf.Clamp01(m_JobProgress),
-                    $"{m_JobStage}  ({elapsed:F1}s)");
-
-                if (GUILayout.Button("Cancel"))
-                    m_Cancel?.Cancel();
-            }
-            else
-            {
-                using (new EditorGUI.DisabledScope(m_Topology == null))
-                {
-                    if (GUILayout.Button("Remesh", GUILayout.Height(28)))
-                        RunPipeline();
-                }
-            }
-
-            // The profile mismatch that cost a user several rounds of "it still looks wrong". A
-            // dihedral threshold cannot tell a crease from scan noise, so on a scan under a profile
-            // meant for modelled geometry it marks a third of the mesh as creased - and every one of
-            // those pins a vertex against surface relaxation. Silently. The result looked dented in
-            // exactly the soft folds where relaxation had been refused, and every geometric metric
-            // in the project said the mesh was fine, because it was: the defect was in which
-            // vertices were allowed to move.
-            if (m_LastResult != null && m_LastResult.featureDetectionSuspect)
-                EditorGUILayout.HelpBox(
-                    $"Feature detection marked {m_LastResult.featureVertexFraction * 100f:F0} % of " +
-                    $"the input as creased, at {m_LastResult.profile.featureAngleDegrees:F0} " +
-                    "degrees. That is the signature of a scan rather than modelled geometry - a " +
-                    "dihedral test cannot tell a crease from noise, and each false crease holds a " +
-                    "vertex still against surface relaxation. Turn Auto Profile back on, or pick " +
-                    "Photogrammetry or Character yourself - both declare no creases.",
-                    MessageType.Warning);
-
-            if (m_Extraction != null)
-                EditorGUILayout.HelpBox(m_Extraction.ToString(), MessageType.None);
-
-            if (!string.IsNullOrEmpty(m_Status))
-                EditorGUILayout.LabelField(m_Status, EditorStyles.wordWrappedMiniLabel);
         }
 
         // ------------------------------------------------------------------ actions
@@ -604,7 +633,7 @@ namespace NativeRemesher
             Extraction.IntegerGridMap.adaptiveSize = m_AdaptiveSize / 100f;
             Extraction.IntegerGridMap.coherentCreases = m_DetectHardEdges;
             Extraction.IntegerGridMap.parametrization = m_GlobalParametrization;
-            Extraction.IntegerGridMap.parametrizationLayout = m_GlobalParametrization && m_QuadLayout;
+            Extraction.IntegerGridMap.parametrizationLayout = m_GlobalParametrization && m_QuadLayoutOn;
             var autoProfile = m_AutoProfile;
 
             // Main thread, and the only place the Mesh API is touched on the way in.

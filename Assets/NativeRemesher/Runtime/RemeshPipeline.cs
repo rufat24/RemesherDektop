@@ -1454,8 +1454,16 @@ namespace NativeRemesher
                     var levels = result.hierarchy != null ? new HierarchicalStats() : null;
 
                     watch.Restart();
-                    var solved = SolvePositions(result, scale, field, settings.positionIterations,
-                        p => onProgress?.Invoke(label, p), levels);
+                    var parametrize = Extraction.IntegerGridMap.parametrization
+                        && (Extraction.IntegerGridMap.parametrizationOnOpenMeshes || result.topology.boundaryEdgeCount == 0);
+                    // The quad layout reads nothing of the position field but its spacing: its
+                    // sweeps (3 s a pass on the head at 5k) are skipped.
+                    var latticeUnused = parametrize && Extraction.IntegerGridMap.parametrizationLayout
+                        && Extraction.IntegerGridMap.parametrizationOnDecimated && result.decimatedPositions != null;
+                    var solved = latticeUnused
+                        ? PositionField.Solve(result.topology, result.orientation, scale, field, 0, null, null, null)
+                        : SolvePositions(result, scale, field, settings.positionIterations,
+                            p => onProgress?.Invoke(label, p), levels);
 
                     // The global seamless parametrisation, when asked for, replaces the position
                     // field's lattice with one solved for the whole surface at once; the extraction
@@ -1463,8 +1471,6 @@ namespace NativeRemesher
                     var extractOrientation = result.orientation;
                     var extractTopology = result.topology;
                     var extractOptions = extractionOptions;
-                    var parametrize = Extraction.IntegerGridMap.parametrization
-                        && (Extraction.IntegerGridMap.parametrizationOnOpenMeshes || result.topology.boundaryEdgeCount == 0);
                     if (parametrize && Extraction.IntegerGridMap.parametrizationOnDecimated
                         && result.decimatedPositions != null)
                     {

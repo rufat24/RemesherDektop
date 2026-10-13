@@ -80,7 +80,7 @@ namespace NativeRemesher.Extraction
         [NonSerialized] public List<int[]> layoutFaces;
         public int splitSingularities, splitFailed, splitMismatch, spreadMoves, spreadFailed, multipleSingularities;
         public int featureEdgesDroppedV, loopRows, loopPasses, featureEdgesSquashed;
-        public bool reusedLayout;
+        public bool reusedLayout, reusedStructure;
         public int releasedFeatureGroups, releasedFeatureCoordinates;
         public float closureWorst;
         public long factorNonZeros;
@@ -93,7 +93,7 @@ namespace NativeRemesher.Extraction
         public long ms;
 
         public override string ToString() =>
-            $"faces={faces} singular={singularVertices} cancelled={cancelledPairs}+{cancelledFarPairs}(fail {pairCancelFailed}) split={splitSingularities}(fail {splitFailed}, mismatch {splitMismatch}) spread={spreadMoves}(fail {spreadFailed}) multiple={multipleSingularities} poles={roundedSingularities} stiff={stiffenIterationsRun}/{stiffened} reused={reusedFreeSolve} features={featureEdges}(skip {featureEdgesSkipped}, nearPoles {featureEdgesNearPoles}, pins {pinnedFeatureCoordinates}, droppedV {featureEdgesDroppedV}, squashed {featureEdgesSquashed}, loops {loopRows}/{loopPasses}, released {releasedFeatureGroups}/{releasedFeatureCoordinates}) cut={cutEdges}(of {cutEdgesBeforePrune}) chains={chains} " +
+            $"faces={faces} singular={singularVertices} cancelled={cancelledPairs}+{cancelledFarPairs}(fail {pairCancelFailed}) split={splitSingularities}(fail {splitFailed}, mismatch {splitMismatch}) spread={spreadMoves}(fail {spreadFailed}) multiple={multipleSingularities} poles={roundedSingularities} stiff={stiffenIterationsRun}/{stiffened} reused={reusedFreeSolve}/{reusedStructure}/{reusedLayout} features={featureEdges}(skip {featureEdgesSkipped}, nearPoles {featureEdgesNearPoles}, pins {pinnedFeatureCoordinates}, droppedV {featureEdgesDroppedV}, squashed {featureEdgesSquashed}, loops {loopRows}/{loopPasses}, released {releasedFeatureGroups}/{releasedFeatureCoordinates}) cut={cutEdges}(of {cutEdgesBeforePrune}) chains={chains} " +
             $"blocks={blocks} closures={closureConstraints} cg={cgIterations} res={residual:G3} " +
             $"rounds={roundingRounds} rounded={roundedVariables} maxRound={maxRoundingMove:F3} " +
             $"flipped={flippedFaces} stages={flipsByStage}closuresOpen={closuresOpen} propagated={propagatedChains} nonInt={closureNonInteger} forced={forcedChains} free={freeChains} tree={treeChains} freedPoles={freedPoles} regRoots={regularRoots} unsolved={unsolvedTree} kinds={closureKinds}worst={closureWorst:F2} nnzL={factorNonZeros} symbolic={symbolicMs} factor={factorMs}/{factorizations} failed={factorFailures} ms={ms} (split {split}structure {structureMs} expr {expressionMs} asm {assemblyMs}) transfer={transferMs} fineSingular={refinedSingularFaces} unmapped={unmappedFaces} trace[{trace}] ulog[{untangleLog}] layout[{layout}]";
@@ -114,6 +114,8 @@ namespace NativeRemesher.Extraction
         internal double[] stiff;
         internal double[] freeSolution;
         internal double[] layoutSolution;
+        internal int[] jump;
+        internal bool[] forced;
         internal HashSet<long> layoutDropped;
         internal object loopRows;
     }
@@ -212,6 +214,9 @@ namespace NativeRemesher.Extraction
         /// <summary>Share of the free chains rounded per batch by the consistent rounding.</summary>
         public static float chainBatch = 0.5f;
 
+        /// <summary>Diagnostics: every solve's statistics, appended.</summary>
+        public static System.Text.StringBuilder debugPassLog = null;
+
         /// <summary>Diagnostics: write the coarse map at every fold census to {prefix}_{k}.obj.</summary>
         public static string debugDumpPrefix = null;
 
@@ -292,6 +297,14 @@ namespace NativeRemesher.Extraction
 
         /// <summary>Diagnostics: trace the quad layout of the free map (see QuantizedLayout).</summary>
         public static bool layoutDiagnostics = false;
+
+        /// <summary>
+        /// With the layout, later passes over the same mesh and field take the first pass's
+        /// singularity cancellations (see step 2b), so that its free solve can be reused (head at
+        /// 5k: the second pass 18 s -> 1.6 s). Not on the rounding path: there it moved the head's
+        /// Hausdorff at 3.5k from 0.0122 to 0.0139.
+        /// </summary>
+        public static bool reuseStructure = true;
 
         /// <summary>Cancel adjacent opposite singularities (see step 2b).</summary>
         public static bool cancelDipoles = true;
@@ -570,6 +583,26 @@ namespace NativeRemesher.Extraction
             // a cut with its own translation. The parametrisation carries the turn the field did
             // not quite make; over one edge that is a small distortion against a band of shear.
             var forced = new bool[edges];
+            // A later pass over the same mesh and field (the face-count search at another size)
+            // takes the first pass's cancellations: decided again at the new size they differ by a
+            // pair or two, the cut graph and its unknowns with them, and the solve cannot be reused.
+            var structureReused = reuseStructure && IntegerGridMap.parametrizationLayout && cache != null && ReferenceEquals(cache.topology, topology)
+                && ReferenceEquals(cache.crossField, crossField) && cache.jump != null && cache.jump.Length == edges
+                && cache.forced != null && cache.forced.Length == edges;
+            if (structureReused)
+            {
+                Array.Copy(cache.jump, jump, edges);
+                Array.Copy(cache.forced, forced, edges);
+                for (var v = 0; v < n; v++)
+                {
+                    if (boundary[v] || cornersOf[v] == null) continue;
+                    var k = FanIndex(v);
+                    index[v] = k < 0 ? 0 : k;
+                    singular[v] = index[v] != 0;
+                }
+                stats.reusedStructure = true;
+                goto structureDone;
+            }
             if (cancelDipoles)
             {
                 for (var v = 0; v < n; v++)
@@ -699,6 +732,7 @@ namespace NativeRemesher.Extraction
             // against parallel transport round the fan, plus the angle defect -- says which.
             // Both are spread the way a quad mesh has them: one quarter at a vertex, the next a
             // cell away along a grid axis, moved there along a path as the pair cancellation does.
+            structureDone:
             var trueTurn = new double[n];
             var cellOf = spacing;
             {
@@ -912,6 +946,11 @@ namespace NativeRemesher.Extraction
             }
 
             for (var v = 0; v < n; v++) if (singular[v]) stats.singularVertices++;
+            if (cache != null && !structureReused)
+            {
+                cache.jump = (int[])jump.Clone();
+                cache.forced = (bool[])forced.Clone();
+            }
 
             stats.split += "4:" + watch.ElapsedMilliseconds + " ";
             // --- 3. cut graph -------------------------------------------------------------------
@@ -1594,6 +1633,7 @@ namespace NativeRemesher.Extraction
             // stay held, and closures and crease rows keep their least squares weight.
             int BarrierUntangle(int rounds, int inner, string label)
             {
+                var untangleWatch = System.Diagnostics.Stopwatch.StartNew();
                 var free = new List<int>();
                 for (var i = 0; i < vars; i++) if (!fixedVar[i]) free.Add(i);
                 var faceW = new double[m];
@@ -1849,7 +1889,7 @@ namespace NativeRemesher.Extraction
                 }
                 st.untangleEvaluations += evaluations;
                 var flips = CountFlips();
-                st.flipsByStage += label + " " + flips + " ";
+                st.flipsByStage += label + " " + flips + $"({untangleWatch.ElapsedMilliseconds}ms) ";
                 return flips;
             }
 
@@ -1926,7 +1966,6 @@ namespace NativeRemesher.Extraction
                 }
                 stats.reusedLayout = true;
             }
-            else if (FreeUntangleRounds > 0) BarrierUntangle(FreeUntangleRounds, untangleInner, "barrierFree");
 
             // Creases crushing the map: held as exact iso-lines, two that converge squash the
             // triangles between them flat across (body at 5k: 1 cell of the map over 12 of surface,
@@ -1976,8 +2015,10 @@ namespace NativeRemesher.Extraction
                 constrainedFeatureEdges.RemoveAll(e => layoutDropped.Contains(((long)Math.Min(e.a, e.b) << 32) | (uint)Math.Max(e.a, e.b)));
                 matrix = Assemble();
                 SolveSystem(firstIterations);
-                if (FreeUntangleRounds > 0) BarrierUntangle(FreeUntangleRounds, untangleInner, "barrierSquash");
             }
+            // Untangled once, after the creases are settled: the squash test reads the plain
+            // solve, which folds or not makes no difference to (head at 5k: 3 untangles -> 1).
+            if (!stats.reusedLayout && FreeUntangleRounds > 0) BarrierUntangle(FreeUntangleRounds, untangleInner, "barrierFree");
             for (var loopPass = 0; layoutDiagnostics || IntegerGridMap.parametrizationLayout; loopPass++)
             {
                 var freeUv = new double[6 * m];
@@ -2809,6 +2850,7 @@ namespace NativeRemesher.Extraction
             }
 
             stats.ms = watch.ElapsedMilliseconds;
+            if (debugPassLog != null) debugPassLog.AppendLine("PASS " + stats);
         }
 
         /// <summary>Quarter-turns (0..3) on the term of `block` in an expression, or -1.</summary>

@@ -194,3 +194,43 @@ Still open:
 - Time is 13-43 s against 14-65 s for the default path. The second pass of the face-count search
   reuses the untangled map only when spacing scales uniformly.
 - Off by default.
+
+## Round 9: helmet rim, speed, window cleanup; Quad Layout on in the window
+
+- **Helmet rim.** The cable and lip along the rim are a fraction of a cell apart. Laid as patch
+  borders they gave spikes. The layout now keeps creases a cell apart
+  (`IntegerGridMap.layoutCreaseSeparationCells = 1`). Creases whose iso-line constraint crushes a
+  triangle under 0.15 cell across are let go and the map solved again
+  (`SeamlessParametrization.layoutSquashLimit`, `layoutSquashRounds`).
+- **Stray walks.** A Coons blend in space replaces an inner point whose walk lands more than 3 cells
+  away. Needle removal no longer runs on layout quads; it had opened a 76-edge hole at a knee.
+- **Speed.**
+  - The second pass of the face-count search reuses the first pass's singularity cancellations,
+    untangled map, loop rows and released creases, in layout mode only (head 5k: 18 s -> 1.6 s).
+  - The position field's sweeps are skipped in layout mode, since only its spacing is read.
+  - The crease check runs before untangling, so the map is untangled once.
+- **Window.** The main section holds QuadRemesher's settings: target count, adaptive size, adapt
+  count, detect hard edges, and Quad Layout, which is on. The rest (step-by-step field, profile,
+  extractor, Global Parametrization, curvature alignment, patch curves) moved under a collapsed
+  Advanced foldout. Nothing was removed.
+
+Single runs. Each cell shows Hausdorff / p05 / irregular vertices, then run time.
+
+| run | Quad Layout | default (param + map) |
+|---|---|---|
+| body 2k | **0.0115 / 60.2 / 2.82 %**, **8.4 s** | 0.0168 / 59.0 / 3.13 %, 12.1 s |
+| body 3.5k | **0.0089** / 63.5 / **1.76 %**, 18.5 s | 0.0117 / **63.6** / 1.91 %, **13.9 s** |
+| body 5k | **0.0092 / 62.1 / 1.53 %**, **14.8 s** | 0.0094 / 60.9 / 1.72 %, 28.3 s |
+| head 2k | **0.0163 / 45.7 / 4.77 %**, **14.3 s** | 0.0217 / 44.0 / 6.29 %, 19.8 s |
+| head 3.5k | 0.0131 / **52.7 / 3.46 %**, **21.2 s** | **0.0122** / 48.3 / 5.06 %, 44.5 s |
+| head 5k | **0.0097 / 55.3 / 2.73 %**, **28.4 s** | 0.0106 / 54.2 / 3.65 %, 65.2 s |
+
+Renders: `shots_final/r9_layout_head_3500.png`, `shots_final/r9_layout_rim.png`.
+
+QuadRemesher's add-on exposes, through its settings file, what our window does not yet have:
+symmetry (X/Y/Z), material borders as edge loops, split normals as edge loops, and a painted
+vertex-colour density map.
+
+Both test models auto-select the Photogrammetry profile: 33-36 % of vertices pass the dihedral
+probe. With the layout, the Character profile (300 rather than 60 orientation sweeps) made no
+consistent difference. Open meshes (real scans) still take the previous extractor.
