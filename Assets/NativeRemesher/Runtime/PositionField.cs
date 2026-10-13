@@ -61,6 +61,13 @@ namespace NativeRemesher
         /// </summary>
         public double[] cornerUvExact;
 
+        /// <summary>
+        /// With IntegerGridMap.parametrizationLayout, the quantised layout's quads (see
+        /// Extraction.QuantizedLayout), extracted instead of the lattice.
+        /// </summary>
+        public Vector3[] layoutPositions, layoutNormals;
+        public System.Collections.Generic.List<int[]> layoutFaces;
+
         /// <summary>Per face, the chart's u direction in space.</summary>
         public Vector3[] faceUAxis;
 

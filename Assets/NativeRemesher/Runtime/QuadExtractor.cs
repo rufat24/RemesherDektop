@@ -641,7 +641,18 @@ namespace NativeRemesher
             Vector3[] normals;
             List<int[]> faces;
             IntegerGridStats igStats;
-            if (IntegerGridMap.parametrizationTrace && position.cornerUvExact != null
+            if (IntegerGridMap.parametrizationLayout && position.layoutFaces != null && position.layoutFaces.Count > 0)
+            {
+                // The quantised layout, meshed patch by patch: see QuantizedLayout.
+                positions = position.layoutPositions;
+                normals = position.layoutNormals;
+                faces = new List<int[]>(position.layoutFaces.Count);
+                foreach (var q in position.layoutFaces) faces.Add((int[])q.Clone());
+                igStats = new IntegerGridStats();
+                igStats.totalMs = watch.ElapsedMilliseconds;
+                result.integerGridStats = igStats;
+            }
+            else if (IntegerGridMap.parametrizationTrace && position.cornerUvExact != null
                 && position.cornerUvExact.Length == 2 * topology.triangles.Length)
             {
                 // The parametrisation's own integer grid, traced: no collapse, no rounding, no flip

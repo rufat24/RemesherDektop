@@ -711,7 +711,8 @@ namespace NativeRemesher
                 out result.parametrizationStats);
 
             // Solved coarse, extracted fine: see ParametrizationTransfer.
-            if (Extraction.IntegerGridMap.parametrizationExtractRefined && !Extraction.IntegerGridMap.parametrizationTrace)
+            if (Extraction.IntegerGridMap.parametrizationExtractRefined && !Extraction.IntegerGridMap.parametrizationTrace
+                && !Extraction.IntegerGridMap.parametrizationLayout)
             {
                 var transferWatch = System.Diagnostics.Stopwatch.StartNew();
                 Extraction.ParametrizationTransfer.ToRefined(result.topology, topology, cornerUv, faceUAxis,
@@ -738,6 +739,9 @@ namespace NativeRemesher
             position.cornerNodes = cornerNodes;
             position.cornerUv = cornerUv;
             position.cornerUvExact = cornerUvExact;
+            position.layoutPositions = result.parametrizationStats.layoutPositions;
+            position.layoutNormals = result.parametrizationStats.layoutNormals;
+            position.layoutFaces = result.parametrizationStats.layoutFaces;
             position.faceUAxis = faceUAxis;
             position.cornerRank = cornerRank;
             position.singularFaces = singularFaces;

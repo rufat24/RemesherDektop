@@ -945,6 +945,12 @@ namespace NativeRemesher.Extraction
         public static bool parametrizationTrace = false;
 
         /// <summary>
+        /// With <see cref="parametrization"/>, mesh the quantised quad layout of the free, untangled
+        /// map (see QuantizedLayout) instead of rounding the map's integers one by one.
+        /// </summary>
+        public static bool parametrizationLayout = false;
+
+        /// <summary>
         /// With <see cref="parametrization"/>, solve and extract on the decimated mesh rather than
         /// the refined one. See RemeshPipeline.ParametrizeDecimated.
         /// </summary>

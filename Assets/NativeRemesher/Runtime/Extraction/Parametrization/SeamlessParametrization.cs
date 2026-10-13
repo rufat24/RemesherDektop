@@ -73,6 +73,11 @@ namespace NativeRemesher.Extraction
         public int featureEdgesNearPoles;
         public int foldsBeforeUntangle, untangleRounds;
         public int cancelledFarPairs, pairCancelFailed;
+        public int untangleBarrierRounds, untangleEvaluations;
+        public string untangleLog = "";
+        public string layout = "";
+        [NonSerialized] public Vector3[] layoutPositions, layoutNormals;
+        [NonSerialized] public List<int[]> layoutFaces;
         public int splitSingularities, splitFailed, splitMismatch, spreadMoves, spreadFailed, multipleSingularities;
         public int releasedFeatureGroups, releasedFeatureCoordinates;
         public float closureWorst;
@@ -89,7 +94,7 @@ namespace NativeRemesher.Extraction
             $"faces={faces} singular={singularVertices} cancelled={cancelledPairs}+{cancelledFarPairs}(fail {pairCancelFailed}) split={splitSingularities}(fail {splitFailed}, mismatch {splitMismatch}) spread={spreadMoves}(fail {spreadFailed}) multiple={multipleSingularities} poles={roundedSingularities} stiff={stiffenIterationsRun}/{stiffened} reused={reusedFreeSolve} features={featureEdges}(skip {featureEdgesSkipped}, nearPoles {featureEdgesNearPoles}, pins {pinnedFeatureCoordinates}, released {releasedFeatureGroups}/{releasedFeatureCoordinates}) cut={cutEdges}(of {cutEdgesBeforePrune}) chains={chains} " +
             $"blocks={blocks} closures={closureConstraints} cg={cgIterations} res={residual:G3} " +
             $"rounds={roundingRounds} rounded={roundedVariables} maxRound={maxRoundingMove:F3} " +
-            $"flipped={flippedFaces} stages={flipsByStage}closuresOpen={closuresOpen} propagated={propagatedChains} nonInt={closureNonInteger} forced={forcedChains} free={freeChains} tree={treeChains} freedPoles={freedPoles} regRoots={regularRoots} unsolved={unsolvedTree} kinds={closureKinds}worst={closureWorst:F2} nnzL={factorNonZeros} symbolic={symbolicMs} factor={factorMs}/{factorizations} failed={factorFailures} ms={ms} (split {split}structure {structureMs} expr {expressionMs} asm {assemblyMs}) transfer={transferMs} fineSingular={refinedSingularFaces} unmapped={unmappedFaces} trace[{trace}]";
+            $"flipped={flippedFaces} stages={flipsByStage}closuresOpen={closuresOpen} propagated={propagatedChains} nonInt={closureNonInteger} forced={forcedChains} free={freeChains} tree={treeChains} freedPoles={freedPoles} regRoots={regularRoots} unsolved={unsolvedTree} kinds={closureKinds}worst={closureWorst:F2} nnzL={factorNonZeros} symbolic={symbolicMs} factor={factorMs}/{factorizations} failed={factorFailures} ms={ms} (split {split}structure {structureMs} expr {expressionMs} asm {assemblyMs}) transfer={transferMs} fineSingular={refinedSingularFaces} unmapped={unmappedFaces} trace[{trace}] ulog[{untangleLog}] layout[{layout}]";
     }
 
     /// <summary>
@@ -228,6 +233,33 @@ namespace NativeRemesher.Extraction
 
         /// <summary>Passes of the spreading.</summary>
         public static int spreadPasses = 3;
+
+        /// <summary>
+        /// Rounds of the barrier untangling (Garanzha et al. 2021) on the free map, before any
+        /// rounding (0 = off). See BarrierUntangle.
+        /// </summary>
+        public static int untangleFreeRounds = 0;
+
+        /// <summary>Rounds of the barrier untangling on the final, rounded map (0 = off).</summary>
+        public static int untangleFinalRounds = 0;
+
+        /// <summary>L-BFGS iterations per untangling round.</summary>
+        public static int untangleInner = 200;
+
+        /// <summary>Least relative shrink of the barrier's eps per round (the paper's 0.1).</summary>
+        public static float untangleSigmaMin = 0.1f;
+
+        /// <summary>Diagnostics: log every untangling round into the stats.</summary>
+        public static bool untangleTrace = false;
+
+        /// <summary>Weight of the barrier against the least squares energy.</summary>
+        public static float untangleBarrierWeight = 1f;
+
+        /// <summary>Weight of the area term inside the barrier.</summary>
+        public static float untangleTheta = 0.5f;
+
+        /// <summary>Diagnostics: trace the quad layout of the free map (see QuantizedLayout).</summary>
+        public static bool layoutDiagnostics = false;
 
         /// <summary>Cancel adjacent opposite singularities (see step 2b).</summary>
         public static bool cancelDipoles = true;
@@ -1397,6 +1429,14 @@ namespace NativeRemesher.Extraction
                 return folded;
             }
 
+            int CountFlipsQuiet()
+            {
+                var keep = debugDumpPrefix;
+                debugDumpPrefix = null;
+                var r = CountFlips();
+                debugDumpPrefix = keep;
+                return r;
+            }
             var dumpIndex = 0;
             int CountFlips()
             {
@@ -1446,6 +1486,258 @@ namespace NativeRemesher.Extraction
                     }
                     if (ux * vy - uy * vx <= 0) flips++;
                 }
+                return flips;
+            }
+
+
+            // --- barrier untangling ----------------------------------------------------------------
+            // Garanzha, Kaporin, Kudryavtseva, Protais, Ray and Sokolov, "Foldover-free maps in 50
+            // lines of code" (SIGGRAPH 2021). The least squares energy plus, per face, a barrier on
+            // its Jacobian M in cells (M = I is a square cell along the field):
+            //     f(M) = (|M|^2 + theta (det^2 + 1)) / (2 chi(det, eps)),
+            //     chi(D, eps) = (D + sqrt(eps^2 + D^2)) / 2,
+            // finite everywhere for eps > 0 -- so it starts from a folded map, which a plain barrier
+            // cannot -- and infinite at det <= 0 as eps goes to 0. eps shrinks between rounds by the
+            // paper's rule. The variables are the solver's own: corners stay seamless, held integers
+            // stay held, and closures and crease rows keep their least squares weight.
+            int BarrierUntangle(int rounds, int inner, string label)
+            {
+                var free = new List<int>();
+                for (var i = 0; i < vars; i++) if (!fixedVar[i]) free.Add(i);
+                var faceW = new double[m];
+                for (var f = 0; f < m; f++)
+                {
+                    var h = fh[f];
+                    var ok = fArea[f] > 0f && h > 0f && (gradX[3 * f] != 0 || gradY[3 * f] != 0 || gradX[3 * f + 1] != 0);
+                    faceW[f] = ok ? untangleBarrierWeight * fArea[f] / ((double)h * h) : 0;
+                }
+                var theta = untangleTheta;
+                double lsConstant = 0;
+                for (var f = 0; f < m; f++)
+                    if (fArea[f] > 0f && fh[f] > 0f) lsConstant += 2.0 * fArea[f] * stiff[f] / ((double)fh[f] * fh[f]);
+                var eps = 1.0;
+                var cu = new double[3 * m];
+                var cv = new double[3 * m];
+                var ax = new double[vars];
+
+                double MinDet(double[] xs)
+                {
+                    var dmin = double.PositiveInfinity;
+                    for (var f = 0; f < m; f++)
+                    {
+                        if (faceW[f] == 0) continue;
+                        double ux = 0, uy = 0, vx = 0, vy = 0;
+                        for (var k = 0; k < 3; k++)
+                        {
+                            var corner = 3 * f + k;
+                            double a = 0, b = 0;
+                            for (var i = 0; i < cornerCount[corner]; i++)
+                            {
+                                var t = pool[cornerStart[corner] + i];
+                                double xu = xs[2 * t.block], xv = xs[2 * t.block + 1];
+                                if (t.rot == 0) { a += t.sign * xu; b += t.sign * xv; }
+                                else { a -= t.sign * xv; b += t.sign * xu; }
+                            }
+                            ux += gradX[corner] * a; uy += gradY[corner] * a;
+                            vx += gradX[corner] * b; vy += gradY[corner] * b;
+                        }
+                        double h = fh[f];
+                        dmin = Math.Min(dmin, h * h * (ux * vy - uy * vx));
+                    }
+                    return dmin;
+                }
+
+                // Energy at xs; with g != null its gradient too (zero on held variables).
+                double Energy(double[] xs, double[] g)
+                {
+                    // Least squares: x^T A x - 2 b^T x + b0, b0 the targets' own square (the face rows'
+                    // 1/h), so that the energy is the sum of squares itself and never negative.
+                    double e = lsConstant;
+                    for (var r = 0; r < vars; r++)
+                    {
+                        double sum = 0;
+                        for (var j = matrix.start[r]; j < matrix.start[r + 1]; j++) sum += matrix.val[j] * xs[matrix.col[j]];
+                        ax[r] = sum;
+                        e += xs[r] * sum - 2 * rhs[r] * xs[r];
+                    }
+                    if (g != null) for (var r = 0; r < vars; r++) g[r] = 2 * (ax[r] - rhs[r]);
+                    for (var c = 0; c < 3 * m; c++)
+                    {
+                        double a = 0, b = 0;
+                        for (var i = 0; i < cornerCount[c]; i++)
+                        {
+                            var t = pool[cornerStart[c] + i];
+                            double xu = xs[2 * t.block], xv = xs[2 * t.block + 1];
+                            if (t.rot == 0) { a += t.sign * xu; b += t.sign * xv; }
+                            else { a -= t.sign * xv; b += t.sign * xu; }
+                        }
+                        cu[c] = a;
+                        cv[c] = b;
+                    }
+                    for (var f = 0; f < m; f++)
+                    {
+                        var w = faceW[f];
+                        if (w == 0) continue;
+                        double h = fh[f];
+                        double ma = 0, mb = 0, mc = 0, md = 0;
+                        for (var k = 0; k < 3; k++)
+                        {
+                            var c = 3 * f + k;
+                            ma += gradX[c] * cu[c]; mb += gradY[c] * cu[c];
+                            mc += gradX[c] * cv[c]; md += gradY[c] * cv[c];
+                        }
+                        ma *= h; mb *= h; mc *= h; md *= h;
+                        var D = ma * md - mb * mc;
+                        var sq = Math.Sqrt(eps * eps + D * D);
+                        var chi = 0.5 * (D + sq);
+                        var num = ma * ma + mb * mb + mc * mc + md * md + theta * (D * D + 1);
+                        var fval = num / (2 * chi);
+                        e += w * fval;
+                        if (g == null) continue;
+                        var dchi = 0.5 * (1 + D / sq);
+                        // df/dM = (2M + 2 theta D cof) / (2 chi) - f chi' cof / chi
+                        var kD = theta * D / chi - fval * dchi / chi;
+                        var ga = w * (ma / chi + kD * md);
+                        var gb = w * (mb / chi - kD * mc);
+                        var gc = w * (mc / chi - kD * mb);
+                        var gd = w * (md / chi + kD * ma);
+                        for (var k = 0; k < 3; k++)
+                        {
+                            var c = 3 * f + k;
+                            var du = h * (ga * gradX[c] + gb * gradY[c]);
+                            var dv = h * (gc * gradX[c] + gd * gradY[c]);
+                            for (var i = 0; i < cornerCount[c]; i++)
+                            {
+                                var t = pool[cornerStart[c] + i];
+                                if (t.rot == 0) { g[2 * t.block] += t.sign * du; g[2 * t.block + 1] += t.sign * dv; }
+                                else { g[2 * t.block + 1] -= t.sign * du; g[2 * t.block] += t.sign * dv; }
+                            }
+                        }
+                    }
+                    if (g != null) for (var r = 0; r < vars; r++) if (fixedVar[r]) g[r] = 0;
+                    return e;
+                }
+
+                // L-BFGS over the free variables.
+                const int history = 8;
+                var sHist = new double[history][];
+                var yHist = new double[history][];
+                var rho = new double[history];
+                var alphaH = new double[history];
+                var grad = new double[vars];
+                var gradNew = new double[vars];
+                var dir = new double[vars];
+                var trial = new double[vars];
+                var evaluations = 0;
+                var dmin0 = MinDet(x);
+                // The paper's start: eps just large enough that the worst face is not yet crushed.
+                eps = dmin0 > 0 ? 1e-9 : Math.Max(1e-3, 2 * Math.Abs(dmin0));
+                var prevE = double.NaN;
+                for (var round = 0; round < rounds; round++)
+                {
+                    var count = 0;
+                    var head = 0;
+                    var energy = Energy(x, grad);
+                    evaluations++;
+                    var startE = energy;
+                    for (var it = 0; it < inner; it++)
+                    {
+                        // Two-loop recursion.
+                        for (var i = 0; i < vars; i++) dir[i] = -grad[i];
+                        for (var j = 0; j < count; j++)
+                        {
+                            var idx = (head - 1 - j + history) % history;
+                            double a = 0;
+                            foreach (var i in free) a += sHist[idx][i] * dir[i];
+                            a *= rho[idx];
+                            alphaH[idx] = a;
+                            foreach (var i in free) dir[i] -= a * yHist[idx][i];
+                        }
+                        if (count > 0)
+                        {
+                            var last = (head - 1 + history) % history;
+                            double sy = 0, yy = 0;
+                            foreach (var i in free) { sy += sHist[last][i] * yHist[last][i]; yy += yHist[last][i] * yHist[last][i]; }
+                            var gamma = yy > 0 ? sy / yy : 1;
+                            foreach (var i in free) dir[i] *= gamma;
+                        }
+                        else
+                        {
+                            double gn = 0;
+                            foreach (var i in free) gn += grad[i] * grad[i];
+                            var scale = gn > 0 ? 1e-2 / Math.Sqrt(gn) : 0;
+                            foreach (var i in free) dir[i] *= scale;
+                        }
+                        for (var j = count - 1; j >= 0; j--)
+                        {
+                            var idx = (head - 1 - j + history) % history;
+                            double b = 0;
+                            foreach (var i in free) b += yHist[idx][i] * dir[i];
+                            b *= rho[idx];
+                            foreach (var i in free) dir[i] += sHist[idx][i] * (alphaH[idx] - b);
+                        }
+                        double slope = 0;
+                        foreach (var i in free) slope += grad[i] * dir[i];
+                        if (!(slope < 0))
+                        {
+                            // Not a descent direction: restart from the gradient.
+                            count = 0;
+                            double gn = 0;
+                            foreach (var i in free) gn += grad[i] * grad[i];
+                            var scale = gn > 0 ? 1e-2 / Math.Sqrt(gn) : 0;
+                            foreach (var i in free) dir[i] = -grad[i] * scale;
+                            slope = 0;
+                            foreach (var i in free) slope += grad[i] * dir[i];
+                            if (!(slope < 0)) break;
+                        }
+                        // Backtracking on the Armijo condition.
+                        var step = 1.0;
+                        var newE = double.PositiveInfinity;
+                        for (var ls = 0; ls < 30; ls++)
+                        {
+                            Array.Copy(x, trial, vars);
+                            foreach (var i in free) trial[i] += step * dir[i];
+                            newE = Energy(trial, gradNew);
+                            evaluations++;
+                            if (newE <= energy + 1e-4 * step * slope) break;
+                            step *= 0.5;
+                        }
+                        if (!(newE < energy)) break;
+                        var sv = sHist[head] ??= new double[vars];
+                        var yv = yHist[head] ??= new double[vars];
+                        double syv = 0;
+                        foreach (var i in free)
+                        {
+                            sv[i] = trial[i] - x[i];
+                            yv[i] = gradNew[i] - grad[i];
+                            syv += sv[i] * yv[i];
+                        }
+                        Array.Copy(trial, x, vars);
+                        Array.Copy(gradNew, grad, vars);
+                        var dropped = energy - newE;
+                        energy = newE;
+                        if (syv > 1e-20)
+                        {
+                            rho[head] = 1.0 / syv;
+                            head = (head + 1) % history;
+                            count = Math.Min(count + 1, history);
+                        }
+                        if (dropped < 1e-10 * Math.Abs(energy)) break;
+                    }
+                    var dmin = MinDet(x);
+                    var sigma = Math.Max(1 - energy / startE, untangleSigmaMin);
+                    if (double.IsNaN(prevE)) sigma = untangleSigmaMin;
+                    prevE = energy;
+                    var chiMin = 0.5 * (dmin + Math.Sqrt(eps * eps + dmin * dmin));
+                    var mu = (1 - sigma) * chiMin;
+                    eps = dmin < mu ? 2 * Math.Sqrt(mu * (mu - dmin)) : 1e-9;
+                    st.untangleBarrierRounds++;
+                    if (untangleTrace) st.untangleLog += $"[{label}{round} E {startE:G4}->{energy:G4} dmin {dmin:G3} eps {eps:G3} flips {CountFlipsQuiet()} ev {evaluations}] ";
+                    if (dmin > 0 && eps <= 1e-9 && round >= 1) break;
+                }
+                st.untangleEvaluations += evaluations;
+                var flips = CountFlips();
+                st.flipsByStage += label + " " + flips + " ";
                 return flips;
             }
 
@@ -1506,6 +1798,27 @@ namespace NativeRemesher.Extraction
                 cache.spacing = (float[])spacing.Clone();
                 cache.stiff = (double[])stiff.Clone();
                 cache.freeSolution = (double[])x.Clone();
+            }
+            if (untangleFreeRounds > 0) BarrierUntangle(untangleFreeRounds, untangleInner, "barrierFree");
+            if (layoutDiagnostics || IntegerGridMap.parametrizationLayout)
+            {
+                var freeUv = new double[6 * m];
+                for (var c = 0; c < 3 * m; c++)
+                {
+                    double a = 0, b = 0;
+                    for (var i = 0; i < cornerCount[c]; i++)
+                    {
+                        var t = pool[cornerStart[c] + i];
+                        double xu = x[2 * t.block], xv = x[2 * t.block + 1];
+                        if (t.rot == 0) { a += t.sign * xu; b += t.sign * xv; }
+                        else { a -= t.sign * xv; b += t.sign * xu; }
+                    }
+                    freeUv[2 * c] = a;
+                    freeUv[2 * c + 1] = b;
+                }
+                var layoutStats = QuantizedLayout.Build(topology, freeUv,
+                    out stats.layoutPositions, out stats.layoutNormals, out stats.layoutFaces);
+                stats.layout = layoutStats.ToString();
             }
 
             // Rounds every chain's translation so that every fan closure still closes. The closure at
@@ -2101,6 +2414,7 @@ namespace NativeRemesher.Extraction
                 SolveSystem(roundIterations);
                 stats.flipsByStage += "post" + iteration + " " + CountFlips() + " ";
             }
+            if (untangleFinalRounds > 0) BarrierUntangle(untangleFinalRounds, untangleInner, "barrier");
             foreach (var row in closureRows)
             {
                 double ru = 0, rv = 0;
