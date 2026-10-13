@@ -65,6 +65,7 @@ namespace NativeRemesher
         [SerializeField] float m_AdaptiveSize = 50f;
         [SerializeField] bool m_DetectHardEdges = true;
         [SerializeField] bool m_GlobalParametrization = true;
+        [SerializeField] bool m_QuadLayout;
 
         [SerializeField] bool m_SaveAsAsset = true;
         [SerializeField] bool m_ShowField = true;
@@ -258,6 +259,16 @@ namespace NativeRemesher
                         "the previous extractor, which handles a ragged border better. Off is the " +
                         "previous extractor everywhere."),
                     m_GlobalParametrization);
+                using (new EditorGUI.DisabledScope(!m_GlobalParametrization))
+                    m_QuadLayout = EditorGUILayout.Toggle(
+                        new GUIContent("Quad Layout (experimental)",
+                            "With Global Parametrization: split the surface into rectangular patches " +
+                            "along the separatrices and creases, give every patch side a whole number " +
+                            "of quads together, and fill each patch with a regular grid - instead of " +
+                            "rounding each singularity on its own. Close singularities then come out " +
+                            "a whole number of cells apart instead of folding, creases are patch " +
+                            "borders, and limbs get closed rings. Slower; closed meshes only."),
+                        m_QuadLayout);
             }
 
             if (m_ExtractorChoice == RemeshExtractor.IntegerGrid)
@@ -593,6 +604,7 @@ namespace NativeRemesher
             Extraction.IntegerGridMap.adaptiveSize = m_AdaptiveSize / 100f;
             Extraction.IntegerGridMap.coherentCreases = m_DetectHardEdges;
             Extraction.IntegerGridMap.parametrization = m_GlobalParametrization;
+            Extraction.IntegerGridMap.parametrizationLayout = m_GlobalParametrization && m_QuadLayout;
             var autoProfile = m_AutoProfile;
 
             // Main thread, and the only place the Mesh API is touched on the way in.

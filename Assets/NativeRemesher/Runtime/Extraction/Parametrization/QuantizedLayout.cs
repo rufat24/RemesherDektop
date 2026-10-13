@@ -33,7 +33,7 @@ namespace NativeRemesher.Extraction
         public string faceCorners = "";
         public int constraintRows, zeroArcs, violatedRows, clampedArcs, quantSolves, quantFactorFailures, propagated, propagationConflicts, repairs, repairFailed, repairExpanded;
         public double quantDeviation, freeResidual;
-        public int quads, mergedPoints, flatFaces, unequalFaces, degenerateQuads, walkFailed, walkCrossings;
+        public int quads, mergedPoints, flatFaces, unequalFaces, degenerateQuads, walkFailed, walkCrossings, clamped;
         public int creaseTraces, creaseLoops, creaseExtensions, creaseClashes, crossings, layoutAttempts, duplicateEnds, creaseDropped, spirals, ringsClosed, truncated, truncatedJunctions;
         public long ms;
         public string debug = "";
@@ -41,7 +41,7 @@ namespace NativeRemesher.Extraction
         public override string ToString() => debug +
             $"tris={faces} folded={foldedFaces} singular={singularVertices} coneMismatch={coneMismatch} " +
             $"creases={creaseTraces}(loops {creaseLoops} extensions {creaseExtensions} clashes {creaseClashes}) attempts={layoutAttempts} crossings={crossings} dupEnds={duplicateEnds} creaseDropped={creaseDropped} spirals={spirals} rings={ringsClosed} truncated={truncated}/{truncatedJunctions} traces={traces} steps={steps} hit[trace {hitTrace} collinear {hitCollinear} self {hitSelf} boundary {hitBoundary} fold {hitFold} limit {hitLimit}] " +
-            $"nodes={nodes} arcs={arcs} faces={layoutFaces} (rect {rectangles} annuli {annuli} other {otherFaces} reflex {reflexCorners} open {openWalks}) corners[{faceCorners}] quant[rows {constraintRows} free residual {freeResidual:G3} deviation {quantDeviation:F1} zero {zeroArcs} clamped {clampedArcs} violated {violatedRows} propagated {propagated} conflicts {propagationConflicts} repairs {repairs} repairFailed {repairFailed} (expanded {repairExpanded}) solves {quantSolves} failed {quantFactorFailures}] mesh[quads {quads} merged {mergedPoints} flat {flatFaces} unequal {unequalFaces} degenerate {degenerateQuads} walkFailed {walkFailed} crossings {walkCrossings}] ms={ms}";
+            $"nodes={nodes} arcs={arcs} faces={layoutFaces} (rect {rectangles} annuli {annuli} other {otherFaces} reflex {reflexCorners} open {openWalks}) corners[{faceCorners}] quant[rows {constraintRows} free residual {freeResidual:G3} deviation {quantDeviation:F1} zero {zeroArcs} clamped {clampedArcs} violated {violatedRows} propagated {propagated} conflicts {propagationConflicts} repairs {repairs} repairFailed {repairFailed} (expanded {repairExpanded}) solves {quantSolves} failed {quantFactorFailures}] mesh[quads {quads} merged {mergedPoints} flat {flatFaces} unequal {unequalFaces} degenerate {degenerateQuads} walkFailed {walkFailed} crossings {walkCrossings} clamped {clamped}] ms={ms}";
     }
 
     /// <summary>
@@ -282,7 +282,7 @@ namespace NativeRemesher.Extraction
         public static string debugArcPath = null;
 
         /// <summary>Extra layout passes that add lines into faces that are not rectangles.</summary>
-        public static int layoutAttempts = 3;
+        public static int layoutAttempts = 5;
 
         /// <summary>Triangles a separatrix may cross before it is given up.</summary>
         public static int maxSteps = 20000;
@@ -421,9 +421,12 @@ namespace NativeRemesher.Extraction
                     if (err < bestErr) { bestErr = err; best = k; }
                 }
                 rot[h] = best;
+                // The shift from both ends of the edge, averaged: where the map is a hair from
+                // seamless, one end alone puts the other off by all of it.
                 Rot(best, U(a), V(a), out var pax, out var pay);
-                tu[h] = U(ga) - pax;
-                tv[h] = V(ga) - pay;
+                Rot(best, U(b), V(b), out var pbx, out var pby);
+                tu[h] = 0.5 * ((U(ga) - pax) + (U(gb) - pbx));
+                tv[h] = 0.5 * ((V(ga) - pay) + (V(gb) - pby));
             }
 
             // --- vertex fans: counter-clockwise corner order and cone angle ----------------------
@@ -470,6 +473,30 @@ namespace NativeRemesher.Extraction
 
             const double tiny = 1e-9;
             const double onLine = 1e-9;
+
+            // A point that has drifted just outside triangle f -- a junction placed on a crease's
+            // averaged line, a crossing on a line met within collinearTolerance -- pulled back just
+            // inside it. False if it is not close.
+            bool ClampInto(int f, ref double x, ref double y)
+            {
+                int c0 = 3 * f, c1 = c0 + 1, c2 = c0 + 2;
+                var det = Cross(U(c1) - U(c0), V(c1) - V(c0), U(c2) - U(c0), V(c2) - V(c0));
+                if (!(Math.Abs(det) > 1e-300)) return false;
+                var l1 = Cross(x - U(c0), y - V(c0), U(c2) - U(c0), V(c2) - V(c0)) / det;
+                var l2 = Cross(U(c1) - U(c0), V(c1) - V(c0), x - U(c0), y - V(c0)) / det;
+                var l0 = 1 - l1 - l2;
+                l0 = Math.Max(l0, 1e-7); l1 = Math.Max(l1, 1e-7); l2 = Math.Max(l2, 1e-7);
+                var sum = l0 + l1 + l2;
+                l0 /= sum; l1 /= sum; l2 /= sum;
+                var nx = l0 * U(c0) + l1 * U(c1) + l2 * U(c2);
+                var ny = l0 * V(c0) + l1 * V(c1) + l2 * V(c2);
+                // Close in cells, not in the triangle's own proportions: a sliver a hundredth of a
+                // cell thin is missed by more than its height when a seam is a hundredth off.
+                if (Math.Abs(nx - x) + Math.Abs(ny - y) > 0.05) return false;
+                x = nx;
+                y = ny;
+                return true;
+            }
 
             // --- the layout, again until every face is a rectangle --------------------------------
             List<Node> nodes = null;
@@ -825,23 +852,35 @@ namespace NativeRemesher.Extraction
                     // ray runs just left of it).
                     var exit = -1;
                     double qx = 0, qy = 0;
-                    for (var k = 0; k < 3; k++)
+                    for (var attemptExit = 0; attemptExit < 2 && exit < 0; attemptExit++)
                     {
-                        int a = 3 * f + k, b = 3 * f + (k + 1) % 3;
-                        var sa = Cross(dx, dy, U(a) - tr.px, V(a) - tr.py);
-                        var sb = Cross(dx, dy, U(b) - tr.px, V(b) - tr.py);
-                        if (!(sa <= onLine) || sb <= onLine) continue;
-                        var lambda = sa >= 0 ? 0 : -sa / (sb - sa);
-                        var ix = U(a) + lambda * (U(b) - U(a));
-                        var iy = V(a) + lambda * (V(b) - V(a));
-                        // Ahead of the point (or at it, leaving a corner).
-                        if ((ix - tr.px) * dx + (iy - tr.py) * dy < -1e-12) continue;
-                        exit = a;
-                        qx = ix;
-                        qy = iy;
-                        break;
+                        if (attemptExit == 1)
+                        {
+                            var cx = tr.px;
+                            var cy = tr.py;
+                            if (!ClampInto(f, ref cx, ref cy)) break;
+                            tr.px = cx;
+                            tr.py = cy;
+                            stats.clamped++;
+                        }
+                        for (var k = 0; k < 3; k++)
+                        {
+                            int a = 3 * f + k, b = 3 * f + (k + 1) % 3;
+                            var sa = Cross(dx, dy, U(a) - tr.px, V(a) - tr.py);
+                            var sb = Cross(dx, dy, U(b) - tr.px, V(b) - tr.py);
+                            if (!(sa <= onLine) || sb <= onLine) continue;
+                            var lambda = sa >= 0 ? 0 : -sa / (sb - sa);
+                            var ix = U(a) + lambda * (U(b) - U(a));
+                            var iy = V(a) + lambda * (V(b) - V(a));
+                            // Ahead of the point (or at it, leaving a corner).
+                            if ((ix - tr.px) * dx + (iy - tr.py) * dy < -1e-12) continue;
+                            exit = a;
+                            qx = ix;
+                            qy = iy;
+                            break;
+                        }
                     }
-                    if (exit < 0) { stats.hitFold++; tr.active = false; stats.debug += stats.hitFold <= 3 ? $"[noexit t{id} f{f}] " : ""; continue; }
+                    if (exit < 0) { stats.hitFold++; tr.active = false; stats.debug += stats.hitFold <= 3 ? $"[noexit t{id} f{f} valid {valid[f]} p({tr.px:F5},{tr.py:F5}) d{tr.dir} len {tr.length:F3} tri ({U(3 * f):F5},{V(3 * f):F5}) ({U(3 * f + 1):F5},{V(3 * f + 1):F5}) ({U(3 * f + 2):F5},{V(3 * f + 2):F5})] " : ""; continue; }
                     var len = Math.Abs(qx - tr.px) + Math.Abs(qy - tr.py);
 
                     // The earliest separatrix already in this triangle that the step meets.
@@ -1125,36 +1164,43 @@ namespace NativeRemesher.Extraction
                     if (corners == 4 && !reflex && sum == 4) { stats.rectangles++; rectFaces.Add((halfs, turns)); }
                     else if (attempt < layoutAttempts)
                     {
-                        // One more line into this face, from the first node where its side runs
-                        // straight or bends back: a junction's arriving trace carried on through, or a
-                        // vertex sending one more along the middle of the angle.
-                        for (var i = 0; i < turns.Count; i++)
+                        // One more line into this face: from a corner bending back (an L-shaped face)
+                        // if it has one, else from where a side runs straight (a ring) -- at a
+                        // junction its arriving trace carried on through, at a vertex one more line
+                        // along the middle of the angle.
+                        for (var pass = 0; pass < 2; pass++)
                         {
-                            if (turns[i] < 2) continue;
-                            var ah = arcs[halfs[i] / 2];
-                            var at = halfs[i] % 2 == 0 ? ah.node1 : ah.node0;
-                            var nd = nodes[at];
-                            var r = resolved[at];
-                            var k = -1;
-                            for (var q = 0; q < r.Count; q++)
-                                if (r[q].arc == halfs[i] / 2 && r[q].leaves == (halfs[i] % 2 != 0)) { k = q; break; }
-                            if (k < 0) continue;
-                            var j = (k - 1 + r.Count) % r.Count;
-                            if (nd.vertex >= 0)
+                            var done = false;
+                            for (var i = 0; i < turns.Count && !done; i++)
                             {
-                                var want = Mod4Of(r[j].pos + 1, nd.quarterTurns);
-                                if (extraEmits.Contains((nd.vertex, want))) continue;
-                                extraEmits.Add((nd.vertex, want));
+                                if (pass == 0 ? turns[i] < 3 : turns[i] != 2) continue;
+                                var ah = arcs[halfs[i] / 2];
+                                var at = halfs[i] % 2 == 0 ? ah.node1 : ah.node0;
+                                var nd = nodes[at];
+                                var r = resolved[at];
+                                var k = -1;
+                                for (var q = 0; q < r.Count; q++)
+                                    if (r[q].arc == halfs[i] / 2 && r[q].leaves == (halfs[i] % 2 != 0)) { k = q; break; }
+                                if (k < 0) continue;
+                                var j = (k - 1 + r.Count) % r.Count;
+                                if (nd.vertex >= 0)
+                                {
+                                    var want = Mod4Of(r[j].pos + (turns[i] >= 4 ? 2 : 1), nd.quarterTurns);
+                                    if (extraEmits.Contains((nd.vertex, want))) continue;
+                                    extraEmits.Add((nd.vertex, want));
+                                    fixes++;
+                                    done = true;
+                                    continue;
+                                }
+                                // A junction: the trace that arrived there (its end, kind 1).
+                                var arrived = -1;
+                                foreach (var e in nd.ends) if (e.end == 1) arrived = -1 - e.arc;
+                                if (arrived < 0 || continueThrough.Contains(arrived)) continue;
+                                continueThrough.Add(arrived);
                                 fixes++;
-                                break;
+                                done = true;
                             }
-                            // A junction: the trace that arrived there (its end, kind 1).
-                            var arrived = -1;
-                            foreach (var e in nd.ends) if (e.end == 1) arrived = -1 - e.arc;
-                            if (arrived < 0 || turns[i] != 2 || continueThrough.Contains(arrived)) continue;
-                            continueThrough.Add(arrived);
-                            fixes++;
-                            break;
+                            if (done) break;
                         }
                     }
                     else if (sum == 0)
@@ -1348,6 +1394,7 @@ namespace NativeRemesher.Extraction
             (int face, double x, double y, int dir) Walk(int f, double x, double y, int d, double dist)
             {
                 var crossings = 0;
+                var clampedHere = false;
                 IntoSector(ref f, ref x, ref y, ref d);
                 for (var guard = 0; guard < 10000 && dist > 1e-12; guard++)
                 {
@@ -1368,6 +1415,15 @@ namespace NativeRemesher.Extraction
                         exit = a; qx = ix; qy = iy;
                         break;
                     }
+                    if (exit < 0 && !clampedHere)
+                    {
+                        // Just outside the triangle: pulled in, and again.
+                        clampedHere = true;
+                        var cx = x;
+                        var cy = y;
+                        if (ClampInto(f, ref cx, ref cy) && (cx != x || cy != y)) { x = cx; y = cy; stats.clamped++; guard--; continue; }
+                    }
+                    clampedHere = false;
                     if (exit < 0)
                     {
                         // Starting on an edge with the triangle on the wrong side of the ray (a crease

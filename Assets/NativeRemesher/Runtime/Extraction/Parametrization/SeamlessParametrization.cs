@@ -80,6 +80,7 @@ namespace NativeRemesher.Extraction
         [NonSerialized] public List<int[]> layoutFaces;
         public int splitSingularities, splitFailed, splitMismatch, spreadMoves, spreadFailed, multipleSingularities;
         public int featureEdgesDroppedV, loopRows, loopPasses;
+        public bool reusedLayout;
         public int releasedFeatureGroups, releasedFeatureCoordinates;
         public float closureWorst;
         public long factorNonZeros;
@@ -112,6 +113,8 @@ namespace NativeRemesher.Extraction
         internal float[] spacing;
         internal double[] stiff;
         internal double[] freeSolution;
+        internal double[] layoutSolution;
+        internal object loopRows;
     }
 
     public static class SeamlessParametrization
@@ -247,8 +250,11 @@ namespace NativeRemesher.Extraction
         /// <summary>L-BFGS iterations per untangling round.</summary>
         public static int untangleInner = 25;
 
-        /// <summary>Least relative shrink of the barrier's eps per round (the paper's 0.1).</summary>
-        public static float untangleSigmaMin = 0.1f;
+        /// <summary>
+        /// Least relative shrink of the barrier's eps per round. The paper uses 0.1; 0.5 untangles
+        /// these maps in fewer rounds (body at 2k: 8 rounds against 30 still folded).
+        /// </summary>
+        public static float untangleSigmaMin = 0.5f;
 
         /// <summary>Diagnostics: log every untangling round into the stats.</summary>
         public static bool untangleTrace = false;
@@ -261,6 +267,15 @@ namespace NativeRemesher.Extraction
 
         /// <summary>Re-solves holding spiral loops' twist to whole cells (see the layout pass).</summary>
         public static int layoutLoopPasses = 2;
+
+        /// <summary>Closure weight when the layout is meshed: its separatrices cross every seam.</summary>
+        public static float layoutClosureWeight = 1e5f;
+
+        /// <summary>Untangling rounds of the free map when the layout is meshed (it needs no folds).</summary>
+        public static int layoutUntangleRounds = 30;
+
+        static int FreeUntangleRounds => IntegerGridMap.parametrizationLayout
+            ? Math.Max(untangleFreeRounds, layoutUntangleRounds) : untangleFreeRounds;
 
         /// <summary>With the layout meshed, skip rounding this map's own integers.</summary>
         public static bool layoutSkipRounding = true;
@@ -1222,7 +1237,8 @@ namespace NativeRemesher.Extraction
             }
 
             // Closures, in cells; weighted against a face's energy, which is about one per face.
-            var closureW = Math.Sqrt(closureWeight);
+            // The layout traces iso-lines across every seam: there the closures must hold exactly.
+            var closureW = Math.Sqrt(IntegerGridMap.parametrizationLayout ? Math.Max(closureWeight, layoutClosureWeight) : closureWeight);
             foreach (var row in closureRows)
                 for (var comp = 0; comp < 2; comp++)
                 {
@@ -1447,6 +1463,7 @@ namespace NativeRemesher.Extraction
             // A previous pass over the same mesh and field at a uniformly different size: its free
             // solution, rescaled, and its stiffening weights stand in for solving them again.
             var reused = false;
+            var reuseRatio = 0.0;
             if (cache != null && ReferenceEquals(cache.topology, topology) && ReferenceEquals(cache.crossField, crossField)
                 && cache.spacing != null && cache.spacing.Length == n && cache.stiff != null && cache.stiff.Length == m
                 && cache.freeSolution != null && cache.freeSolution.Length == vars)
@@ -1466,6 +1483,7 @@ namespace NativeRemesher.Extraction
                     matrix = Assemble();
                     for (var i = 0; i < vars; i++) x[i] = fixedVar[i] ? x[i] : cache.freeSolution[i] * ratio;
                     reused = true;
+                    reuseRatio = ratio;
                     stats.reusedFreeSolve = true;
                 }
             }
@@ -1712,6 +1730,11 @@ namespace NativeRemesher.Extraction
                 var trial = new double[vars];
                 var evaluations = 0;
                 var dmin0 = MinDet(x);
+                if (dmin0 > 0)
+                {
+                    st.flipsByStage += label + " 0 ";
+                    return 0;
+                }
                 // The paper's start: eps just large enough that the worst face is not yet crushed.
                 eps = dmin0 > 0 ? 1e-9 : Math.Max(1e-3, 2 * Math.Abs(dmin0));
                 var prevE = double.NaN;
@@ -1881,7 +1904,16 @@ namespace NativeRemesher.Extraction
                 cache.stiff = (double[])stiff.Clone();
                 cache.freeSolution = (double[])x.Clone();
             }
-            if (untangleFreeRounds > 0) BarrierUntangle(untangleFreeRounds, untangleInner, "barrierFree");
+            // A pass at a uniformly different size takes the last pass's untangled, untwisted map,
+            // rescaled, and its loop rows: neither depends on the size.
+            if (reused && IntegerGridMap.parametrizationLayout && cache.layoutSolution != null && cache.layoutSolution.Length == vars)
+            {
+                for (var i = 0; i < vars; i++) x[i] = fixedVar[i] ? x[i] : cache.layoutSolution[i] * reuseRatio;
+                if (cache.loopRows is List<(List<(Term t, double coef)> row, int comp, double target)> cachedRows)
+                    loopRows.AddRange(cachedRows);
+                stats.reusedLayout = true;
+            }
+            else if (FreeUntangleRounds > 0) BarrierUntangle(FreeUntangleRounds, untangleInner, "barrierFree");
             for (var loopPass = 0; layoutDiagnostics || IntegerGridMap.parametrizationLayout; loopPass++)
             {
                 var freeUv = new double[6 * m];
@@ -1940,7 +1972,13 @@ namespace NativeRemesher.Extraction
                 stA.loopPasses++;
                 matrix = Assemble();
                 SolveSystem(firstIterations);
-                if (untangleFreeRounds > 0) BarrierUntangle(untangleFreeRounds, untangleInner, "barrierLoop");
+                if (FreeUntangleRounds > 0) BarrierUntangle(FreeUntangleRounds, untangleInner, "barrierLoop");
+            }
+
+            if (cache != null && !reused && IntegerGridMap.parametrizationLayout)
+            {
+                cache.layoutSolution = (double[])x.Clone();
+                cache.loopRows = new List<(List<(Term t, double coef)> row, int comp, double target)>(loopRows);
             }
 
             // Rounds every chain's translation so that every fan closure still closes. The closure at

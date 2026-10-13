@@ -151,3 +151,46 @@ straight loops. On the head its 460 to 620 folds become holes, so it stays off. 
 the default is a fold-free map: the robust route in the literature is quantizing a seamless map's
 quad layout (Campen et al. 2015, "Quantized Global Parametrization"; QuadWild Bi-MDF 2023), which
 places close singularities by integer arc lengths instead of rounding each one alone.
+
+## Round 8: quantized quad layout (`IntegerGridMap.parametrizationLayout`, window: "Quad Layout (experimental)")
+
+The remaining folds come from rounding singularities one by one (round 7). This round adds the route
+of Campen, Bommes and Kobbelt, "Quantized Global Parametrization" (2015), in
+`Runtime/Extraction/Parametrization/QuantizedLayout.cs`:
+
+1. **A fold-free free map.** Barrier untangling (Garanzha et al. 2021, "Foldover-free maps in 50
+   lines of code") on the seamless but not yet integer map. Closures and creases are held hard
+   (weight 1e5) in this mode. Body 2k and head 3.5k come out with 0 folds.
+2. **Layout.** The motorcycle graph of separatrices on that map, with creases laid in advance as
+   arcs, and continuations at crease ends and corners. Faces that are not rectangles get another
+   line and a re-trace.
+3. **Twist.** A separatrix that spirals round a cylinder (arms, legs) has its sideways shift held
+   to whole cells by a hard row (zero when under a cell), and the map is solved and untangled again.
+   Limbs get closed rings.
+4. **Quantization.** An integer length per arc, each rectangle's opposite sides equal, none
+   negative. This is done by batched least squares with propagation, and leftover unequal rows are
+   repaired by augmenting paths. No rectangle is left unequal.
+5. **Meshing.** Every rectangle becomes a W x H grid. Inner points come from a Coons blend of its
+   sides, walked across the free map to the surface. Zero-length arcs and flat patches glue their
+   points.
+
+Single runs. Each cell shows Hausdorff / p05 / irregular vertices.
+
+| run | layout | default (param + map) | old path |
+|---|---|---|---|
+| body 2k | **0.0108** / 57.9 / **2.59 %** | 0.0168 / 59.0 / 3.13 % | 0.0129 / **60.5** / 3.07 % |
+| body 3.5k | 0.0109 / 62.3 / 1.94 % | 0.0117 / **63.6** / **1.91 %** | **0.0091** / 59.7 / 2.16 % |
+| body 5k | 0.0116 / 60.7 / 1.86 % | 0.0094 / **60.9** / **1.72 %** | **0.0092** / 56.8 / 2.26 % |
+| head 2k | **0.0177** / **44.5** / **5.08 %** | 0.0217 / 44.0 / 6.29 % | 0.0308 / 41.5 / 6.48 % |
+| head 3.5k | 0.0145 / **50.5** / **3.74 %** | **0.0122** / 48.3 / 5.06 % | 0.0178 / 48.4 / 5.24 % |
+| head 5k | **0.0093** / 52.2 / **3.00 %** | 0.0106 / **54.2** / 3.65 % | 0.0093 / 53.7 / 4.29 % |
+
+Renders: `shots_final/r8_layout_head_3500.png`, `shots_final/r8_layout_body_2000.png`.
+
+Still open:
+
+- Thin crease structures (the helmet rim) give glued patches and a few slivers.
+- A few faces per mesh are still not rectangles and are capped by the generic hole filler.
+- Time is 13-43 s against 14-65 s for the default path. The second pass of the face-count search
+  reuses the untangled map only when spacing scales uniformly.
+- Off by default.
