@@ -321,7 +321,7 @@ namespace NativeRemesher
                     }
 
                     if (parallel && phaseTo - phaseFrom >= 256)
-                        System.Threading.Tasks.Parallel.For(phaseFrom, phaseTo, Sweep);
+                        System.Threading.Tasks.Parallel.For(phaseFrom, phaseTo, BackgroundScheduler.Options, Sweep);
                     else
                         for (var slot = phaseFrom; slot < phaseTo; slot++) Sweep(slot);
                 }

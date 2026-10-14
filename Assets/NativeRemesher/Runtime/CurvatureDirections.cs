@@ -142,7 +142,7 @@ namespace NativeRemesher
             var faceTensor = new float[faceCount * 6];
             var faceArea = new float[faceCount];
 
-            System.Threading.Tasks.Parallel.For(0, faceCount, f =>
+            System.Threading.Tasks.Parallel.For(0, faceCount, BackgroundScheduler.Options, f =>
             {
                 var i0 = triangles[3 * f];
                 var i1 = triangles[3 * f + 1];
@@ -225,7 +225,7 @@ namespace NativeRemesher
             {
                 var from = tensor;
                 var to = next;
-                System.Threading.Tasks.Parallel.For(0, count, i =>
+                System.Threading.Tasks.Parallel.For(0, count, BackgroundScheduler.Options, i =>
                 {
                     var o = i * 6;
                     var w = areas[i];

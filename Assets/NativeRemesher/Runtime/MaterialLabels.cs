@@ -44,7 +44,7 @@ namespace NativeRemesher
         public int[] ForTriangles(Vector3[] positions, int[] triangles)
         {
             var labels = new int[triangles.Length / 3];
-            System.Threading.Tasks.Parallel.For(0, labels.Length, t =>
+            System.Threading.Tasks.Parallel.For(0, labels.Length, BackgroundScheduler.Options, t =>
                 labels[t] = At((positions[triangles[3 * t]] + positions[triangles[3 * t + 1]]
                                 + positions[triangles[3 * t + 2]]) / 3f));
             return labels;
@@ -53,7 +53,7 @@ namespace NativeRemesher
         public int[] ForFaces(Vector3[] positions, List<int[]> faces)
         {
             var labels = new int[faces.Count];
-            System.Threading.Tasks.Parallel.For(0, faces.Count, i =>
+            System.Threading.Tasks.Parallel.For(0, faces.Count, BackgroundScheduler.Options, i =>
             {
                 var f = faces[i];
                 var c = Vector3.zero;

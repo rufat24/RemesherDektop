@@ -48,7 +48,7 @@ namespace NativeRemesher.Extraction
             var cornerUvOut = cornerUv;
             var cornerNodesOut = cornerNodes;
             var unmappedCount = 0;
-            System.Threading.Tasks.Parallel.For(0, m, f =>
+            System.Threading.Tasks.Parallel.For(0, m, BackgroundScheduler.Options, f =>
             {
                 var centroid = (P[T[3 * f]] + P[T[3 * f + 1]] + P[T[3 * f + 2]]) / 3f;
                 grid.NearestDistance(centroid, out var c);

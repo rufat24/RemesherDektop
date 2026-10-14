@@ -430,3 +430,32 @@ round it in the output, which renders it as a crumpled spike
 - Taubin smoothing of the solver mesh away from kept creases (5 passes): singular 1411 -> 1130
   but output irregular 4.72 -> 5.04 %, Hausdorff .045, still ~10 irregular at the tangle;
   15 passes broke refinement. Removed.
+
+## Round 16: ccnb at 100,000 quads -- 539 s and a stalled desktop
+
+Reported from the window: ccnb at 100,000 took ~1000 s and lagged the machine. Two causes.
+
+**Speed.** The pre-decimation budget is ten triangles a requested quad, so 100,000 asked for 1M and
+ccnb (990,625 triangles) was not decimated at all: the parametrisation solved on the raw scan, and
+Adaptive Quad Count raised the target towards 300,000 on top. Harness, .NET, Photogrammetry auto:
+
+| asked | solve mesh | out faces | parametrising | total | irregular |
+|---|---|---|---|---|---|
+| 10,000 | 100k tris | 29,678 | 30 s + 8 s | 57 s | 4.14 % |
+| 25,000 | 250k | 68,377 | 79 s | 111 s | 3.17 % |
+| 50,000 | 500k | 140,454 | 170 s | 237 s | 2.33 % |
+| 100,000 | 990k (none) | -- | 418 s | 539 s | -- |
+| **50,000, capped** | 300k | 92,384 | 89 s | 117 s* | 2.67 % |
+| **100,000, capped** | 300k | 93,479 | 76 s | **115 s** | 2.77 % |
+
+\* the test suite ran alongside. `RemeshPipeline.maxSolveTriangles = 300000` caps the decimation
+budget, and under the cap Adaptive Quad Count grows the target only as far as the capped mesh carries
+at `minSolveTrianglesPerQuad = 3` (the 50,000 run above was fine at 3.6). Below ~30,000 asked nothing
+changes. The position-field path is no escape: 25,000 with the parametrisation off took 131 s, 101 s
+of it extracting.
+
+**Lag.** `BackgroundScheduler` (the window's job: cores - 1 threads, below normal priority). A
+`Parallel.For` given no options does not follow the scheduler it is called from -- 19,585 of 20,000
+iterations went to the shared pool -- so every runtime Parallel call now passes
+`BackgroundScheduler.Options`. Head at 5,000 on the scheduler: 0 pool work items during the solve,
+same output. Tests: BackgroundSchedulerTests.

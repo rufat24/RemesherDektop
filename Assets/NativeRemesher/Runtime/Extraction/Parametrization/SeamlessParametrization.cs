@@ -2028,7 +2028,7 @@ namespace NativeRemesher.Extraction
                 {
                     // Least squares: x^T A x - 2 b^T x + b0, b0 the targets' own square (the face rows'
                     // 1/h), so that the energy is the sum of squares itself and never negative.
-                    System.Threading.Tasks.Parallel.For(0, vars, r =>
+                    System.Threading.Tasks.Parallel.For(0, vars, BackgroundScheduler.Options, r =>
                     {
                         double sum = 0;
                         for (var j = matrix.start[r]; j < matrix.start[r + 1]; j++) sum += matrix.val[j] * xs[matrix.col[j]];
@@ -2037,7 +2037,7 @@ namespace NativeRemesher.Extraction
                     double e = lsConstant;
                     for (var r = 0; r < vars; r++) e += xs[r] * ax[r] - 2 * rhs[r] * xs[r];
                     if (g != null) for (var r = 0; r < vars; r++) g[r] = 2 * (ax[r] - rhs[r]);
-                    System.Threading.Tasks.Parallel.For(0, 3 * m, c =>
+                    System.Threading.Tasks.Parallel.For(0, 3 * m, BackgroundScheduler.Options, c =>
                     {
                         double a = 0, b = 0;
                         for (var i = 0; i < cornerCount[c]; i++)
@@ -2052,7 +2052,7 @@ namespace NativeRemesher.Extraction
                     });
                     var withGrad = g != null;
                     var epsNow = eps;
-                    System.Threading.Tasks.Parallel.For(0, m, f =>
+                    System.Threading.Tasks.Parallel.For(0, m, BackgroundScheduler.Options, f =>
                     {
                         faceE[f] = 0;
                         var w = faceW[f];
@@ -3297,7 +3297,7 @@ namespace NativeRemesher.Extraction
 
             void Multiply(double[] x, double[] y, bool[] mask)
             {
-                System.Threading.Tasks.Parallel.For(0, n, r =>
+                System.Threading.Tasks.Parallel.For(0, n, BackgroundScheduler.Options, r =>
                 {
                     if (mask[r]) { y[r] = 0; return; }
                     double s = 0;
@@ -3318,7 +3318,7 @@ namespace NativeRemesher.Extraction
                 var z = new double[n];
                 var p = new double[n];
                 var q = new double[n];
-                System.Threading.Tasks.Parallel.For(0, n, i =>
+                System.Threading.Tasks.Parallel.For(0, n, BackgroundScheduler.Options, i =>
                 {
                     if (fixedVar[i]) { r[i] = 0; return; }
                     double s = b[i];

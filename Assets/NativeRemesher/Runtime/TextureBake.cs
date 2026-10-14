@@ -610,7 +610,7 @@ namespace NativeRemesher
                     int w = Math.Max(1, cur.width / 2), h = Math.Max(1, cur.height / 2);
                     var px = new Color32[w * h];
                     var src = cur;
-                    Parallel.For(0, h, y =>
+                    Parallel.For(0, h, BackgroundScheduler.Options, y =>
                     {
                         for (var x = 0; x < w; x++)
                         {
@@ -722,7 +722,7 @@ namespace NativeRemesher
                 return mips[tex].Sample(uv, level);
             }
 
-            Parallel.For(0, faces.Count, f =>
+            Parallel.For(0, faces.Count, BackgroundScheduler.Options, f =>
             {
                 var face = faces[f];
                 var uv = faceUvs[f];

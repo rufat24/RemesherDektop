@@ -625,6 +625,7 @@ namespace NativeRemesher
         // Both stay on the main thread here. RemeshPipeline.Solve in between takes plain arrays.
 
         Task<RemeshResult> m_Job;
+        static BackgroundScheduler s_Scheduler;
         CancellationTokenSource m_Cancel;
         GameObject m_JobSelected;
         System.Diagnostics.Stopwatch m_JobWatch;
@@ -695,7 +696,9 @@ namespace NativeRemesher
 
             var token = m_Cancel.Token;
 
-            m_Job = Task.Run(() =>
+            // On its own below-normal threads, a core left free: see BackgroundScheduler.
+            s_Scheduler ??= new BackgroundScheduler();
+            m_Job = s_Scheduler.Run(() =>
             {
                 void Progress(string stage, float progress)
                 {

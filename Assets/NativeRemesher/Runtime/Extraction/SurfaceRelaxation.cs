@@ -451,7 +451,7 @@ namespace NativeRemesher.Extraction
                 // sequential sweep. It was 5.5 s of the body scan's 37 s run on one core.
                 var sweepCurrent = current;
                 var sweepNext = next;
-                System.Threading.Tasks.Parallel.For(0, current.Length, v =>
+                System.Threading.Tasks.Parallel.For(0, current.Length, BackgroundScheduler.Options, v =>
                 {
                     outcome[v] = 0;
                     if (onBoundary[v]) return;

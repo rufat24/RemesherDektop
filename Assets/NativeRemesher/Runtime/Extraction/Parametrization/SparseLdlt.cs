@@ -120,7 +120,7 @@ namespace NativeRemesher.Extraction
             // read everything below, follow in order. A parent's index always exceeds its
             // children's, so every column still receives its entries in increasing row order.
             var failed = 0;
-            System.Threading.Tasks.Parallel.ForEach(m_TaskRows, rows =>
+            System.Threading.Tasks.Parallel.ForEach(m_TaskRows, BackgroundScheduler.Options, rows =>
             {
                 var scratch = new Scratch(n);
                 foreach (var k in rows)

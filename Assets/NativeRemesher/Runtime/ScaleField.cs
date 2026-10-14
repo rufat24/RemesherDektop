@@ -265,6 +265,117 @@ namespace NativeRemesher
             };
         }
 
+        /// <summary>
+        /// Spacing from an error-driven simplification of the surface to the output's own budget:
+        /// wherever quadric decimation to <paramref name="coarseTriangles"/> left small triangles,
+        /// the shape needed them, and the quads are made as small there.
+        /// </summary>
+        /// <remarks>
+        /// A curvature law sizes by how much the surface bends, smoothed over a neighbourhood, so a
+        /// slot a few millimetres wide on a flat plate -- most of what makes a hard-surface model
+        /// read -- barely registers, and every cell is within a few times of every other. Measured
+        /// on the helmet head against a reference retopology of the same asset at 6,628 faces:
+        /// edge-length spread 0.23 against its 0.75, and at that face count 0.87-1.03 % of the
+        /// diagonal at the 99th percentile of input-to-output distance against its 0.42 %. Quadric
+        /// decimation is the error-optimal allocation of a polygon budget; its local edge length is
+        /// a sizing field that already knows where the detail is. <paramref name="useMinimum"/>:
+        /// each coarse vertex's shortest edge rather than its mean, so a thin cylinder decimated
+        /// into long slivers along its axis is sized by its girth.
+        /// </remarks>
+        public static ScaleField FromDecimation(RemeshTopology topology, int targetQuadCount,
+            Vector3[] coarsePositions, int[] coarseTriangles, float maxRatio, float gradation,
+            bool useMinimum)
+        {
+            if (topology == null) throw new ArgumentNullException(nameof(topology));
+            var count = topology.vertexCount;
+            if (count == 0 || targetQuadCount <= 0 || coarseTriangles == null || coarseTriangles.Length < 3)
+                return Uniform(topology, topology.EdgeLengthForQuadCount(Mathf.Max(1, targetQuadCount)));
+
+            // Per coarse vertex: its incident edges' shortest or mean length.
+            var size = new float[coarsePositions.Length];
+            var sum = new float[coarsePositions.Length];
+            var n = new int[coarsePositions.Length];
+            for (var i = 0; i < size.Length; i++) size[i] = float.MaxValue;
+            for (var t = 0; t + 2 < coarseTriangles.Length; t += 3)
+                for (var k = 0; k < 3; k++)
+                {
+                    int a = coarseTriangles[t + k], b = coarseTriangles[t + (k + 1) % 3];
+                    var l = (coarsePositions[b] - coarsePositions[a]).magnitude;
+                    if (!(l > 0f)) continue;
+                    size[a] = Mathf.Min(size[a], l); size[b] = Mathf.Min(size[b], l);
+                    sum[a] += l; sum[b] += l; n[a]++; n[b]++;
+                }
+            for (var i = 0; i < size.Length; i++)
+                size[i] = n[i] == 0 ? 0f : useMinimum ? size[i] : sum[i] / n[i];
+
+            // Onto the solver's vertices, through the nearest point of the coarse surface.
+            var grid = new SpatialGrid(coarsePositions, coarseTriangles);
+            var relative = new float[count];
+            var positions = topology.positions;
+            System.Threading.Tasks.Parallel.For(0, count, BackgroundScheduler.Options, i =>
+            {
+                grid.NearestDistance(positions[i], out var t);
+                if (t < 0) { relative[i] = 0f; return; }
+                int ia = coarseTriangles[3 * t], ib = coarseTriangles[3 * t + 1], ic = coarseTriangles[3 * t + 2];
+                Vector3 a = coarsePositions[ia], b = coarsePositions[ib], c = coarsePositions[ic];
+                var q = SpatialGrid.ClosestPointOnTriangle(positions[i], a, b, c);
+                // Barycentric weights, clamped; the smaller corner wins at a tie-free edge anyway.
+                Vector3 v0 = b - a, v1 = c - a, v2 = q - a;
+                float d00 = Vector3.Dot(v0, v0), d01 = Vector3.Dot(v0, v1), d11 = Vector3.Dot(v1, v1);
+                float d20 = Vector3.Dot(v2, v0), d21 = Vector3.Dot(v2, v1);
+                var den = d00 * d11 - d01 * d01;
+                float wb = 0f, wc = 0f;
+                if (Mathf.Abs(den) > 1e-30f)
+                {
+                    wb = Mathf.Clamp01((d11 * d20 - d01 * d21) / den);
+                    wc = Mathf.Clamp01((d00 * d21 - d01 * d20) / den);
+                    if (wb + wc > 1f) { var s = 1f / (wb + wc); wb *= s; wc *= s; }
+                }
+                relative[i] = (1f - wb - wc) * size[ia] + wb * size[ib] + wc * size[ic];
+            });
+
+            var reference = Median(relative);
+            if (!(reference > 0f)) return Uniform(topology, topology.EdgeLengthForQuadCount(targetQuadCount));
+            maxRatio = Mathf.Max(1f, maxRatio);
+            for (var i = 0; i < count; i++)
+                relative[i] = Mathf.Clamp(relative[i] > 0f ? relative[i] / reference : 1f, 1f / maxRatio, maxRatio);
+            Grade(topology, relative, Mathf.Max(1.01f, gradation));
+            return Normalised(topology, relative, targetQuadCount);
+        }
+
+        // Absolute spacings from relative ones: the quads they make on the topology's area add up
+        // to the target count.
+        static ScaleField Normalised(RemeshTopology topology, float[] relative, int targetQuadCount)
+        {
+            var count = relative.Length;
+            var areas = topology.areas;
+            var weighted = 0.0;
+            for (var i = 0; i < count; i++)
+                weighted += areas[i] / (double)(relative[i] * relative[i]);
+            var c = (float)Math.Sqrt(weighted / targetQuadCount);
+            if (!(c > 0f)) return Uniform(topology, topology.EdgeLengthForQuadCount(targetQuadCount));
+            var values = new float[count];
+            var min = float.MaxValue;
+            var max = 0f;
+            double areaWeighted = 0, totalArea = 0;
+            for (var i = 0; i < count; i++)
+            {
+                var h = c * relative[i];
+                values[i] = h;
+                min = Mathf.Min(min, h);
+                max = Mathf.Max(max, h);
+                areaWeighted += h * areas[i];
+                totalArea += areas[i];
+            }
+            return new ScaleField
+            {
+                spacing = values,
+                meanSpacing = totalArea > 0 ? (float)(areaWeighted / totalArea) : c,
+                minSpacing = min,
+                maxSpacing = max
+            };
+        }
+
         /// <summary>Every spacing multiplied by <paramref name="factor"/>.</summary>
         /// <remarks>
         /// The pipeline's face-count probe corrects the lattice until the output lands on the
@@ -361,7 +472,7 @@ namespace NativeRemesher
             var normals = topology.normals;
             var tensor = CurvatureDirections.ShapeTensors(topology, radius, out _);
             var curvature = new float[count];
-            System.Threading.Tasks.Parallel.For(0, count, i =>
+            System.Threading.Tasks.Parallel.For(0, count, BackgroundScheduler.Options, i =>
             {
                 var n = normals[i];
                 var u = OrientationField.ArbitraryTangent(n);

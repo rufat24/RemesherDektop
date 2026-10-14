@@ -82,7 +82,7 @@ namespace NativeRemesher
             // r[k] carries a neighbour's value into this vertex's frame: exp(4i phi_ji).
             var rRe = new double[nbr.Length];
             var rIm = new double[nbr.Length];
-            System.Threading.Tasks.Parallel.For(0, n, i =>
+            System.Threading.Tasks.Parallel.For(0, n, BackgroundScheduler.Options, i =>
             {
                 for (var k = start[i]; k < start[i + 1]; k++)
                 {
@@ -433,7 +433,7 @@ namespace NativeRemesher
             // their contribution has been moved to the right-hand side.
             void Apply(double[] xRe, double[] xIm, double[] yRe, double[] yIm, bool lockedAsZero)
             {
-                System.Threading.Tasks.Parallel.For(0, n, i =>
+                System.Threading.Tasks.Parallel.For(0, n, BackgroundScheduler.Options, i =>
                 {
                     if (locked[i]) { yRe[i] = 0; yIm[i] = 0; return; }
                     double re = diag[i] * xRe[i], im = diag[i] * xIm[i];

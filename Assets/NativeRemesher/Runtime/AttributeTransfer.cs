@@ -54,7 +54,7 @@ namespace NativeRemesher
             // One nearest-surface query per output vertex, each independent — so this parallelises
             // exactly, and on a scan there are tens of thousands of them against a million
             // triangles.
-            System.Threading.Tasks.Parallel.For(0, targetPositions.Length, i =>
+            System.Threading.Tasks.Parallel.For(0, targetPositions.Length, BackgroundScheduler.Options, i =>
             {
                 var p = targetPositions[i];
                 var distance = grid.NearestDistance(p, out var triangle);
@@ -166,7 +166,7 @@ namespace NativeRemesher
 
             // Nearest triangle per output vertex, unrestricted -- shared by every face using it.
             var nearest = new int[targetPositions.Length];
-            System.Threading.Tasks.Parallel.For(0, targetPositions.Length, i =>
+            System.Threading.Tasks.Parallel.For(0, targetPositions.Length, BackgroundScheduler.Options, i =>
             {
                 grid.NearestDistance(targetPositions[i], out nearest[i]);
             });
@@ -175,7 +175,7 @@ namespace NativeRemesher
             var seamFaces = 0;
             var reprojected = 0;
 
-            System.Threading.Tasks.Parallel.For(0, faces.Count,
+            System.Threading.Tasks.Parallel.For(0, faces.Count, BackgroundScheduler.Options,
                 () => (patch: new List<int>(), seen: new HashSet<int>()),
                 (f, _, local) =>
                 {

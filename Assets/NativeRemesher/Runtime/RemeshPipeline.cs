@@ -147,6 +147,9 @@ namespace NativeRemesher
 
         /// <summary>The decimated input before refinement; the parametrisation's mesh.</summary>
         [NonSerialized] public Vector3[] decimatedPositions;
+        /// <summary>The input simplified to the output's budget, for RemeshPipeline.sizingFromDecimation.</summary>
+        [NonSerialized] public Vector3[] sizingCoarsePositions;
+        [NonSerialized] public int[] sizingCoarseTriangles;
         [NonSerialized] public int[] decimatedTriangles;
         [NonSerialized] public RemeshTopology decimatedTopology;
         [NonSerialized] public int[] decimatedToRefined;
@@ -180,6 +183,9 @@ namespace NativeRemesher
 
         /// <summary>How far Adaptive Quad Count multiplied the target; 1 when off.</summary>
         public float adaptiveQuadCountFactor = 1f;
+
+        /// <summary>The solver's mesh was held to RemeshPipeline.maxSolveTriangles.</summary>
+        public bool solveTrianglesCapped;
         public bool targetWasClamped;
 
         /// <summary>Fraction of input vertices the feature detector marked as sitting in a crease.</summary>
@@ -300,7 +306,7 @@ namespace NativeRemesher
             {
                 var from = current;
                 var to = next;
-                System.Threading.Tasks.Parallel.For(0, count, i =>
+                System.Threading.Tasks.Parallel.For(0, count, BackgroundScheduler.Options, i =>
                 {
                     var sum = from[i] * areas[i];
                     for (var a = start[i]; a < start[i + 1]; a++)
@@ -506,6 +512,11 @@ namespace NativeRemesher
                     : profile.decimateBudgetPerQuad;
                 var budget = Mathf.Max(k_MinimumBudget, Mathf.RoundToInt(
                     settings.targetQuadCount * perQuad));
+                if (maxSolveTriangles > 0 && budget > maxSolveTriangles)
+                {
+                    budget = Mathf.Max(k_MinimumBudget, maxSolveTriangles);
+                    result.solveTrianglesCapped = true;
+                }
 
                 if (triangles.Length / 3 > budget)
                 {
@@ -609,6 +620,27 @@ namespace NativeRemesher
         /// long. Off (false): decimation as before, and a scan's wall foot comes out as slivers.
         /// </summary>
         public static bool decimateKeepsCreases = true;
+
+        /// <summary>
+        /// Most triangles the solver's mesh is decimated to, whatever the target. 0: no cap.
+        /// </summary>
+        /// <remarks>
+        /// The parametrisation's factorisation grows faster than its mesh, and the budget of
+        /// ten triangles a quad left a large target undecimated: ccnb at 100,000 quads solved on
+        /// all 990,625 scan triangles, 418 s parametrising, 539 s in all, the factor gigabytes in
+        /// size and the machine paging. Measured on ccnb (Photogrammetry, Adaptive Quad Count):
+        /// 25,000 asked, 68,377 out on 250k triangles, 79 s parametrising; 50,000 asked, 140,454
+        /// out on 500k, 170 s -- that one at 3.6 triangles a quad and the fewest irregular
+        /// vertices of the three (2.33 %). The detail is not lost: output vertices go back onto
+        /// the input surface.
+        /// </remarks>
+        public static int maxSolveTriangles = 300000;
+
+        /// <summary>
+        /// Under that cap, Adaptive Quad Count grows the target no further than the capped mesh
+        /// carries at this many triangles a quad (ccnb at 50,000: 3.6 was fine).
+        /// </summary>
+        public static float minSolveTrianglesPerQuad = 3f;
 
         public static float decimateCreaseMinCells = 4f;
 
@@ -1128,6 +1160,52 @@ namespace NativeRemesher
                     debugCreaseStages.Add((stage, topology.positions[graph.polylineVertices[i - 1]], topology.positions[graph.polylineVertices[i]]));
         }
 
+        /// <summary>
+        /// Size the quads from an error-driven simplification of the input to the requested budget
+        /// (ScaleField.FromDecimation) instead of from curvature: small where the shape needs
+        /// polygons, large where it does not. Off: the curvature law.
+        /// </summary>
+        public static bool sizingFromDecimation = false;
+
+        /// <summary>Triangles per requested quad in that simplification.</summary>
+        public static float decimationSizingTrianglesPerQuad = 2f;
+
+        /// <summary>Largest spacing over the median, and smallest under it, for that field.</summary>
+        public static float decimationSizingMaxRatio = 8f;
+
+        /// <summary>Size each coarse vertex by its shortest edge rather than its mean.</summary>
+        public static bool decimationSizingMinimum = true;
+
+        static ScaleField SizingField(RemeshResult result, int target, float adaptivity)
+        {
+            if (sizingFromDecimation && result.originalPositions != null && result.originalTriangles != null)
+            {
+                if (result.sizingCoarseTriangles == null)
+                {
+                    var budget = Mathf.Max(64, Mathf.RoundToInt(
+                        decimationSizingTrianglesPerQuad * Mathf.Max(1, result.requestedQuadCount > 0 ? result.requestedQuadCount : target)));
+                    var options = DecimateOptions.ForTriangleCount(budget);
+                    if (decimateKeepsCreases && Extraction.IntegerGridMap.coherentCreases)
+                    {
+                        double area = 0;
+                        var op = result.originalPositions; var ot = result.originalTriangles;
+                        for (var t = 0; t + 2 < ot.Length; t += 3)
+                            area += Vector3.Cross(op[ot[t + 1]] - op[ot[t]], op[ot[t + 2]] - op[ot[t]]).magnitude * 0.5;
+                        options.creaseAngle = Extraction.IntegerGridMap.coherentCreaseAngle;
+                        options.creaseMinLength = decimateCreaseMinCells * (float)Math.Sqrt(area / Math.Max(1, budget / 2));
+                        options.creaseStraightness = decimateCreaseStraightness;
+                    }
+                    PreDecimate.Decimate(result.originalPositions, result.originalTriangles, options, out _,
+                        out result.sizingCoarsePositions, out result.sizingCoarseTriangles);
+                }
+                return ScaleField.FromDecimation(result.topology, target, result.sizingCoarsePositions,
+                    result.sizingCoarseTriangles, decimationSizingMaxRatio, result.profile.curvatureGradation,
+                    decimationSizingMinimum);
+            }
+            return ScaleField.FromCurvature(result.topology, target, adaptivity,
+                result.profile.curvatureMaxRatio, result.profile.curvatureGradation);
+        }
+
         static List<(int a, int b)> DecimatedFeatureEdges(RemeshResult result, RemeshTopology topology)
         {
             var edges = new List<(int a, int b)>();
@@ -1311,9 +1389,7 @@ namespace NativeRemesher
                                       && Extraction.IntegerGridMap.adaptiveSize >= 0f
                     ? Mathf.Clamp01(Extraction.IntegerGridMap.adaptiveSize)
                     : result.profile.curvatureAdaptivity;
-                var shape = ScaleField.FromCurvature(result.topology, requested,
-                    countAdaptivity, result.profile.curvatureMaxRatio,
-                    result.profile.curvatureGradation);
+                var shape = SizingField(result, requested, countAdaptivity);
                 var uniform = result.topology.EdgeLengthForQuadCount(requested);
                 // "Flat" is the spacing most of the surface is at the coarse end of -- a high
                 // percentile rather than the maximum, which one flat vertex could set.
@@ -1321,6 +1397,12 @@ namespace NativeRemesher
                     Extraction.IntegerGridMap.adaptiveFlatPercentile);
                 var factor = uniform > 0f && flat > 0f ? (flat / uniform) * (flat / uniform) : 1f;
                 factor = Mathf.Clamp(factor, 1f, Extraction.IntegerGridMap.adaptiveQuadCountMaxGrowth);
+                // Under the solve-mesh cap, no more quads than the capped mesh can carry.
+                if (result.solveTrianglesCapped && result.decimatedTriangles != null && minSolveTrianglesPerQuad > 0f)
+                {
+                    var carried = result.decimatedTriangles.Length / 3 / minSolveTrianglesPerQuad;
+                    factor = Mathf.Max(1f, Mathf.Min(factor, carried / requested));
+                }
                 result.requestedQuadCount = requested;
                 result.adaptiveQuadCountFactor = factor;
                 settings.targetQuadCount = Mathf.RoundToInt(requested * factor);
@@ -1340,9 +1422,7 @@ namespace NativeRemesher
                 var localTarget = settings.targetQuadCount;
                 var localCeiling = result.topology.MaxQuadCountForInput();
                 if (localCeiling > 0 && localTarget > localCeiling) localTarget = localCeiling;
-                var grading = ScaleField.FromCurvature(result.topology, localTarget,
-                    result.profile.curvatureAdaptivity, result.profile.curvatureMaxRatio,
-                    result.profile.curvatureGradation);
+                var grading = SizingField(result, localTarget, result.profile.curvatureAdaptivity);
                 onProgress?.Invoke("Refining input locally", 0f);
                 // The WELDED arrays: the grading is per topology vertex, and an input with UV seams
                 // or split normals (an OBJ scan, ccnb.obj) has more raw positions than welded ones --
@@ -1731,9 +1811,7 @@ namespace NativeRemesher
                 && (!result.profile.integerGridMap || Extraction.IntegerGridMap.gradeSpacing))
             {
                 onProgress?.Invoke("Sizing by curvature", 0f);
-                result.scaleField = ScaleField.FromCurvature(result.topology, target,
-                    result.profile.curvatureAdaptivity, result.profile.curvatureMaxRatio,
-                    result.profile.curvatureGradation);
+                result.scaleField = SizingField(result, target, result.profile.curvatureAdaptivity);
                 scale = result.scaleField.meanSpacing;
             }
 

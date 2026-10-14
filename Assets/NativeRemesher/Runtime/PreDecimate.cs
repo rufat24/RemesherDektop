@@ -851,7 +851,7 @@ namespace NativeRemesher
 
             var keys = new ulong[triangleCount];
             var order = new int[triangleCount];
-            System.Threading.Tasks.Parallel.For(0, triangleCount, t =>
+            System.Threading.Tasks.Parallel.For(0, triangleCount, BackgroundScheduler.Options, t =>
             {
                 var c = (positions[triangles[3 * t]] + positions[triangles[3 * t + 1]]
                          + positions[triangles[3 * t + 2]]) / 3f - lo;
@@ -887,7 +887,7 @@ namespace NativeRemesher
             var blockStats = new DecimateStats[blocks];
             var finished = 0;
 
-            System.Threading.Tasks.Parallel.For(0, blocks, b =>
+            System.Threading.Tasks.Parallel.For(0, blocks, BackgroundScheduler.Options, b =>
             {
                 var first = (int)(((long)b * triangleCount + blocks - 1) / blocks);
                 var last = (int)(((long)(b + 1) * triangleCount + blocks - 1) / blocks);

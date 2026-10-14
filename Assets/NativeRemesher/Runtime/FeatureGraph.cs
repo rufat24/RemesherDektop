@@ -841,7 +841,7 @@ namespace NativeRemesher
             var halfEdgeCount = topology.halfEdgeVertex?.Length ?? 0;
             var crease = new bool[halfEdgeCount];
             var r2 = radius * radius;
-            System.Threading.Tasks.Parallel.For(0, halfEdgeCount,
+            System.Threading.Tasks.Parallel.For(0, halfEdgeCount, BackgroundScheduler.Options,
                 () => (queue: new List<int>(64), seen: new HashSet<int>()),
                 (h, _, local) =>
                 {
