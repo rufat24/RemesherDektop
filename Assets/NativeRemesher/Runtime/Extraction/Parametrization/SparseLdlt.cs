@@ -219,6 +219,7 @@ namespace NativeRemesher.Extraction
                 while (len > 0) pattern[--top] = pattern[--len];
             }
             d[k] = y[k];
+            var akk = y[k];
             y[k] = 0;
             for (; top < n; top++)
             {
@@ -233,8 +234,20 @@ namespace NativeRemesher.Extraction
                 lx[p2] = lki;
                 count[i]++;
             }
-            return Math.Abs(d[k]) >= 1e-300;
+            if (Math.Abs(d[k]) < 1e-9 * Math.Abs(akk) && nearZeroRow < 0) { nearZeroRow = perm[k]; nearZeroPivot = d[k] / akk; }
+            if (Math.Abs(d[k]) >= 1e-300 && !double.IsNaN(d[k])) return true;
+            lastFailedRow = perm[k];
+            lastFailedPivot = d[k];
+            return false;
         }
+
+        /// <summary>Diagnostics: the variable whose pivot vanished on the last failed factorisation.</summary>
+        public int lastFailedRow = -1;
+
+        /// <summary>Diagnostics: the first variable whose pivot fell below 1e-9 of its diagonal.</summary>
+        public int nearZeroRow = -1;
+        public double nearZeroPivot;
+        public double lastFailedPivot;
 
         /// <summary>Solves A x = b in place (b in original variable order).</summary>
         public void Solve(double[] b, double[] x)

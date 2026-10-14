@@ -34,15 +34,17 @@ namespace NativeRemesher.Extraction
         public int constraintRows, zeroArcs, violatedRows, clampedArcs, quantSolves, quantFactorFailures, propagated, propagationConflicts, repairs, repairFailed, repairExpanded;
         public double quantDeviation, freeResidual;
         public int quads, mergedPoints, flatFaces, unequalFaces, degenerateQuads, walkFailed, walkCrossings, clamped;
-        public int offFaces, longPatches, walkReplaced;
+        public int offFaces, longPatches, walkReplaced, walkOtherCorner;
+        public int borderVertices, borderDropped, exteriorFaces, borderHits, borderMissed, alongLaid, circling, leakingFaces, nonManifoldBorder;
         public int creaseTraces, creaseLoops, creaseExtensions, creaseClashes, crossings, layoutAttempts, duplicateEnds, creaseDropped, spirals, ringsClosed, truncated, truncatedJunctions;
         public long ms;
         public string debug = "";
+        public string timing = "";
 
         public override string ToString() => debug +
             $"tris={faces} folded={foldedFaces} singular={singularVertices} coneMismatch={coneMismatch} " +
-            $"creases={creaseTraces}(loops {creaseLoops} extensions {creaseExtensions} clashes {creaseClashes}) attempts={layoutAttempts} crossings={crossings} dupEnds={duplicateEnds} creaseDropped={creaseDropped} spirals={spirals} rings={ringsClosed} truncated={truncated}/{truncatedJunctions} traces={traces} steps={steps} hit[trace {hitTrace} collinear {hitCollinear} self {hitSelf} boundary {hitBoundary} fold {hitFold} limit {hitLimit}] " +
-            $"nodes={nodes} arcs={arcs} faces={layoutFaces} (rect {rectangles} annuli {annuli} other {otherFaces} reflex {reflexCorners} open {openWalks}) corners[{faceCorners}] quant[rows {constraintRows} free residual {freeResidual:G3} deviation {quantDeviation:F1} zero {zeroArcs} clamped {clampedArcs} violated {violatedRows} propagated {propagated} conflicts {propagationConflicts} repairs {repairs} repairFailed {repairFailed} (expanded {repairExpanded}) solves {quantSolves} failed {quantFactorFailures}] mesh[quads {quads} merged {mergedPoints} flat {flatFaces} unequal {unequalFaces} degenerate {degenerateQuads} walkFailed {walkFailed} crossings {walkCrossings} clamped {clamped} replaced {walkReplaced}] ms={ms}";
+            $"creases={creaseTraces}(loops {creaseLoops} extensions {creaseExtensions} clashes {creaseClashes}) attempts={layoutAttempts} crossings={crossings} dupEnds={duplicateEnds} creaseDropped={creaseDropped} spirals={spirals} rings={ringsClosed} truncated={truncated}/{truncatedJunctions} traces={traces} steps={steps} hit[trace {hitTrace} collinear {hitCollinear} self {hitSelf} boundary {hitBoundary} fold {hitFold} limit {hitLimit} circling {circling}] " +
+            $"nodes={nodes} arcs={arcs} faces={layoutFaces} (rect {rectangles} annuli {annuli} other {otherFaces} reflex {reflexCorners} open {openWalks}) corners[{faceCorners}] quant[rows {constraintRows} free residual {freeResidual:G3} deviation {quantDeviation:F1} zero {zeroArcs} clamped {clampedArcs} violated {violatedRows} propagated {propagated} conflicts {propagationConflicts} repairs {repairs} repairFailed {repairFailed} (expanded {repairExpanded}) solves {quantSolves} failed {quantFactorFailures}] mesh[quads {quads} merged {mergedPoints} flat {flatFaces} unequal {unequalFaces} degenerate {degenerateQuads} walkFailed {walkFailed} crossings {walkCrossings} clamped {clamped} replaced {walkReplaced} otherCorner {walkOtherCorner}] time[{timing}] border[vertices {borderVertices} dropped {borderDropped} exterior {exteriorFaces} leaking {leakingFaces} nonManifold {nonManifoldBorder} hits {borderHits} missed {borderMissed} alongLaid {alongLaid}] ms={ms}";
     }
 
     /// <summary>
@@ -66,29 +68,57 @@ namespace NativeRemesher.Extraction
         /// <summary>Rows a repair path may visit.</summary>
         public static int repairSearchLimit = 20000;
 
+        /// <summary>
+        /// Solve the quantisation's least squares in augmented form (one unknown per side
+        /// equation) instead of normal equations. Same minimum; much sparser where patch sides
+        /// carry many arcs.
+        /// </summary>
+        public static bool quantizeAugmented = true;
+
         /// <summary>Fraction of the open lengths rounded per solve.</summary>
         public static double quantizeBatch = 0.1;
 
         static double[] Quantize(double[] target, List<List<(int arc, double coef)>> rows, Vector3[] points, QuantizedLayoutStats stats)
         {
             var n = target.Length;
-            var x = (double[])target.Clone();
-            if (n == 0) return x;
-            // Normal equations: I + mu C^T C, b = target.
-            var entries = new Dictionary<long, double>();
+            if (n == 0) return (double[])target.Clone();
+            var qWatch = System.Diagnostics.Stopwatch.StartNew();
+            // Normal equations I + mu C^T C, b = target -- or, augmented, one unknown more per row:
+            //     [ I   C^T    ] [x]   [target]
+            //     [ C  -I / mu ] [y] = [  0   ],
+            // the same minimum, but as sparse as C itself: the normal equations couple every pair of
+            // arcs on a rectangle's side, and a scan's border sides carry dozens.
+            var augmented = quantizeAugmented;
+            var N = augmented ? n + rows.Count : n;
+            var x = new double[N];
+            Array.Copy(target, x, n);
+            var entries = new Dictionary<long, double>(EdgeKey.Comparer);
             void Add(int i, int j, double v)
             {
                 var key = ((long)i << 32) | (uint)j;
                 entries[key] = (entries.TryGetValue(key, out var o) ? o : 0) + v;
             }
             for (var i = 0; i < n; i++) Add(i, i, 1.0);
-            foreach (var row in rows)
-                foreach (var (a, ca) in row)
-                    foreach (var (b, cb) in row)
-                        Add(a, b, quantizeConstraintWeight * ca * cb);
+            if (augmented)
+            {
+                for (var r = 0; r < rows.Count; r++)
+                {
+                    foreach (var (a, ca) in rows[r])
+                    {
+                        Add(a, n + r, ca);
+                        Add(n + r, a, ca);
+                    }
+                    Add(n + r, n + r, -1.0 / quantizeConstraintWeight);
+                }
+            }
+            else
+                foreach (var row in rows)
+                    foreach (var (a, ca) in row)
+                        foreach (var (b, cb) in row)
+                            Add(a, b, quantizeConstraintWeight * ca * cb);
             var keys = new List<long>(entries.Keys);
             keys.Sort();
-            var start = new int[n + 1];
+            var start = new int[N + 1];
             var col = new int[keys.Count];
             var val = new double[keys.Count];
             for (var k = 0; k < keys.Count; k++)
@@ -98,17 +128,31 @@ namespace NativeRemesher.Extraction
                 col[k] = (int)(keys[k] & 0xffffffff);
                 val[k] = entries[keys[k]];
             }
-            for (var i = 0; i < n; i++) start[i + 1] += start[i];
-            var ldlt = new SparseLdlt(n, start, col, points);
-            var fixedVar = new bool[n];
-            var rhs = new double[n];
+            for (var i = 0; i < N; i++) start[i + 1] += start[i];
+            var allPoints = points;
+            if (augmented)
+            {
+                allPoints = new Vector3[N];
+                Array.Copy(points, allPoints, n);
+                for (var r = 0; r < rows.Count; r++)
+                {
+                    var sum = Vector3.zero;
+                    foreach (var (a, _) in rows[r]) sum += points[a];
+                    allPoints[n + r] = sum / Mathf.Max(1, rows[r].Count);
+                }
+            }
+            stats.timing += $"q:assembled {qWatch.ElapsedMilliseconds} ";
+            var ldlt = new SparseLdlt(N, start, col, allPoints);
+            stats.timing += $"q:symbolic {qWatch.ElapsedMilliseconds} ";
+            var fixedVar = new bool[N];
+            var rhs = new double[N];
             void Solve()
             {
                 if (!ldlt.Factor(val, fixedVar)) { stats.quantFactorFailures++; return; }
-                for (var r = 0; r < n; r++)
+                for (var r = 0; r < N; r++)
                 {
                     if (fixedVar[r]) { rhs[r] = x[r]; continue; }
-                    var sum = target[r];
+                    var sum = r < n ? target[r] : 0.0;
                     for (var j = start[r]; j < start[r + 1]; j++)
                         if (fixedVar[col[j]]) sum -= val[j] * x[col[j]];
                     rhs[r] = sum;
@@ -181,6 +225,7 @@ namespace NativeRemesher.Extraction
                 if (open.Count > 0) Solve();
             }
 
+            stats.timing += $"q:rounded {qWatch.ElapsedMilliseconds} ";
             // Repair: a row left unequal (an arc decided by one rectangle that also closes another)
             // passes its error along -- one arc +-1, which moves the error into that arc's other
             // row -- breadth first, until it meets a row unequal the other way, or an arc no other
@@ -270,7 +315,11 @@ namespace NativeRemesher.Extraction
                 }
                 if (!progress) break;
             }
-            return x;
+            stats.timing += $"q:repaired {qWatch.ElapsedMilliseconds} ";
+            if (N == n) return x;
+            var lengths = new double[n];
+            Array.Copy(x, lengths, n);
+            return lengths;
         }
 
         /// <summary>
@@ -290,6 +339,25 @@ namespace NativeRemesher.Extraction
 
         /// <summary>Extra layout passes that add lines into faces that are not rectangles.</summary>
         public static int layoutAttempts = 5;
+
+        /// <summary>
+        /// Lay the open border of the mesh as patch sides, as the creases are: separatrices end on
+        /// it and the patches along it are rectangles with one side on it. Off, a separatrix that
+        /// reaches the border is left open and the faces there are not meshed.
+        /// </summary>
+        public static bool borderLayout = true;
+
+        /// <summary>
+        /// Times a separatrix may enter one triangle going one way before it is given up as
+        /// circling (0: only <see cref="maxSteps"/>).
+        /// </summary>
+        public static int maxEntries = 3;
+
+        /// <summary>
+        /// A patch's inner point whose walk from corner 0 leaves the mesh is walked from the other
+        /// corners in turn (off: only corner 0, then the blend of the sides).
+        /// </summary>
+        public static bool walkFromAllCorners = true;
 
         /// <summary>Triangles a separatrix may cross before it is given up.</summary>
         public static int maxSteps = 20000;
@@ -337,6 +405,12 @@ namespace NativeRemesher.Extraction
             public readonly List<int> crossed = new List<int>();
             public Dictionary<int, (int count, double side)> visited;
             public bool looped;
+            // Entries into each (triangle, direction), to stop one circling a fold for ever.
+            public Dictionary<int, int> entries;
+            // Laid along the open border; insideLeft: the mesh is on its left as it runs.
+            public bool border, insideLeft;
+            // Laid in advance along mesh edges (a crease or the border), not traced.
+            public bool laid;
             // Its pieces, in order: (face, start, end, direction, length at the start).
             public readonly List<(int face, double ax, double ay, double bx, double by, int dir, double s0)> path
                 = new List<(int, double, double, double, double, int, double)>();
@@ -454,6 +528,7 @@ namespace NativeRemesher.Extraction
             }
             var fan = new List<int>[n];
             var valence = new int[n];
+            var border = new bool[n];
             for (var v = 0; v < n; v++)
             {
                 var list = cornersOf[v];
@@ -469,7 +544,28 @@ namespace NativeRemesher.Extraction
                     if (nx == list[0]) { closed = true; break; }
                     c = nx;
                 }
-                if (!closed || ordered.Count != list.Count) continue;   // border or non-manifold
+                if (!closed || ordered.Count != list.Count)
+                {
+                    // A border vertex: its fan from the corner whose edge out is a border edge,
+                    // counter-clockwise to the one whose edge in is. Its valence is the angle inside,
+                    // in quarter turns: 2 along a straight border, 1 at a corner, 3 at a notch.
+                    if (!borderLayout) continue;
+                    var first = -1;
+                    foreach (var cc in list)
+                        if (twin[cc] < 0) { first = first >= 0 ? -2 : cc; if (first == -2) break; }
+                    if (first < 0) { stats.nonManifoldBorder++; continue; }   // non-manifold
+                    ordered.Clear();
+                    c = first;
+                    for (var guard = 0; guard <= list.Count && c >= 0; guard++) { ordered.Add(c); c = CcwNext(c); }
+                    if (c >= 0 || ordered.Count != list.Count) continue;
+                    fan[v] = ordered;
+                    border[v] = true;
+                    double inside = 0;
+                    foreach (var cc in ordered) inside += CornerAngle(cc);
+                    valence[v] = (int)Math.Round(inside / (0.5 * Math.PI));
+                    stats.borderVertices++;
+                    continue;
+                }
                 fan[v] = ordered;
                 double angle = 0;
                 foreach (var cc in ordered) angle += CornerAngle(cc);
@@ -480,6 +576,24 @@ namespace NativeRemesher.Extraction
 
             const double tiny = 1e-9;
             const double onLine = 1e-9;
+
+            // The open border, laid like the creases.
+            var borderEdgeKeys = new HashSet<(int, int)>();
+            if (borderLayout)
+                for (var h = 0; h < 3 * m; h++)
+                {
+                    if (twin[h] >= 0) continue;
+                    int a = T[h], b = T[3 * (h / 3) + (h % 3 + 1) % 3];
+                    if (border[a] && border[b]) borderEdgeKeys.Add((Math.Min(a, b), Math.Max(a, b)));
+                }
+            if (borderEdgeKeys.Count > 0)
+            {
+                var all = new List<(int a, int b)>();
+                if (featureEdges != null) all.AddRange(featureEdges);
+                foreach (var e in borderEdgeKeys) all.Add(e);
+                featureEdges = all;
+            }
+            bool IsBorderEdge(int a, int b) => borderEdgeKeys.Contains((Math.Min(a, b), Math.Max(a, b)));
 
             // A point that has drifted just outside triangle f -- a junction placed on a crease's
             // averaged line, a crossing on a line met within collinearTolerance -- pulled back just
@@ -515,7 +629,7 @@ namespace NativeRemesher.Extraction
             var continueThrough = new HashSet<int>();
             for (var attempt = 0; ; attempt++)
             {
-                stats.traces = stats.steps = stats.hitTrace = stats.hitCollinear = stats.hitBoundary = stats.hitFold = stats.hitLimit = stats.hitSelf = 0;
+                stats.traces = stats.steps = stats.hitTrace = stats.hitCollinear = stats.hitBoundary = stats.hitFold = stats.hitLimit = stats.hitSelf = stats.circling = stats.leakingFaces = stats.exteriorFaces = 0;
                 stats.nodes = stats.arcs = stats.layoutFaces = stats.rectangles = stats.annuli = stats.otherFaces = stats.reflexCorners = stats.openWalks = 0;
                 stats.creaseTraces = stats.creaseLoops = stats.creaseExtensions = stats.creaseClashes = stats.crossings = stats.duplicateEnds = stats.creaseDropped = stats.ringsClosed = stats.truncated = stats.truncatedJunctions = 0;
                 stats.faceCorners = "";
@@ -529,6 +643,7 @@ namespace NativeRemesher.Extraction
                 // Every lattice direction leaving a vertex, with its position round the fan in quarter
                 // turns; and the position at which each corner's sector starts.
                 var sectorStart = new double[3 * m];
+                var borderEnd = new double[n];
                 for (var v = 0; v < n; v++)
                 {
                     if (fan[v] == null) continue;
@@ -537,7 +652,11 @@ namespace NativeRemesher.Extraction
                     var n0 = 3 * (c0 / 3) + (c0 % 3 + 1) % 3;
                     double cum = Math.Atan2(V(n0) - V(c0), U(n0) - U(c0)) / (0.5 * Math.PI);
                     foreach (var c in fan[v]) { sectorStart[c] = cum; cum += CornerAngle(c) / (0.5 * Math.PI); }
+                    borderEnd[v] = cum;                       // a border fan: the edge in
                 }
+                // Position of a direction at v: round a closed fan, modulo its turns; along a border
+                // fan, from the edge out to the edge in, not wrapped.
+                int PosAt(int v, double at) => border[v] ? (int)Math.Round(at) : Mod4Of((int)Math.Round(at), valence[v]);
                 List<(int c, int d, int pos)> Directions(int v)
                 {
                     var list = new List<(int, int, int)>();
@@ -554,7 +673,7 @@ namespace NativeRemesher.Extraction
                             if (cr == 0 && e1x * DirX[d] + e1y * DirY[d] <= 0) continue;
                             if (Cross(DirX[d], DirY[d], e2x, e2y) <= 0) continue;
                             var ang = Math.Atan2(cr, e1x * DirX[d] + e1y * DirY[d]) / (0.5 * Math.PI);
-                            list.Add((c, d, Mod4Of((int)Math.Round(sectorStart[c] + ang), valence[v])));
+                            list.Add((c, d, PosAt(v, sectorStart[c] + ang)));
                         }
                     }
                     return list;
@@ -564,7 +683,8 @@ namespace NativeRemesher.Extraction
                 int NodeOf(int v)
                 {
                     if (vertexNode.TryGetValue(v, out var id)) return id;
-                    nodes.Add(new Node { vertex = v, quarterTurns = valence[v] });
+                    // A border node's turn round the outside is never walked into a face that is kept.
+                    nodes.Add(new Node { vertex = v, quarterTurns = border[v] ? valence[v] + 4 : valence[v] });
                     vertexNode[v] = nodes.Count - 1;
                     return nodes.Count - 1;
                 }
@@ -588,12 +708,13 @@ namespace NativeRemesher.Extraction
                     foreach (var (a, b) in featureEdges)
                     {
                         if (a == b || fan[a] == null || fan[b] == null) continue;
-                        if (!halfOf.ContainsKey((a, b)) || !halfOf.ContainsKey((b, a))) continue;
+                        if (!(halfOf.ContainsKey((a, b)) && halfOf.ContainsKey((b, a))) && !IsBorderEdge(a, b)) continue;
                         if (!edgeSet.Add((Math.Min(a, b), Math.Max(a, b)))) continue;
                         (adjacent.TryGetValue(a, out var la) ? la : adjacent[a] = new List<int>()).Add(b);
                         (adjacent.TryGetValue(b, out var lb) ? lb : adjacent[b] = new List<int>()).Add(a);
                     }
-                    int PosToward(int v, int w) => Mod4Of((int)Math.Round(sectorStart[halfOf[(v, w)]]), valence[v]);
+                    int PosToward(int v, int w) => halfOf.TryGetValue((v, w), out var hv) ? PosAt(v, sectorStart[hv]) : PosAt(v, borderEnd[v]);
+                    int HalfEither(int v, int w) => halfOf.TryGetValue((v, w), out var hv) ? hv : halfOf[(w, v)];
                     // Two crease edges leaving a vertex the same way cannot both be arcs: the shorter
                     // in (u, v) is left out.
                     foreach (var kv in new List<KeyValuePair<int, List<int>>>(adjacent))
@@ -605,11 +726,14 @@ namespace NativeRemesher.Extraction
                                 if (PosToward(kv.Key, l[i]) != PosToward(kv.Key, l[j])) continue;
                                 double Len(int w)
                                 {
-                                    var hh = halfOf[(kv.Key, w)];
+                                    var hh = HalfEither(kv.Key, w);
                                     var nx = 3 * (hh / 3) + (hh % 3 + 1) % 3;
                                     return Math.Abs(U(nx) - U(hh)) + Math.Abs(V(nx) - V(hh));
                                 }
-                                var drop = Len(l[i]) < Len(l[j]) ? l[i] : l[j];
+                                // A border edge stays: without it the outside would run into the mesh.
+                                bool Bd(int w) => IsBorderEdge(kv.Key, w);
+                                var drop = Bd(l[i]) != Bd(l[j]) ? (Bd(l[i]) ? l[j] : l[i]) : (Len(l[i]) < Len(l[j]) ? l[i] : l[j]);
+                                if (Bd(drop)) stats.borderDropped++;
                                 l.Remove(drop);
                                 adjacent[drop].Remove(kv.Key);
                                 stats.creaseDropped++;
@@ -620,6 +744,7 @@ namespace NativeRemesher.Extraction
                     bool Break(int v)
                     {
                         var l = adjacent[v];
+                        if (border[v]) return l.Count != 2 || valence[v] != 2 || Math.Abs(PosToward(v, l[0]) - PosToward(v, l[1])) != 2;
                         if (l.Count != 2 || valence[v] != 4) return true;
                         return Mod4Of(PosToward(v, l[0]) - PosToward(v, l[1]), 4) != 2;
                     }
@@ -634,9 +759,9 @@ namespace NativeRemesher.Extraction
                                 stats.debug += $"[clash v{kv.Key} val{valence[kv.Key]} deg{kv.Value.Count}:";
                                 foreach (var x in kv.Value)
                                 {
-                                    var hh = halfOf[(kv.Key, x)];
+                                    var hh = HalfEither(kv.Key, x);
                                     var nx = 3 * (hh / 3) + (hh % 3 + 1) % 3;
-                                    stats.debug += $" ->{x}@{PosToward(kv.Key, x)} d({U(nx) - U(hh):F3},{V(nx) - V(hh):F3}) start {sectorStart[hh]:F2}";
+                                    stats.debug += $" ->{x}@{PosToward(kv.Key, x)}{(IsBorderEdge(kv.Key, x) ? "b" : "")} d({U(nx) - U(hh):F3},{V(nx) - V(hh):F3}) start {sectorStart[hh]:F2}";
                                 }
                                 stats.debug += "] ";
                             }
@@ -648,6 +773,9 @@ namespace NativeRemesher.Extraction
                     {
                         var id = traces.Count;
                         var tr = new Trace { startNode = NodeOf(v0), active = false };
+                        tr.border = IsBorderEdge(v0, w0);
+                        tr.laid = true;
+                        tr.insideLeft = halfOf.ContainsKey((v0, w0));
                         traces.Add(tr);
                         tr.points.Add((0, tr.startNode));
                         nodes[tr.startNode].ends.Add((-1 - id, 0, PosToward(v0, w0)));
@@ -655,11 +783,16 @@ namespace NativeRemesher.Extraction
                         while (true)
                         {
                             usedEdge.Add((Math.Min(v, w), Math.Max(v, w)));
-                            var h = halfOf[(v, w)];
-                            var o = halfOf[(w, v)];
-                            // The piece in both triangles at the edge, each in its own chart.
+                            var h = halfOf.TryGetValue((v, w), out var hIn) ? hIn : -1;
+                            var o = halfOf.TryGetValue((w, v), out var oIn) ? oIn : -1;
+                            // The piece in both triangles at the edge, each in its own chart (one, on
+                            // the border).
                             double length = 0;
-                            foreach (var (hc, cv, cw) in new[] { (h, h, 3 * (h / 3) + (h % 3 + 1) % 3), (o, 3 * (o / 3) + (o % 3 + 1) % 3, o) })
+                            var pieces = new List<(int hc, int cv, int cw)>(2);
+                            if (h >= 0) pieces.Add((h, h, 3 * (h / 3) + (h % 3 + 1) % 3));
+                            if (o >= 0) pieces.Add((o, 3 * (o / 3) + (o % 3 + 1) % 3, o));
+                            if (h < 0) h = o;
+                            foreach (var (hc, cv, cw) in pieces)
                             {
                                 var f = hc / 3;
                                 double ax = U(cv), ay = V(cv), bx = U(cw), by = V(cw);
@@ -728,7 +861,7 @@ namespace NativeRemesher.Extraction
                 for (var v = 0; v < n; v++)
                 {
                     if (fan[v] == null || valence[v] <= 0) continue;
-                    var singular = valence[v] != 4;
+                    var singular = !border[v] && valence[v] != 4;
                     var isNode = vertexNode.ContainsKey(v);
                     if (!singular && !isNode) continue;
                     var occupied = new HashSet<int>();
@@ -751,8 +884,9 @@ namespace NativeRemesher.Extraction
                         for (var i = 0; i < sorted.Count; i++)
                         {
                             var a = sorted[i];
-                            var b = i + 1 < sorted.Count ? sorted[i + 1] : sorted[0] + 4;
-                            if (b - a > 2) { want = Mod4Of(a + 2, 4); break; }
+                            // Along the border the angle outside is not filled.
+                            var b = i + 1 < sorted.Count ? sorted[i + 1] : (border[v] ? int.MinValue : sorted[0] + 4);
+                            if (b - a > 2) { want = border[v] ? a + 2 : Mod4Of(a + 2, 4); break; }
                         }
                         if (want < 0) break;
                         var emitted = false;
@@ -772,6 +906,7 @@ namespace NativeRemesher.Extraction
                         break;
                     }
                 stats.traces = traces.Count;
+                stats.timing += $"a{attempt} start {watch.ElapsedMilliseconds} ";
 
 
                 // A new node where trace `id` ends on trace `hitTrace` at length sHit, in face f's chart.
@@ -853,6 +988,18 @@ namespace NativeRemesher.Extraction
                     var f = tr.face;
                     if (!valid[f]) { stats.hitFold++; tr.active = false; continue; }
                     if (++tr.steps > maxSteps) { stats.hitLimit++; tr.active = false; continue; }
+                    if (maxEntries > 0)
+                    {
+                        // Round the same triangle the same way again and again without meeting anything:
+                        // caught circling a fold. Every lap left its pieces in the triangles it passed,
+                        // which every later step there tests against -- 20000 laps cost the scan a
+                        // minute a layout.
+                        tr.entries ??= new Dictionary<int, int>();
+                        var entryKey = f * 4 + tr.dir;
+                        var times = tr.entries.TryGetValue(entryKey, out var e0) ? e0 + 1 : 1;
+                        tr.entries[entryKey] = times;
+                        if (times > maxEntries) { stats.hitLimit++; stats.circling++; tr.active = false; continue; }
+                    }
                     stats.steps++;
                     double dx = DirX[tr.dir], dy = DirY[tr.dir];
                     // Exit edge: tail right of the ray, head left of it (on the line counts as right: the
@@ -929,9 +1076,31 @@ namespace NativeRemesher.Extraction
                                 // Going the same way along another line: only a ring closing on its own
                                 // start is met (it ends there, see below); anything else runs on.
                                 if (sg.dir == tr.dir && MergeTarget(id, sg) < 0) continue;
+                                // Along a crease or the border: it runs on beside it, and ends on the
+                                // first line across -- a laid line has no tip to meet head on.
+                                if (traces[sg.trace].laid) { stats.alongLaid++; continue; }
                                 if (t < hitT) { hitT = t; hitIndex = i; hitCollinear = true; }
                             }
                         }
+                    }
+
+                    // Leaving across the open border without meeting it: its line is the average of the
+                    // edge's ends, a hair beyond the edge where the edge is not quite an iso-line. The
+                    // border line across the way is met there.
+                    var borderHit = false;
+                    if (hitIndex < 0 && twin[exit] < 0 && list != null)
+                    {
+                        var bestOff = double.PositiveInfinity;
+                        for (var i = 0; i < list.Count; i++)
+                        {
+                            var sg = list[i];
+                            if (!traces[sg.trace].border || Mod4(sg.dir - tr.dir) % 2 != 1) continue;
+                            var t = dx != 0 ? (sg.ax - tr.px) * dx : (sg.ay - tr.py) * dy;
+                            var off = Math.Abs(t - len);
+                            if (off < bestOff) { bestOff = off; hitIndex = i; hitT = Math.Max(t, tiny); }
+                        }
+                        if (hitIndex >= 0) { borderHit = true; stats.borderHits++; }
+                        else stats.borderMissed++;
                     }
 
                     if (hitIndex >= 0)
@@ -941,6 +1110,12 @@ namespace NativeRemesher.Extraction
                         var hy = tr.py + hitT * dy;
                         // Along the hit line only: a parallel line met is up to collinearTolerance off it.
                         var sHit = sg.s0 + (sg.dir % 2 == 0 ? Math.Abs(hx - sg.ax) : Math.Abs(hy - sg.ay));
+                        if (borderHit)
+                        {
+                            // Held on the border piece: past its end it is at that end.
+                            var segLen = Math.Abs(sg.bx - sg.ax) + Math.Abs(sg.by - sg.ay);
+                            sHit = Math.Max(sg.s0, Math.Min(sg.s0 + segLen, sHit));
+                        }
                         // The last piece, up to the meeting point.
                         (segs[f] ??= new List<Segment>()).Add(new Segment { trace = id, ax = tr.px, ay = tr.py, bx = hx, by = hy, dir = tr.dir, s0 = tr.length });
                         tr.path.Add((f, tr.px, tr.py, hx, hy, tr.dir, tr.length));
@@ -1043,6 +1218,7 @@ namespace NativeRemesher.Extraction
                     queue.Add((tr.length, id));
                 }
 
+                stats.timing += $"traced {watch.ElapsedMilliseconds} ";
                 // --- arcs: each trace cut at its nodes ---------------------------------------------
                 arcs = new List<Arc>();
                 // (trace, which end-kind, node) -> arc, for resolving the node ends.
@@ -1138,6 +1314,17 @@ namespace NativeRemesher.Extraction
                         if (used[h]) break;
                     }
                     if (!ok) { stats.openWalks++; continue; }
+                    // Outside the open border: walked along border lines only, each against the mesh
+                    // side. A face with some such sides and others is the inside leaking out through
+                    // a gap in the border -- counted, and not taken for the outside.
+                    var outsideSides = 0;
+                    foreach (var hb in halfs)
+                    {
+                        var tb = traces[arcs[hb / 2].trace];
+                        if (tb.border && (hb % 2 == 0) != tb.insideLeft) outsideSides++;
+                    }
+                    if (outsideSides == halfs.Count) { stats.exteriorFaces++; continue; }
+                    if (outsideSides > 0) stats.leakingFaces++;
                     stats.layoutFaces++;
                     var corners = 0;
                     var sum = 0;
@@ -1192,7 +1379,7 @@ namespace NativeRemesher.Extraction
                                 var j = (k - 1 + r.Count) % r.Count;
                                 if (nd.vertex >= 0)
                                 {
-                                    var want = Mod4Of(r[j].pos + (turns[i] >= 4 ? 2 : 1), nd.quarterTurns);
+                                    var want = border[nd.vertex] ? r[j].pos + (turns[i] >= 4 ? 2 : 1) : Mod4Of(r[j].pos + (turns[i] >= 4 ? 2 : 1), nd.quarterTurns);
                                     if (extraEmits.Contains((nd.vertex, want))) continue;
                                     extraEmits.Add((nd.vertex, want));
                                     fixes++;
@@ -1245,6 +1432,7 @@ namespace NativeRemesher.Extraction
                     cornerHist[key] = cornerHist.TryGetValue(key, out var cnt) ? cnt + 1 : 1;
                 }
                 foreach (var kv in cornerHist) stats.faceCorners += $"{kv.Key}:{kv.Value} ";
+                stats.timing += $"faces {watch.ElapsedMilliseconds} ";
                 stats.layoutAttempts = attempt + 1;
                 if (fixes == 0) break;
             }
@@ -1295,7 +1483,9 @@ namespace NativeRemesher.Extraction
             }
             var arcPos = new Vector3[arcs.Count];
             for (var i = 0; i < arcs.Count; i++) arcPos[i] = 0.5f * (nodePos[arcs[i].node0] + nodePos[arcs[i].node1]);
+            stats.timing += $"rows {watch.ElapsedMilliseconds} ";
             var ell = Quantize(arcLength, rows, arcPos, stats);
+            stats.timing += $"quantised {watch.ElapsedMilliseconds} ";
             {
                 var order = new List<int>();
                 for (var i = 0; i < arcs.Count; i++) order.Add(i);
@@ -1391,6 +1581,8 @@ namespace NativeRemesher.Extraction
                 for (var k = 0; k < 3; k++)
                     if (Math.Abs(U(3 * f + k) - x) + Math.Abs(V(3 * f + k) - y) < 1e-3) c = 3 * f + k;
                 if (c < 0) return;
+                var cStart = c;
+                var dStart = d;
                 for (var step = 0; step < 64; step++)
                 {
                     var ff = c / 3;
@@ -1402,9 +1594,27 @@ namespace NativeRemesher.Extraction
                     // Counter-clockwise to the next triangle round the vertex, across edge (c2 -> c).
                     var h = c2;
                     var o = twin[h];
-                    if (o < 0) return;
+                    if (o < 0) break;
                     d = Mod4(d + rot[h]);
                     c = o;                                   // in the triangle across, the vertex is o's tail
+                }
+                // A border fan ends before the sector is found: clockwise from the start instead,
+                // across edge (c -> c1).
+                c = cStart;
+                var dd = dStart;
+                for (var step = 0; step < 64; step++)
+                {
+                    var h = c;
+                    var o = twin[h];
+                    if (o < 0) break;
+                    dd = Mod4(dd + rot[h]);
+                    c = 3 * (o / 3) + (o % 3 + 1) % 3;       // in the triangle across, the vertex is o's head
+                    var ff = c / 3;
+                    int c1 = 3 * ff + (c % 3 + 1) % 3, c2 = 3 * ff + (c % 3 + 2) % 3;
+                    double e1x = U(c1) - U(c), e1y = V(c1) - V(c), e2x = U(c2) - U(c), e2y = V(c2) - V(c);
+                    var cr = Cross(e1x, e1y, DirX[dd], DirY[dd]);
+                    var inside = (cr > 0 || (cr == 0 && e1x * DirX[dd] + e1y * DirY[dd] > 0)) && Cross(DirX[dd], DirY[dd], e2x, e2y) > 0;
+                    if (inside) { f = ff; x = U(c); y = V(c); d = dd; return; }
                 }
             }
 
@@ -1599,10 +1809,21 @@ namespace NativeRemesher.Extraction
                 // side 0's direction, then turned a quarter left.
                 if (W > 1 && H > 1)
                 {
-                    var h0 = sides[0][0];
-                    var a0 = arcs[h0 / 2];
-                    var start = h0 % 2 == 0 ? Locate(a0.trace, a0.s0) : Locate(a0.trace, a0.s1);
-                    var d0 = h0 % 2 == 0 ? start.dir : Mod4(start.dir + 2);
+                    // Each corner c (where side c starts), with the direction side c leaves it by.
+                    var cornerFace = new int[4];
+                    var cornerX = new double[4];
+                    var cornerY = new double[4];
+                    var cornerDir = new int[4];
+                    for (var c = 0; c < 4; c++)
+                    {
+                        var hc = sides[c][0];
+                        var ac = arcs[hc / 2];
+                        var st0 = hc % 2 == 0 ? Locate(ac.trace, ac.s0) : Locate(ac.trace, ac.s1);
+                        cornerFace[c] = st0.face;
+                        cornerX[c] = st0.x;
+                        cornerY[c] = st0.y;
+                        cornerDir[c] = hc % 2 == 0 ? st0.dir : Mod4(st0.dir + 2);
+                    }
                     var Lb = sideReal[0][W];
                     var Lr = sideReal[1][H];
                     // Bilinear blend of the side points in space, and the spacing along the sides.
@@ -1628,15 +1849,35 @@ namespace NativeRemesher.Extraction
                             var sv = (double)i / W;
                             var u = (1 - su) * ub + su * ut;
                             var v = (1 - sv) * vl + sv * vr;
-                            var w1 = Walk(start.face, start.x, start.y, d0, u);
-                            var w2 = Walk(w1.face, w1.x, w1.y, Mod4(w1.dir + 1), v);
-                            Surface(w2.face, w2.x, w2.y, out var p, out var nrm);
-                            // The same point blended in space from the sides: where the walk went
+                            // The same point blended in space from the sides: where a walk went
                             // astray (a seam a hair off, a sliver it slipped past) it lands cells
                             // away, and the blend -- put back on the surface by the relaxation --
                             // is the better guess.
                             var blend = Coons3(i, j);
-                            if ((p - blend).magnitude > 3f * cell3)
+                            // Walked from corner 0 along side 0 and a quarter left; where that walk
+                            // leaves the mesh -- along an open border, which a patch side lies on --
+                            // from the other corners in turn.
+                            Vector3 p = blend, nrm = Vector3.up;
+                            var found = false;
+                            for (var c = 0; c < (walkFromAllCorners ? 4 : 1) && !found; c++)
+                            {
+                                double along, left;
+                                switch (c)
+                                {
+                                    case 0: along = u; left = v; break;
+                                    case 1: along = v; left = Lb - u; break;
+                                    case 2: along = Lb - u; left = Lr - v; break;
+                                    default: along = Lr - v; left = u; break;
+                                }
+                                var failedBefore = stats.walkFailed;
+                                var w1 = Walk(cornerFace[c], cornerX[c], cornerY[c], cornerDir[c], along);
+                                var w2 = Walk(w1.face, w1.x, w1.y, Mod4(w1.dir + 1), left);
+                                Surface(w2.face, w2.x, w2.y, out var pc, out var nc);
+                                var ok = stats.walkFailed == failedBefore && (pc - blend).magnitude <= 3f * cell3;
+                                if (c == 0 || ok) { p = pc; nrm = nc; }
+                                if (ok) { found = true; if (c > 0) stats.walkOtherCorner++; }
+                            }
+                            if (!found && (p - blend).magnitude > 3f * cell3)
                             {
                                 p = blend;
                                 stats.walkReplaced++;
@@ -1669,6 +1910,7 @@ namespace NativeRemesher.Extraction
                 }
             }
 
+            stats.timing += $"meshed {watch.ElapsedMilliseconds} ";
             // Glue, compact, and drop quads that glued onto themselves.
             var remap = new int[link.Count];
             for (var i = 0; i < remap.Length; i++) remap[i] = -1;

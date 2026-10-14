@@ -80,12 +80,17 @@ namespace NativeRemesher.Extraction
         [NonSerialized] public List<int[]> layoutFaces;
         public int splitSingularities, splitFailed, splitMismatch, spreadMoves, spreadFailed, multipleSingularities;
         public int featureEdgesDroppedV, loopRows, loopPasses, featureEdgesSquashed;
+        public int borderEdges, borderRuns, borderLoops;
+        public float borderDeviationSum;
+        public string borderRunLog = "";
+        public int borderMergeStuck;
+        public int borderMisaligned;
         public bool reusedLayout, reusedStructure;
         public int releasedFeatureGroups, releasedFeatureCoordinates;
         public float closureWorst;
         public long factorNonZeros;
         public long symbolicMs, factorMs;
-        public int factorizations, factorFailures;
+        public int factorizations, factorFailures, factorRetries, symbolicRedone;
         public long transferMs;
         public long structureMs, expressionMs, assemblyMs;
         public string split = "";
@@ -93,10 +98,10 @@ namespace NativeRemesher.Extraction
         public long ms;
 
         public override string ToString() =>
-            $"faces={faces} singular={singularVertices} cancelled={cancelledPairs}+{cancelledFarPairs}(fail {pairCancelFailed}) split={splitSingularities}(fail {splitFailed}, mismatch {splitMismatch}) spread={spreadMoves}(fail {spreadFailed}) multiple={multipleSingularities} poles={roundedSingularities} stiff={stiffenIterationsRun}/{stiffened} reused={reusedFreeSolve}/{reusedStructure}/{reusedLayout} features={featureEdges}(skip {featureEdgesSkipped}, nearPoles {featureEdgesNearPoles}, pins {pinnedFeatureCoordinates}, droppedV {featureEdgesDroppedV}, squashed {featureEdgesSquashed}, loops {loopRows}/{loopPasses}, released {releasedFeatureGroups}/{releasedFeatureCoordinates}) cut={cutEdges}(of {cutEdgesBeforePrune}) chains={chains} " +
+            $"faces={faces} singular={singularVertices} cancelled={cancelledPairs}+{cancelledFarPairs}(fail {pairCancelFailed}) split={splitSingularities}(fail {splitFailed}, mismatch {splitMismatch}) spread={spreadMoves}(fail {spreadFailed}) multiple={multipleSingularities} poles={roundedSingularities} stiff={stiffenIterationsRun}/{stiffened} reused={reusedFreeSolve}/{reusedStructure}/{reusedLayout} features={featureEdges}(skip {featureEdgesSkipped}, nearPoles {featureEdgesNearPoles}, pins {pinnedFeatureCoordinates}, droppedV {featureEdgesDroppedV}, squashed {featureEdgesSquashed}, loops {loopRows}/{loopPasses}, border {borderEdges} in {borderRuns} runs on {borderLoops} loops dev {borderDeviationSum / Mathf.Max(1, borderEdges):F1} misaligned {borderMisaligned} stuck {borderMergeStuck} runs[{borderRunLog}], released {releasedFeatureGroups}/{releasedFeatureCoordinates}) cut={cutEdges}(of {cutEdgesBeforePrune}) chains={chains} " +
             $"blocks={blocks} closures={closureConstraints} cg={cgIterations} res={residual:G3} " +
             $"rounds={roundingRounds} rounded={roundedVariables} maxRound={maxRoundingMove:F3} " +
-            $"flipped={flippedFaces} stages={flipsByStage}closuresOpen={closuresOpen} propagated={propagatedChains} nonInt={closureNonInteger} forced={forcedChains} free={freeChains} tree={treeChains} freedPoles={freedPoles} regRoots={regularRoots} unsolved={unsolvedTree} kinds={closureKinds}worst={closureWorst:F2} nnzL={factorNonZeros} symbolic={symbolicMs} factor={factorMs}/{factorizations} failed={factorFailures} ms={ms} (split {split}structure {structureMs} expr {expressionMs} asm {assemblyMs}) transfer={transferMs} fineSingular={refinedSingularFaces} unmapped={unmappedFaces} trace[{trace}] ulog[{untangleLog}] layout[{layout}]";
+            $"flipped={flippedFaces} stages={flipsByStage}closuresOpen={closuresOpen} propagated={propagatedChains} nonInt={closureNonInteger} forced={forcedChains} free={freeChains} tree={treeChains} freedPoles={freedPoles} regRoots={regularRoots} unsolved={unsolvedTree} kinds={closureKinds}worst={closureWorst:F2} nnzL={factorNonZeros} symbolic={symbolicMs} factor={factorMs}/{factorizations} failed={factorFailures} retried={factorRetries} resymbolic={symbolicRedone} ms={ms} (split {split}structure {structureMs} expr {expressionMs} asm {assemblyMs}) transfer={transferMs} fineSingular={refinedSingularFaces} unmapped={unmappedFaces} trace[{trace}] ulog[{untangleLog}] layout[{layout}]";
     }
 
     /// <summary>
@@ -271,6 +276,234 @@ namespace NativeRemesher.Extraction
         /// <summary>Weight of the area term inside the barrier.</summary>
         public static float untangleTheta = 0.5f;
 
+        /// <summary>
+        /// With the layout: the open border's edges held along one grid direction per run, that of
+        /// the border's chord over this many cells round each edge (0: edge by edge, by alignment).
+        /// </summary>
+        public static float layoutBorderRunCells = 1f;
+
+        /// <summary>
+        /// With the layout, a run of the open border held along one grid direction is at least this
+        /// many cells long: a shorter one, where the field wobbles against the border, is carried on
+        /// along the run before it instead of making two patch corners.
+        /// </summary>
+        public static float layoutBorderMinRunCells = 2f;
+
+        // Per border edge (key min/max), the coordinate held constant along it in its face's chart:
+        // 1 where the run goes along the face's u axis, 0 along v.
+        static Dictionary<long, int> BorderRuns(RemeshTopology topology, Vector3[] fr, Vector3[] fn,
+            float[] spacing, float runCells, float minRunCells, ParametrizationStats st)
+        {
+            var T = topology.triangles;
+            var P = topology.positions;
+            var m = T.Length / 3;
+            var count = new Dictionary<long, int>(3 * m, EdgeKey.Comparer);
+            for (var h = 0; h < 3 * m; h++)
+            {
+                int a = T[h], b = T[3 * (h / 3) + (h % 3 + 1) % 3];
+                var key = ((long)Math.Min(a, b) << 32) | (uint)Math.Max(a, b);
+                count[key] = count.TryGetValue(key, out var c) ? c + 1 : 1;
+            }
+            // Border half-edges in chains: each followed by the one leaving its head, where that head
+            // has one; a vertex where two border loops touch (a bow-tie, common on scans) ends one.
+            var outOf = new Dictionary<int, List<int>>();
+            var borderHalf = new List<int>();
+            for (var h = 0; h < 3 * m; h++)
+            {
+                int a = T[h], b = T[3 * (h / 3) + (h % 3 + 1) % 3];
+                var key = ((long)Math.Min(a, b) << 32) | (uint)Math.Max(a, b);
+                if (count[key] != 1) continue;
+                borderHalf.Add(h);
+                (outOf.TryGetValue(a, out var l) ? l : outOf[a] = new List<int>(1)).Add(h);
+            }
+            var succ = new Dictionary<int, int>();
+            var hasPred = new HashSet<int>();
+            foreach (var h in borderHalf)
+            {
+                var head = T[3 * (h / 3) + (h % 3 + 1) % 3];
+                var s = outOf.TryGetValue(head, out var l) && l.Count == 1 ? l[0] : -1;
+                succ[h] = s;
+                if (s >= 0) hasPred.Add(s);
+            }
+            var result = new Dictionary<long, int>(EdgeKey.Comparer);
+            var visited = new HashSet<int>();
+            var chainsFound = new List<(List<int> edges, bool closed)>();
+            foreach (var h0 in borderHalf)
+            {
+                if (hasPred.Contains(h0) || visited.Contains(h0)) continue;
+                var chain = new List<int>();
+                for (var h = h0; h >= 0 && visited.Add(h); h = succ[h]) chain.Add(h);
+                chainsFound.Add((chain, false));
+            }
+            foreach (var h0 in borderHalf)
+            {
+                if (visited.Contains(h0)) continue;
+                var chain = new List<int>();
+                for (var h = h0; h >= 0 && visited.Add(h); h = succ[h]) chain.Add(h);
+                chainsFound.Add((chain, true));
+            }
+            foreach (var (loop, closed) in chainsFound)
+            {
+                if (loop.Count == 0) continue;
+                st.borderLoops++;
+                var k = loop.Count;
+                // Arc length at each edge's start.
+                var at = new double[k + 1];
+                for (var i = 0; i < k; i++)
+                {
+                    var h = loop[i];
+                    at[i + 1] = at[i] + (P[T[3 * (h / 3) + (h % 3 + 1) % 3]] - P[T[h]]).magnitude;
+                }
+                var total = at[k];
+                Vector3 PointAt(double s)
+                {
+                    if (closed) { s %= total; if (s < 0) s += total; }
+                    else s = Math.Max(0, Math.Min(total, s));
+                    int lo = 0, hi = k - 1;
+                    while (lo < hi) { var mid = (lo + hi + 1) / 2; if (at[mid] <= s) lo = mid; else hi = mid - 1; }
+                    var h = loop[lo];
+                    var len = at[lo + 1] - at[lo];
+                    var w = len > 0 ? (float)((s - at[lo]) / len) : 0f;
+                    return Vector3.Lerp(P[T[h]], P[T[3 * (h / 3) + (h % 3 + 1) % 3]], w);
+                }
+                // Per edge: its face, and the border's direction there smoothed over a cell (the chord
+                // round it), which a zigzag of the scan's border does not turn.
+                var face = new int[k];
+                var along = new Vector3[k];
+                var len = new double[k];
+                var half = new double[k];
+                for (var i = 0; i < k; i++)
+                {
+                    var h = loop[i];
+                    var f = face[i] = h / 3;
+                    int a = T[h], b = T[3 * f + (h % 3 + 1) % 3];
+                    half[i] = 0.5 * runCells * 0.5 * (spacing[a] + spacing[b]);
+                    len[i] = at[i + 1] - at[i];
+                    var mid = 0.5 * (at[i] + at[i + 1]);
+                    var chord = closed && half[i] * 2 >= total ? P[b] - P[a] : PointAt(mid + half[i]) - PointAt(mid - half[i]);
+                    if (chord.sqrMagnitude <= 0) chord = P[b] - P[a];
+                    along[i] = chord.normalized;
+                    var dev = Mathf.Max(Mathf.Abs(Vector3.Dot(along[i], fr[f])), Mathf.Abs(Vector3.Dot(along[i], Vector3.Cross(fn[f], fr[f]))));
+                    st.borderDeviationSum += Mathf.Acos(Mathf.Clamp01(dev)) * Mathf.Rad2Deg;
+                    if (dev < 0.9f) st.borderMisaligned++;
+                }
+                // Each edge held along the field direction nearest the border's chord; a run is a
+                // stretch held along one direction in space (charts may differ by a quarter turn
+                // between faces, so the directions are compared, not the components). A run shorter
+                // than layoutBorderMinRunCells is a wobble of the field against the border, not a
+                // corner: it is carried on from the run before it, the shortest first.
+                Vector3 HeldBy(int i, int comp) => comp == 1 ? fr[face[i]] : Vector3.Cross(fn[face[i]], fr[face[i]]);
+                var comps = new int[k];
+                for (var i = 0; i < k; i++)
+                {
+                    var f = face[i];
+                    comps[i] = Mathf.Abs(Vector3.Dot(along[i], fr[f])) >= Mathf.Abs(Vector3.Dot(along[i], Vector3.Cross(fn[f], fr[f]))) ? 1 : 0;
+                }
+                // A direction of edge i's face carried into edge j's: turned with the normal, so a
+                // border crossing a sharp crease compares its directions on the surface, not in space.
+                Vector3 Carry(int i, int j, Vector3 v) => GlobalCrossField.Transport(v, fn[face[i]], fn[face[j]]);
+                bool Breaks(int i) => (closed || i < k - 1)
+                    && Mathf.Abs(Vector3.Dot(Carry(i, (i + 1) % k, HeldBy(i, comps[i])), HeldBy((i + 1) % k, comps[(i + 1) % k]))) < 0.7071f;
+                List<List<int>> Runs()
+                {
+                    var list = new List<List<int>>();
+                    var first = 0;
+                    if (closed)
+                    {
+                        first = -1;
+                        for (var i = 0; i < k; i++) if (Breaks(i)) { first = (i + 1) % k; break; }
+                        if (first < 0) { var all = new List<int>(k); for (var i = 0; i < k; i++) all.Add(i); list.Add(all); return list; }
+                    }
+                    var cur = new List<int>();
+                    for (var step = 0; step < k; step++)
+                    {
+                        var i = (first + step) % k;
+                        cur.Add(i);
+                        if (Breaks(i)) { list.Add(cur); cur = new List<int>(); }
+                    }
+                    if (cur.Count > 0) list.Add(cur);
+                    return list;
+                }
+                var runList = Runs();
+                for (var guard = 0; guard < k && runList.Count > 1; guard++)
+                {
+                    // The shortest run, against the cells it spans.
+                    var shortest = -1;
+                    var shortestCells = double.PositiveInfinity;
+                    for (var r = 0; r < runList.Count; r++)
+                    {
+                        double length = 0, cells = 0;
+                        foreach (var i in runList[r]) { length += len[i]; cells += len[i] / Math.Max(1e-12, 2 * half[i] / Math.Max(1e-6, runCells)); }
+                        if (cells < minRunCells && cells < shortestCells) { shortestCells = cells; shortest = r; }
+                    }
+                    if (shortest < 0) break;
+                    var run = runList[shortest];
+                    // Carried on from the edge before it (for an open chain's first run, back from
+                    // the edge after it).
+                    var before = closed || shortest > 0 ? runList[(shortest - 1 + runList.Count) % runList.Count] : null;
+                    if (before != null)
+                    {
+                        var from = before[before.Count - 1];
+                        var prev = HeldBy(from, comps[from]);
+                        foreach (var i in run)
+                        {
+                            prev = Carry(from, i, prev);
+                            comps[i] = Mathf.Abs(Vector3.Dot(HeldBy(i, 1), prev)) >= Mathf.Abs(Vector3.Dot(HeldBy(i, 0), prev)) ? 1 : 0;
+                            prev = HeldBy(i, comps[i]);
+                            from = i;
+                        }
+                    }
+                    else
+                    {
+                        var after = runList[shortest + 1];
+                        var from = after[0];
+                        var prev = HeldBy(from, comps[from]);
+                        for (var j = run.Count - 1; j >= 0; j--)
+                        {
+                            var i = run[j];
+                            prev = Carry(from, i, prev);
+                            comps[i] = Mathf.Abs(Vector3.Dot(HeldBy(i, 1), prev)) >= Mathf.Abs(Vector3.Dot(HeldBy(i, 0), prev)) ? 1 : 0;
+                            prev = HeldBy(i, comps[i]);
+                            from = i;
+                        }
+                    }
+                    var count0 = runList.Count;
+                    runList = Runs();
+                    if (runList.Count >= count0) { st.borderMergeStuck++; break; }
+                }
+                var anyCorner = runList.Count > 1;
+                if (st.borderRunLog.Length < 600)
+                    foreach (var r in runList)
+                    {
+                        double cells = 0;
+                        foreach (var i in r) cells += len[i] / Math.Max(1e-12, 2 * half[i] / Math.Max(1e-6, runCells));
+                        st.borderRunLog += cells.ToString("F1") + "/" + r.Count + " ";
+                    }
+                for (var i = 0; i < k; i++)
+                {
+                    var h = loop[i];
+                    int a = T[h], b = T[3 * (h / 3) + (h % 3 + 1) % 3];
+                    result[((long)Math.Min(a, b) << 32) | (uint)Math.Max(a, b)] = comps[i];
+                    st.borderEdges++;
+                }
+                var runs = runList.Count;
+                st.borderRuns += Math.Max(1, runs);
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// When the factorisation meets a vanishing pivot, factor again with every diagonal entry
+        /// raised by this fraction of itself before falling back to conjugate gradients.
+        /// </summary>
+        public static double factorRetryShift = 1e-6;
+
+        /// <summary>
+        /// Analyse the factorisation again when the matrix was assembled with another pattern.
+        /// Off: the first analysis is reused, as before (wrong values once the pattern changed).
+        /// </summary>
+        public static bool refactorOnNewPattern = true;
+
         /// <summary>Re-solves holding spiral loops' twist to whole cells (see the layout pass).</summary>
         public static int layoutLoopPasses = 2;
 
@@ -361,6 +594,7 @@ namespace NativeRemesher.Extraction
             axes = (Vector3[])crossField.Clone();
             spacing = new float[n];
             for (var i = 0; i < n; i++) spacing[i] = spacingAt(i);
+            var vertexSpacing = spacing;
             cornerNodes = new Vector2Int[3 * m];
             cornerUv = new Vector2[3 * m];
             cornerUvExact = new double[6 * m];
@@ -1244,6 +1478,7 @@ namespace NativeRemesher.Extraction
             // ties, 2v + comp: a crease line in u and one in v meeting at a corner stay apart.
             var usedFeatureEdges = new List<(int a, int b)>();
             var constrainedFeatureEdges = new List<(int a, int b)>();
+            Dictionary<long, int> borderRunComp = null;
             var loopRows = new List<(List<(Term t, double coef)> row, int comp, double target)>();
             HashSet<long> layoutDropped = null;
             var pinU = new bool[n];
@@ -1309,6 +1544,14 @@ namespace NativeRemesher.Extraction
                         var key = ((long)Math.Min(a, b) << 32) | (uint)Math.Max(a, b);
                         if (!faceOfEdge.ContainsKey(key)) faceOfEdge[key] = 3 * f + k;
                     }
+                // For the layout, the open border is held along one grid direction per straight run,
+                // not per edge: a scan's border zigzags edge to edge, and held edge by edge it is a
+                // staircase in (u, v) whose every step sends a separatrix across the mesh. The
+                // direction of each edge is that of the border's chord over a cell round it.
+                if (IntegerGridMap.parametrizationLayout && layoutBorderRunCells > 0 && borderRunComp == null)
+                    borderRunComp = BorderRuns(topology, fr, fn, vertexSpacing, layoutBorderRunCells, layoutBorderMinRunCells, stA);
+                bool OnBorderRun(int a, int b) => borderRunComp != null && borderRunComp.ContainsKey(((long)Math.Min(a, b) << 32) | (uint)Math.Max(a, b));
+
                 // For the layout: two crease edges at a vertex less than 45 degrees apart -- a sharp
                 // V in a zigzag crease -- are held along one grid direction, squash the triangle
                 // between them flat and leave the vertex twice the same way. The less aligned of the
@@ -1320,7 +1563,7 @@ namespace NativeRemesher.Extraction
                     var byVertex = new Dictionary<int, List<(int w, int comp, float align, long key)>>();
                     foreach (var (a, b) in featureEdges)
                     {
-                        if (a == b) continue;
+                        if (a == b || OnBorderRun(a, b)) continue;
                         var key = ((long)Math.Min(a, b) << 32) | (uint)Math.Max(a, b);
                         if (!faceOfEdge.TryGetValue(key, out var half)) continue;
                         var f = half / 3;
@@ -1351,10 +1594,20 @@ namespace NativeRemesher.Extraction
                     }
                     layoutDropped = dropped;
                 }
-                foreach (var (a, b) in featureEdges)
+                // The border's edges, held by run, whether or not the caller listed them.
+                var rowEdges = featureEdges;
+                if (borderRunComp != null)
+                {
+                    rowEdges = new List<(int a, int b)>(featureEdges.Count + borderRunComp.Count);
+                    foreach (var (a, b) in featureEdges)
+                        if (!OnBorderRun(a, b)) rowEdges.Add((a, b));
+                    foreach (var key in borderRunComp.Keys) rowEdges.Add(((int)(key >> 32), (int)(key & 0xffffffff)));
+                }
+                foreach (var (a, b) in rowEdges)
                 {
                     if (a == b) continue;
-                    if (layoutDropped != null && layoutDropped.Contains(((long)Math.Min(a, b) << 32) | (uint)Math.Max(a, b))) continue;
+                    var onRun = OnBorderRun(a, b);
+                    if (!onRun && layoutDropped != null && layoutDropped.Contains(((long)Math.Min(a, b) << 32) | (uint)Math.Max(a, b))) continue;
                     if (featureSkipNearSingularRings > 0 && (nearPole[a] || nearPole[b]))
                     {
                         if (firstAssembly) stA.featureEdgesNearPoles++;
@@ -1368,9 +1621,9 @@ namespace NativeRemesher.Extraction
                     var d = (P[b] - P[a]).normalized;
                     var alongU = Mathf.Abs(Vector3.Dot(d, fr[f]));
                     var alongV = Mathf.Abs(Vector3.Dot(d, Vector3.Cross(fn[f], fr[f])));
-                    if (Mathf.Max(alongU, alongV) < featureMinAlignment) { if (firstAssembly) stA.featureEdgesSkipped++; continue; }
+                    if (!onRun && Mathf.Max(alongU, alongV) < featureMinAlignment) { if (firstAssembly) stA.featureEdgesSkipped++; continue; }
                     // Running along u, v is constant; along v, u is.
-                    var comp = alongU >= alongV ? 1 : 0;
+                    var comp = onRun ? borderRunComp[key] : alongU >= alongV ? 1 : 0;
                     rowVar.Clear();
                     rowCoef.Clear();
                     for (var i = 0; i < cornerCount[ca]; i++) Emit(pool[cornerStart[ca] + i], comp, 1.0);
@@ -1437,6 +1690,9 @@ namespace NativeRemesher.Extraction
 
             // Direct factorisation, when asked for: one symbolic pass, a numeric pass per solve.
             SparseLdlt ldlt = null;
+            Vector3[] ldltPoints = null;
+            bool[] ldltLast = null;
+            int[] ldltStart = null, ldltCol = null;
             if (direct)
             {
                 var points = new Vector3[vars];
@@ -1471,8 +1727,25 @@ namespace NativeRemesher.Extraction
                     for (var i = 0; i < 2 * translationBlocks; i++) lastVars[i] = true;
                 }
                 ldlt = new SparseLdlt(vars, matrix.start, matrix.col, points, lastVars);
+                ldltPoints = points;
+                ldltLast = lastVars;
+                ldltStart = matrix.start;
+                ldltCol = matrix.col;
                 stats.factorNonZeros = ldlt.factorNonZeros;
                 stats.symbolicMs = symbolic.ElapsedMilliseconds;
+            }
+
+            // The factorisation's pattern is the matrix's at construction. A matrix assembled again
+            // with other rows -- crease rows released, spiral loop rows added -- has another pattern,
+            // and its values read through the old one land in the wrong slots (a NaN pivot, or a
+            // wrong solve that does not fail). Analysed again when the pattern changed.
+            bool SamePattern(Csr a)
+            {
+                if (ReferenceEquals(a.start, ldltStart) && ReferenceEquals(a.col, ldltCol)) return true;
+                if (a.start.Length != ldltStart.Length || a.col.Length != ldltCol.Length) return false;
+                for (var i = 0; i < a.start.Length; i++) if (a.start[i] != ldltStart[i]) return false;
+                for (var i = 0; i < a.col.Length; i++) if (a.col[i] != ldltCol[i]) return false;
+                return true;
             }
 
             var st = stats;
@@ -1483,10 +1756,69 @@ namespace NativeRemesher.Extraction
                     st.cgIterations += matrix.Solve(rhs, x, fixedVar, iterations, tolerance, out st.residual);
                     return;
                 }
+                if (refactorOnNewPattern && !SamePattern(matrix))
+                {
+                    var symbolicAgain = System.Diagnostics.Stopwatch.StartNew();
+                    ldlt = new SparseLdlt(vars, matrix.start, matrix.col, ldltPoints, ldltLast);
+                    ldltStart = matrix.start;
+                    ldltCol = matrix.col;
+                    st.symbolicMs += symbolicAgain.ElapsedMilliseconds;
+                    st.symbolicRedone++;
+                }
                 var numeric = System.Diagnostics.Stopwatch.StartNew();
                 if (!ldlt.Factor(matrix.val, fixedVar))
                 {
                     st.factorFailures++;
+                    if (st.factorFailures <= 4)
+                    {
+                        var bad = 0;
+                        foreach (var value in matrix.val) if (double.IsNaN(value) || double.IsInfinity(value)) bad++;
+                        var badRhs = 0;
+                        foreach (var value in rhs) if (double.IsNaN(value) || double.IsInfinity(value)) badRhs++;
+                        var fr0 = ldlt.lastFailedRow;
+                        var diag = 0.0;
+                        var rowNnz = 0;
+                        if (fr0 >= 0)
+                            for (var j = matrix.start[fr0]; j < matrix.start[fr0 + 1]; j++) { rowNnz++; if (matrix.col[j] == fr0) diag = matrix.val[j]; }
+                        st.split += $"[factorFail var {fr0} (block {fr0 / 2}, translation {fr0 / 2 < translationBlocks}) pivot {ldlt.lastFailedPivot:G3} diag {diag:G3} nnz {rowNnz} fixed {(fr0 >= 0 && fixedVar[fr0])} nonFinite {bad}/{badRhs}";
+                        var nz = ldlt.nearZeroRow;
+                        if (nz >= 0)
+                        {
+                            var nzBlock = nz / 2;
+                            var nzVertex = -1;
+                            for (var v = 0; v < n && nzVertex < 0; v++) if (masterOf[v] == nzBlock) nzVertex = v;
+                            var nzFaces = nzVertex >= 0 && cornersOf[nzVertex] != null ? cornersOf[nzVertex].Count : -1;
+                            st.split += $" nearZero var {nz} pivot/diag {ldlt.nearZeroPivot:G3} translation {nzBlock < translationBlocks} vertex {nzVertex} boundary {(nzVertex >= 0 && boundary[nzVertex])} faces {nzFaces}";
+                        }
+                        st.split += "] ";
+                    }
+                    // Retried with the diagonal raised by a millionth of itself: a mode that the rows
+                    // leave free (cancellation noise on a scan's slivers) is then held at its start,
+                    // where the conjugate gradients below took 8000 iterations to find the same.
+                    if (factorRetryShift > 0)
+                    {
+                        var shifted = (double[])matrix.val.Clone();
+                        for (var r = 0; r < vars; r++)
+                            for (var j = matrix.start[r]; j < matrix.start[r + 1]; j++)
+                                if (matrix.col[j] == r) shifted[j] += factorRetryShift * Math.Abs(shifted[j]) + 1e-9;
+                        if (ldlt.Factor(shifted, fixedVar))
+                        {
+                            st.factorRetries++;
+                            var b3 = new double[vars];
+                            for (var r = 0; r < vars; r++)
+                            {
+                                if (fixedVar[r]) { b3[r] = x[r]; continue; }
+                                var sum = rhs[r];
+                                for (var j = matrix.start[r]; j < matrix.start[r + 1]; j++)
+                                    if (fixedVar[matrix.col[j]]) sum -= matrix.val[j] * x[matrix.col[j]];
+                                b3[r] = sum;
+                            }
+                            ldlt.Solve(b3, x);
+                            st.factorMs += numeric.ElapsedMilliseconds;
+                            st.factorizations++;
+                            return;
+                        }
+                    }
                     st.cgIterations += matrix.Solve(rhs, x, fixedVar, iterations, tolerance, out st.residual);
                     return;
                 }

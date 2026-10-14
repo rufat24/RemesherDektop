@@ -938,6 +938,14 @@ namespace NativeRemesher.Extraction
         public static bool parametrizationOnOpenMeshes = false;
 
         /// <summary>
+        /// With <see cref="parametrizationLayout"/>, use the parametrisation on open meshes even when
+        /// <see cref="parametrizationOnOpenMeshes"/> is off: the layout lays the open border as patch
+        /// sides (QuantizedLayout.borderLayout), so the ragged border that made needle fans in the
+        /// lattice extraction is a clean grid line there.
+        /// </summary>
+        public static bool layoutOnOpenMeshes = true;
+
+        /// <summary>
         /// With <see cref="parametrization"/>, trace the quads straight off the parametrisation's
         /// integer grid on the decimated mesh (see ParametrizationTrace) instead of handing its
         /// lattice to this map's collapse.

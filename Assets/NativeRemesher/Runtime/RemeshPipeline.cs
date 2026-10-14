@@ -29,6 +29,11 @@ namespace NativeRemesher
         [Tooltip("Relative face-count error that ends the correction early.")]
         public float faceCountTolerance;
 
+        [Tooltip("Mirror symmetry, as QuadRemesher's Symmetry X / Y / Z: one half is remeshed and " +
+                 "mirrored, welded along the plane. The plane is the local origin when the mesh " +
+                 "straddles it, else the middle of the bounds.")]
+        public SymmetryAxis symmetry;
+
         public static RemeshSettings Default => new RemeshSettings
         {
             targetQuadCount = 2000,
@@ -50,7 +55,8 @@ namespace NativeRemesher
                 positionIterations = Mathf.Clamp(positionIterations, 1, 5000),
                 mergeThreshold = Mathf.Clamp(mergeThreshold, 0.05f, 0.95f),
                 faceCountIterations = Mathf.Clamp(faceCountIterations, 1, 8),
-                faceCountTolerance = Mathf.Clamp(faceCountTolerance, 0.01f, 0.5f)
+                faceCountTolerance = Mathf.Clamp(faceCountTolerance, 0.01f, 0.5f),
+                symmetry = symmetry
             };
         }
     }
@@ -136,6 +142,12 @@ namespace NativeRemesher
         [NonSerialized] public Extraction.ParametrizationCache parametrizationCache;
 
         public int faceCountAttempts;
+
+        /// <summary>Border ears removed from the decimated mesh for the quad layout.</summary>
+        public int trimmedEars, splitBowties;
+
+        /// <summary>The mirror, when <see cref="RemeshSettings.symmetry"/> asked for one.</summary>
+        public Symmetry.Stats symmetryStats;
 
         /// <summary>Face count reached by each integer grid attempt, "count@spacing", in order.</summary>
         public string faceCountTrace = "";
@@ -416,12 +428,22 @@ namespace NativeRemesher
         public static RemeshResult Solve(Vector3[] positions, int[] triangles,
             RemeshSettings settings, RemeshProfile profile, Action<string, float> onProgress = null,
             Vector2[] sourceUvs = null, bool autoSelectProfile = false)
+            => SolveInternal(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile,
+                SymmetryAxis.None, 0f);
+
+        // lockAxis/lockPlane: a symmetry half's cut. The decimated border vertices beside the plane
+        // are put back on it, so the cut's grid line lies in the plane and the mirror meets it.
+        static RemeshResult SolveInternal(Vector3[] positions, int[] triangles,
+            RemeshSettings settings, RemeshProfile profile, Action<string, float> onProgress,
+            Vector2[] sourceUvs, bool autoSelectProfile, SymmetryAxis lockAxis, float lockPlane)
         {
             if (positions == null)
                 throw new ArgumentNullException(nameof(positions));
 
             profile = profile.Validated();
             settings = profile.ApplyTo(settings).Validated();
+            if (settings.symmetry != SymmetryAxis.None)
+                return SolveSymmetric(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile);
 
             var result = new RemeshResult { profile = profile };
             var watch = new System.Diagnostics.Stopwatch();
@@ -462,6 +484,8 @@ namespace NativeRemesher
                     result.decimateStats = decimateStats;
                 }
             }
+            if (lockAxis != SymmetryAxis.None)
+                solvePositions = Symmetry.LockBorderToPlane(solvePositions, solveTriangles, lockAxis, lockPlane);
 
             // --- auto-profile probe, taken before refinement ---
             //
@@ -513,6 +537,49 @@ namespace NativeRemesher
             RunCore(solvePositions, solveTriangles, settings, result, watch, onProgress,
                 autoSelectProfile);
 
+            TransferUvs(result, positions, triangles, sourceUvs, watch, onProgress);
+            return result;
+        }
+
+        /// <summary>
+        /// One half (the positive side of the plane) solved with half the quads, mirrored and
+        /// welded. See <see cref="Symmetry"/>.
+        /// </summary>
+        static RemeshResult SolveSymmetric(Vector3[] positions, int[] triangles,
+            RemeshSettings settings, RemeshProfile profile, Action<string, float> onProgress,
+            Vector2[] sourceUvs, bool autoSelectProfile)
+        {
+            var axis = settings.symmetry;
+            var halfSettings = settings;
+            halfSettings.symmetry = SymmetryAxis.None;
+            var plane = Symmetry.PlaneOf(positions, axis);
+            Symmetry.Clip(positions, triangles, axis, plane, out var halfPositions, out var halfTriangles);
+            if (halfTriangles.Length == 0)
+                return Solve(positions, triangles, halfSettings, profile, onProgress, sourceUvs, autoSelectProfile);
+            halfSettings.targetQuadCount = Mathf.Max(4, (settings.targetQuadCount + 1) / 2);
+            var result = SolveInternal(halfPositions, halfTriangles, halfSettings, profile, onProgress, null,
+                autoSelectProfile, axis, plane);
+            if (result.extraction == null || result.extraction.positions == null) return result;
+
+            // Half the median output edge: the cut's vertices are that close to the plane or closer.
+            var lengths = new List<float>();
+            var ex = result.extraction;
+            foreach (var f in ex.faces)
+                for (var i = 0; i < f.Length; i++)
+                    lengths.Add((ex.positions[f[(i + 1) % f.Length]] - ex.positions[f[i]]).magnitude);
+            lengths.Sort();
+            var median = lengths.Count > 0 ? lengths[lengths.Count / 2] : 0f;
+            result.symmetryStats = new Symmetry.Stats();
+            result.extraction = Symmetry.Mirror(ex, axis, plane, 0.5f * median, result.symmetryStats);
+            result.originalPositions = positions;
+            result.originalTriangles = triangles;
+            TransferUvs(result, positions, triangles, sourceUvs, new System.Diagnostics.Stopwatch(), onProgress);
+            return result;
+        }
+
+        static void TransferUvs(RemeshResult result, Vector3[] positions, int[] triangles, Vector2[] sourceUvs,
+            System.Diagnostics.Stopwatch watch, Action<string, float> onProgress)
+        {
             // --- attribute transfer ---
             //
             // Sampled against the ORIGINAL arrays, not `solvePositions`/`solveTriangles`. Those are
@@ -532,8 +599,6 @@ namespace NativeRemesher
                     out result.faceUvStats);
                 result.attributeMs = watch.ElapsedMilliseconds;
             }
-
-            return result;
         }
 
         /// <summary>
@@ -582,10 +647,126 @@ namespace NativeRemesher
         /// and needs only that they be no bigger than a cell, which the decimation budget already
         /// guarantees -- and on the refined body the solve cost 6.5 s per sparse factorisation.
         /// </remarks>
+        /// <summary>
+        /// With the quad layout on an open mesh, the decimated mesh's border is cleared of ears --
+        /// triangles with two border edges -- whose tip is sharper than this many degrees, or
+        /// flatter than 180 minus it. The layout holds the border straight along runs (see
+        /// SeamlessParametrization.layoutBorderRunCells), which would press an ear flat; a scan's
+        /// jagged border is mostly ears. 0 keeps them.
+        /// </summary>
+        public static float layoutTrimEarAngle = 90f;
+
+        /// <summary>
+        /// With the quad layout, a vertex where two parts of the mesh touch at a point (a bow-tie,
+        /// where two border loops of a scan meet) is split into one vertex per part: the layout's
+        /// fans and the border loops need each vertex to have one.
+        /// </summary>
+        public static bool layoutSplitBowties = true;
+
+        // One vertex per edge-connected fan round each vertex; the triangles are rewritten in place
+        // and the new positions appended.
+        static Vector3[] SplitBowties(Vector3[] positions, int[] triangles, out int split)
+        {
+            split = 0;
+            var n = positions.Length;
+            var corners = new List<int>[n];
+            for (var c = 0; c < triangles.Length; c++) (corners[triangles[c]] ??= new List<int>(6)).Add(c);
+            var extra = new List<Vector3>();
+            for (var v = 0; v < n; v++)
+            {
+                var list = corners[v];
+                if (list == null || list.Count < 2) continue;
+                // Corners joined when their triangles share an edge at v.
+                var parent = new int[list.Count];
+                for (var i = 0; i < parent.Length; i++) parent[i] = i;
+                int Find(int i) { while (parent[i] != i) i = parent[i] = parent[parent[i]]; return i; }
+                var byOther = new Dictionary<int, int>();
+                for (var i = 0; i < list.Count; i++)
+                {
+                    var c = list[i];
+                    var t = c - c % 3;
+                    foreach (var w in new[] { triangles[t + (c % 3 + 1) % 3], triangles[t + (c % 3 + 2) % 3] })
+                    {
+                        if (byOther.TryGetValue(w, out var j)) parent[Find(i)] = Find(j);
+                        else byOther[w] = i;
+                    }
+                }
+                var newIndex = new Dictionary<int, int>();
+                for (var i = 0; i < list.Count; i++)
+                {
+                    var root = Find(i);
+                    if (root == Find(0)) continue;
+                    if (!newIndex.TryGetValue(root, out var id))
+                    {
+                        id = n + extra.Count;
+                        extra.Add(positions[v]);
+                        newIndex[root] = id;
+                        split++;
+                    }
+                    triangles[list[i]] = id;
+                }
+            }
+            if (extra.Count == 0) return positions;
+            var all = new Vector3[n + extra.Count];
+            Array.Copy(positions, all, n);
+            for (var i = 0; i < extra.Count; i++) all[n + i] = extra[i];
+            return all;
+        }
+
+        // Removes border ears, again where removing one leaves another, a few rounds.
+        static int[] TrimBorderEars(Vector3[] positions, int[] triangles, out int trimmed)
+        {
+            trimmed = 0;
+            var tris = new List<int>(triangles);
+            for (var round = 0; round < 4; round++)
+            {
+                var count = new Dictionary<long, int>(tris.Count, Extraction.EdgeKey.Comparer);
+                long Key(int a, int b) => ((long)Mathf.Min(a, b) << 32) | (uint)Mathf.Max(a, b);
+                for (var t = 0; t < tris.Count; t += 3)
+                    for (var k = 0; k < 3; k++)
+                    {
+                        var key = Key(tris[t + k], tris[t + (k + 1) % 3]);
+                        count[key] = count.TryGetValue(key, out var c) ? c + 1 : 1;
+                    }
+                var faces = new Dictionary<int, int>();
+                for (var t = 0; t < tris.Count; t++) faces[tris[t]] = faces.TryGetValue(tris[t], out var c) ? c + 1 : 1;
+                var keep = new List<int>(tris.Count);
+                var removed = 0;
+                for (var t = 0; t < tris.Count; t += 3)
+                {
+                    var ear = false;
+                    for (var k = 0; k < 3 && !ear; k++)
+                    {
+                        int v = tris[t + k], a = tris[t + (k + 1) % 3], b = tris[t + (k + 2) % 3];
+                        if (faces[v] != 1 || count[Key(v, a)] != 1 || count[Key(v, b)] != 1) continue;
+                        // Not the last triangle on its own (a lone ear is a whole part).
+                        if (count[Key(a, b)] != 2) continue;
+                        var angle = Vector3.Angle(positions[a] - positions[v], positions[b] - positions[v]);
+                        ear = angle < layoutTrimEarAngle || angle > 180f - layoutTrimEarAngle;
+                    }
+                    if (ear) { removed++; continue; }
+                    keep.Add(tris[t]); keep.Add(tris[t + 1]); keep.Add(tris[t + 2]);
+                }
+                trimmed += removed;
+                tris = keep;
+                if (removed == 0) break;
+            }
+            return tris.ToArray();
+        }
+
         static void ParametrizeDecimated(RemeshResult result, PositionField solved,
             ExtractionOptions options, out RemeshTopology topology, out OrientationField orientation,
             out PositionField position, out ExtractionOptions coarseOptions)
         {
+            if (result.decimatedTopology == null && Extraction.IntegerGridMap.parametrizationLayout)
+            {
+                if (layoutTrimEarAngle > 0f)
+                    result.decimatedTriangles = TrimBorderEars(result.decimatedPositions, result.decimatedTriangles,
+                        out result.trimmedEars);
+                if (layoutSplitBowties)
+                    result.decimatedPositions = SplitBowties(result.decimatedPositions, result.decimatedTriangles,
+                        out result.splitBowties);
+            }
             topology = result.decimatedTopology ??= RemeshTopology.Build(result.decimatedPositions,
                 result.decimatedTriangles);
             var fine = result.topology;
@@ -1455,7 +1636,8 @@ namespace NativeRemesher
 
                     watch.Restart();
                     var parametrize = Extraction.IntegerGridMap.parametrization
-                        && (Extraction.IntegerGridMap.parametrizationOnOpenMeshes || result.topology.boundaryEdgeCount == 0);
+                        && (Extraction.IntegerGridMap.parametrizationOnOpenMeshes || result.topology.boundaryEdgeCount == 0
+                            || (Extraction.IntegerGridMap.parametrizationLayout && Extraction.IntegerGridMap.layoutOnOpenMeshes));
                     // The quad layout reads nothing of the position field but its spacing: its
                     // sweeps (3 s a pass on the head at 5k) are skipped.
                     var latticeUnused = parametrize && Extraction.IntegerGridMap.parametrizationLayout

@@ -64,6 +64,7 @@ namespace NativeRemesher
         [SerializeField] bool m_AdaptQuadCount = true;
         [SerializeField] float m_AdaptiveSize = 50f;
         [SerializeField] bool m_DetectHardEdges = true;
+        [SerializeField] SymmetryAxis m_Symmetry = SymmetryAxis.None;
         [SerializeField] bool m_GlobalParametrization = true;
         // Renamed from m_QuadLayout so an open window picks up the new default (on) instead of its
         // serialised off: the layout measured better than the per-singularity rounding on the head
@@ -147,6 +148,12 @@ namespace NativeRemesher
                     "QuadRemesher's hard-edge detection does. Short creases from scan noise " +
                     "are ignored."),
                 m_DetectHardEdges);
+            m_Symmetry = (SymmetryAxis)EditorGUILayout.EnumPopup(
+                new GUIContent("Symmetry",
+                    "As QuadRemesher's Symmetry X / Y / Z: one half is remeshed and mirrored, welded " +
+                    "along the plane, so both sides get the same edge loops. The plane is the " +
+                    "object's local origin when the mesh straddles it, else the middle of its bounds."),
+                m_Symmetry);
             using (new EditorGUI.DisabledScope(!m_GlobalParametrization || m_ExtractorChoice != RemeshExtractor.IntegerGrid))
                 m_QuadLayoutOn = EditorGUILayout.Toggle(
                     new GUIContent("Quad Layout",
@@ -154,8 +161,8 @@ namespace NativeRemesher
                         "give every patch side a whole number of quads together, and fill each patch " +
                         "with a regular grid - instead of rounding each singularity on its own. Close " +
                         "singularities come out a whole number of cells apart instead of folding, " +
-                        "creases are patch borders, limbs get closed rings. Closed meshes only; an " +
-                        "open one (a scan) uses the previous extractor."),
+                        "creases are patch borders, limbs get closed rings. On an open mesh (a scan) " +
+                        "the border is laid as patch sides too."),
                     m_QuadLayoutOn);
 
             EditorGUILayout.Space();
@@ -614,6 +621,7 @@ namespace NativeRemesher
 
             var settings = RemeshSettings.Default;
             settings.targetQuadCount = m_TargetQuadCount;
+            settings.symmetry = m_Symmetry;
 
             // The profile owns the sweep counts, so the window's single iteration field is not
             // applied here: it drives the step-by-step orientation button above, where seeing the

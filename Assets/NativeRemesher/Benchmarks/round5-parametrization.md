@@ -234,3 +234,48 @@ vertex-colour density map.
 Both test models auto-select the Photogrammetry profile: 33-36 % of vertices pass the dihedral
 probe. With the layout, the Character profile (300 rather than 60 orientation sweeps) made no
 consistent difference. Open meshes (real scans) still take the previous extractor.
+
+## Round 10 (2026-10-14): open borders, symmetry, speed fixes
+
+Harness h9q, window path (Photogrammetry auto, Quad Layout on), single runs.
+
+**Open meshes in the layout** (`QuantizedLayout.borderLayout`, `IntegerGridMap.layoutOnOpenMeshes`):
+border vertices get open fans; border edges are laid as patch sides like creases; separatrices end
+on them; the outside face is skipped. In the parametrisation the border is held along one grid
+direction per run (`layoutBorderRunCells` 1 = chord over a cell; runs shorter than
+`layoutBorderMinRunCells` 2 merged, directions carried across faces by transport). On the decimated
+mesh, border ears are trimmed (`RemeshPipeline.layoutTrimEarAngle` 90 = all) and bow-tie vertices
+split (`layoutSplitBowties`). Patch inner points whose walk from corner 0 leaves the mesh are walked
+from the other corners (`walkFromAllCorners`).
+
+| ccnb scan 5000 | Hausdorff | irregular | p05 | open | time |
+|---|---|---|---|---|---|
+| previous default (open mesh -> lattice) | 0.0191 | 7.28 % | 46.9 | 495 | 49 s |
+| layout, round 9 code forced on open | 0.0799 | 5.15 % | 49.1 | 551 | 193 s |
+| layout + border (final) | **0.0134** | **5.43 %** | **47.8** | **463** | 68 s |
+
+**Bugs found on the way, all paths:**
+- SparseLdlt symbolic pattern was reused after `Assemble()` changed the pattern (released crease
+  rows, spiral loop rows): values read through stale slots -> NaN pivots (body 3.5k: 2 failures,
+  2 x 8000 CG iterations) or silently wrong solves. Now re-analysed (`refactorOnNewPattern`);
+  `factorRetryShift` retries a vanishing pivot.
+- Separatrices circling a fold to the 20000-step limit: quadratic hit tests, 60 s a layout on the
+  scan. `maxEntries` 3 (same triangle, same direction): scan tracing 10 s -> 0.1 s an attempt.
+- A separatrix meeting a crease/border head on truncated the laid line (leaks): laid lines are
+  never cut (`alongLaid`).
+- `Dictionary<long, double>` keyed i<<32|j without `EdgeKey.Comparer`: every diagonal entry hashed
+  to 0 -> quantisation assembly 3.3 s -> 11 ms. Quantisation also solves the augmented system
+  (`quantizeAugmented`), same minimum, sparser.
+
+Head/body matrix with all of the above: unchanged except head 3.5k (Hausdorff 0.0131 -> 0.0150 at
+the same thin detail, worst point 0.024 -> 0.026; open walks 2 -> 0) and body 3.5k irregular
+1.76 -> 1.56 %. quantizeBatch 0.25 tried: mixed on closed meshes, kept 0.1.
+
+**Symmetry X/Y/Z** (`RemeshSettings.symmetry`, window popup): clip at the plane (local origin when
+the mesh straddles it), solve the half at half the count with the cut locked onto the plane after
+decimation, mirror, weld the seam. head 3.5k: 3.72 % / p05 51.7 / 12.9 s (full 3.61 % / 51.0 /
+22.8 s); Hausdorff 0.0235 vs 0.0150 is the model's own asymmetry (input mirrored onto itself: up to
+0.040; the remeshed half matches as closely as the full run, mean 0.00087). body 3.5k: 1.64 % /
+0.0093 / p05 61.8 / 9.0 s (full 1.56 % / 0.0091 / 62.8 / 19.6 s), open 0.
+Renders: shots_final/r10_scan_before_after.png, r10_symmetry_head.png, r10_symmetry_body.png.
+Tests 188: 186 pass, 2 skipped (Headless/tests10.xml).
