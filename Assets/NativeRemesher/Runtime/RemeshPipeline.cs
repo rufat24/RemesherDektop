@@ -1092,6 +1092,21 @@ namespace NativeRemesher
                 ? FeatureGraph.DetectAtScale(topology, Extraction.IntegerGridMap.coherentCreaseAngle, creaseScaleCells * cell)
                 : FeatureGraph.Detect(topology, Extraction.IntegerGridMap.coherentCreaseAngle);
 
+        /// <summary>
+        /// On a scan, a crease shorter than the minimum is still kept from this many cells when it
+        /// touches a kept one (FeatureGraph.KeepCoherentCurves): a box built against a wall. 0: off.
+        /// </summary>
+        /// <remarks>
+        /// OFF: measured and left off. On ccnb it turns the 5 x 9 m tangle of steps at a wall's end
+        /// from a crumpled spike into a recognisable box, and lowers mean Hausdorff over ccnb, head
+        /// and body x 3 counts from .0137 to .0116 -- but it also keeps the short junk mounted on
+        /// every wall and roof edge, which then come out jagged, and mean irregular rises 3.15 ->
+        /// 3.37 %, p05 falls (ccnb 5000 55.4 -> 52.1). 2.5 cells: the same, a little less so.
+        /// </remarks>
+        public static float scanAttachedMinCells = 0f;
+
+        static float AttachedMinCells(RemeshResult result) => IsScan(result) ? scanAttachedMinCells : 0f;
+
         static bool IsScan(RemeshResult result) => result.profile.kind == RemeshProfileKind.Photogrammetry;
 
         static float CreaseMinCells(RemeshResult result, float general) =>
@@ -1140,7 +1155,7 @@ namespace NativeRemesher
                 DebugStage("detected", detected, topology);
                 var creases = detected
                     .KeepCoherentCurves(topology, CreaseMinCells(result, Extraction.IntegerGridMap.parametrizationCreaseMinCells) * cell,
-                        CreaseStraightness(result), out _, out _);
+                        CreaseStraightness(result), AttachedMinCells(result) * cell, out _, out _);
                 // Two grid lines closer than a cell squash the cells between them flat.
                 // The layout lays every crease as a patch border, so it always wants them apart:
                 // the helmet rim's cable and lip a fraction of a cell apart came out as spikes.
@@ -1162,6 +1177,7 @@ namespace NativeRemesher
             projectOntoOriginal && result.originalPositions != null
                 ? new SpatialGrid(result.originalPositions, result.originalTriangles)
                 : new SpatialGrid(positions, triangles);
+
 
         static PositionField SolvePositions(RemeshResult result, float scale, ScaleField scaleField,
             int iterations, Action<float> onProgress, HierarchicalStats stats)
@@ -1411,7 +1427,7 @@ namespace NativeRemesher
                 coherentCreases = DetectCreases(result, result.topology, creaseCell)
                     .KeepCoherentCurves(result.topology,
                         CreaseMinCells(result, Extraction.IntegerGridMap.coherentCreaseMinCells) * creaseCell,
-                        CreaseStraightness(result),
+                        CreaseStraightness(result), AttachedMinCells(result) * creaseCell,
                         out result.coherentCreasesKept, out result.coherentCreasesDropped);
                 // Cutting along them as well -- sharp offsets, crease resampling, vertex placement
                 // -- glues long strips of the lattice into single cells wherever a crease is doubled

@@ -250,6 +250,21 @@ namespace NativeRemesher
         /// </remarks>
         public FeatureGraph KeepCoherentCurves(RemeshTopology topology, float minExtent,
             float minStraightness, out int keptCurves, out int droppedCurves)
+            => KeepCoherentCurves(topology, minExtent, minStraightness, 0f, out keptCurves, out droppedCurves);
+
+        /// <summary>
+        /// As above, and then also the strokes at least <paramref name="attachedMinExtent"/> long
+        /// (and as straight) that touch a kept one, a few rounds, so a structure grows off it.
+        /// </summary>
+        /// <remarks>
+        /// A long minimum is what keeps a scan's clutter -- cars, units, the junkyard -- from
+        /// laying lines, and it also drops a box built against a wall: on ccnb a 3 x 5 m enclosure
+        /// at a wall's end lost its edges, the corners its geometry needs were left to float, and
+        /// 13 irregular vertices came out round it. Its edges touch the wall's foot, which is kept;
+        /// a car's touch nothing. 0: off.
+        /// </remarks>
+        public FeatureGraph KeepCoherentCurves(RemeshTopology topology, float minExtent,
+            float minStraightness, float attachedMinExtent, out int keptCurves, out int droppedCurves)
         {
             if (topology == null) throw new ArgumentNullException(nameof(topology));
             keptCurves = droppedCurves = 0;
@@ -308,20 +323,64 @@ namespace NativeRemesher
                     if (joined[2 * c + 1] < 0) ends.Add(polylineVertices[polylineStart[c + 1] - 1]);
                 }
             }
+            // Per stroke: whether it is kept, and how long and straight it is.
+            var strokeKept = new Dictionary<int, bool>();
+            var strokeSpan = new Dictionary<int, float>();
+            foreach (var kv in strokeWalked)
+            {
+                var ends = strokeEnds[kv.Key];
+                // A closed loop has no span; its size is what it encloses, so take half its length.
+                var span = ends.Count == 2
+                    ? (positions[ends[1]] - positions[ends[0]]).magnitude
+                    : 0.5f * kv.Value;
+                strokeSpan[kv.Key] = span;
+                strokeKept[kv.Key] = span >= minExtent && kv.Value > 0f && span / kv.Value >= minStraightness;
+            }
+            if (attachedMinExtent > 0f && attachedMinExtent < minExtent)
+            {
+                // Strokes touching a kept one, grown out a few rounds.
+                var keptVertex = new HashSet<int>();
+                var strokesOf = new Dictionary<int, List<int>>();
+                for (var c = 0; c < polylineCount; c++)
+                {
+                    if (!IsCrease(c)) continue;
+                    var st = Find(c);
+                    if (!strokesOf.TryGetValue(st, out var list)) strokesOf[st] = list = new List<int>(2);
+                    list.Add(c);
+                    if (strokeKept[st])
+                        for (var i = polylineStart[c]; i < polylineStart[c + 1]; i++) keptVertex.Add(polylineVertices[i]);
+                }
+                for (var round = 0; round < attachRounds; round++)
+                {
+                    var added = new List<int>();
+                    foreach (var kv in strokesOf)
+                    {
+                        var st = kv.Key;
+                        if (strokeKept[st]) continue;
+                        var walked = strokeWalked[st];
+                        var span = strokeSpan[st];
+                        if (span < attachedMinExtent || walked <= 0f || span / walked < minStraightness) continue;
+                        var touches = false;
+                        foreach (var c in kv.Value)
+                            for (var i = polylineStart[c]; i < polylineStart[c + 1] && !touches; i++)
+                                touches = keptVertex.Contains(polylineVertices[i]);
+                        if (touches) added.Add(st);
+                    }
+                    if (added.Count == 0) break;
+                    foreach (var st in added)
+                    {
+                        strokeKept[st] = true;
+                        foreach (var c in strokesOf[st])
+                            for (var i = polylineStart[c]; i < polylineStart[c + 1]; i++) keptVertex.Add(polylineVertices[i]);
+                    }
+                }
+            }
             for (var c = 0; c < polylineCount; c++)
             {
                 if (!IsCrease(c)) continue;
                 var from = polylineStart[c];
                 var to = polylineStart[c + 1];
-                var s = Find(c);
-                var walked = strokeWalked[s];
-                var ends = strokeEnds[s];
-                // A closed loop has no span; its size is what it encloses, so take half its length.
-                var span = ends.Count == 2
-                    ? (positions[ends[1]] - positions[ends[0]]).magnitude
-                    : 0.5f * walked;
-
-                if (span < minExtent || walked <= 0f || span / walked < minStraightness)
+                if (!strokeKept[Find(c)])
                 {
                     droppedCurves++;
                     continue;
@@ -359,6 +418,9 @@ namespace NativeRemesher
         /// between junctions is judged alone, as before.
         /// </remarks>
         public static bool joinThroughJunctions = true;
+
+        /// <summary>Rounds of growing kept creases into the strokes attached to them.</summary>
+        public static int attachRounds = 3;
 
         /// <summary>The most two pieces may turn at a junction and still be one stroke, degrees.</summary>
         public static float joinMaxTurnDegrees = 30f;

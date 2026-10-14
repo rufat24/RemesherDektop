@@ -414,3 +414,19 @@ the wall. `r14_top_r13_now.png` from above.
 Mean irregular 3.61 -> 3.15 %. Single runs move by a few tenths of a percent and a few
 thousandths of Hausdorff with any change (head 2000 with every new piece on: Hausdorff .026,
 with any one off .016-.019), so read the table as a whole. Tests 196 (194 / 0 / 2).
+
+## Round 15 — wall ends (2026-10-15), measured, nothing switched on
+
+The messy wall end on ccnb (x 69-74, y 37-44) is a 5 x 9 m tangle of steps and units against
+the wall, 2-3 m tall: 217 m of crease in it after detection at scale, 13 irregular vertices
+round it in the output, which renders it as a crumpled spike
+(`shots_final/r15_wallend_src_now_attached.png`: scan / now / attached rule).
+
+- `RemeshPipeline.scanAttachedMinCells` (FeatureGraph.KeepCoherentCurves' attached strokes):
+  keep strokes from 1.5 cells that touch a kept crease, 3 rounds. The tangle comes out as a box;
+  mean Hausdorff over 9 cases .0137 -> .0116; but every wall and roof edge also keeps its short
+  mounted junk and comes out jagged (`r15_attached_rule_off_on.png`), mean irregular 3.15 ->
+  3.37 %, ccnb 5000 p05 55.4 -> 52.1. 2.5 cells: the same, slightly less. Left OFF.
+- Taubin smoothing of the solver mesh away from kept creases (5 passes): singular 1411 -> 1130
+  but output irregular 4.72 -> 5.04 %, Hausdorff .045, still ~10 irregular at the tangle;
+  15 passes broke refinement. Removed.
