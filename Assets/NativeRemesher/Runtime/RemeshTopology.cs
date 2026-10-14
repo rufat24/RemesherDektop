@@ -35,6 +35,9 @@ namespace NativeRemesher
         /// <summary>Triangle corners, as indices into <see cref="positions"/>.</summary>
         public int[] triangles;
 
+        /// <summary>Per triangle, its index among the source triangles (degenerate ones are dropped).</summary>
+        public int[] sourceTriangle;
+
         /// <summary>
         /// Maps a source mesh vertex index to its welded index. Kept because every guidance array
         /// a caller might supply (density, constraints, an externally computed field) is indexed by
@@ -220,7 +223,14 @@ namespace NativeRemesher
         /// do it against this array, before the weld, or it blends across every seam in the mesh.
         /// </remarks>
         public static void ReadMesh(Mesh mesh, out Vector3[] positions, out int[] triangles,
-            out Vector2[] uvs)
+            out Vector2[] uvs) => ReadMesh(mesh, out positions, out triangles, out uvs, out _);
+
+        /// <summary>
+        /// As above, and per triangle the submesh it came from -- the material slot, which
+        /// <see cref="RemeshSettings.useMaterials"/> keeps.
+        /// </summary>
+        public static void ReadMesh(Mesh mesh, out Vector3[] positions, out int[] triangles,
+            out Vector2[] uvs, out int[] triangleSubmesh)
         {
             if (mesh == null)
                 throw new ArgumentNullException(nameof(mesh));
@@ -231,15 +241,19 @@ namespace NativeRemesher
             uvs = sourceUvs != null && sourceUvs.Length == positions.Length ? sourceUvs : null;
 
             var gathered = new List<int>(mesh.triangles.Length);
+            var submeshOf = new List<int>(mesh.triangles.Length / 3);
             for (var sub = 0; sub < mesh.subMeshCount; sub++)
             {
                 if (mesh.GetTopology(sub) != MeshTopology.Triangles)
                     continue;
 
-                gathered.AddRange(mesh.GetTriangles(sub));
+                var subTriangles = mesh.GetTriangles(sub);
+                gathered.AddRange(subTriangles);
+                for (var t = 0; t < subTriangles.Length / 3; t++) submeshOf.Add(sub);
             }
 
             triangles = gathered.ToArray();
+            triangleSubmesh = submeshOf.ToArray();
         }
 
         /// <summary>
@@ -311,6 +325,7 @@ namespace NativeRemesher
 
             // --- triangles, remapped onto welded indices ---
             var tris = new List<int>(sourceTriangles.Length);
+            var sourceOf = new List<int>(sourceTriangles.Length / 3);
             for (var i = 0; i + 2 < sourceTriangles.Length; i += 3)
             {
                 int a = remap[sourceTriangles[i]], b = remap[sourceTriangles[i + 1]],
@@ -324,9 +339,11 @@ namespace NativeRemesher
                 tris.Add(a);
                 tris.Add(b);
                 tris.Add(c);
+                sourceOf.Add(i / 3);
             }
 
             topology.triangles = tris.ToArray();
+            topology.sourceTriangle = sourceOf.ToArray();
 
             var remapMs = watch.ElapsedMilliseconds;
             watch.Restart();

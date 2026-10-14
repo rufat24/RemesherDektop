@@ -42,6 +42,17 @@ namespace NativeRemesher
         /// </summary>
         public float boundaryWeight = 1000f;
 
+        /// <summary>
+        /// Triangle labels (materials) whose borders are kept: a border vertex moves only along its
+        /// border, onto the next border vertex, and where three labels meet it stays. Null: none.
+        /// </summary>
+        public MaterialLabels labels;
+
+        /// <summary>Weight of the planes along label borders, against a face's own plane (both by
+        /// area: length squared). Low: a material border on a dense input zigzags triangle by
+        /// triangle, and a heavy weight keeps every zig at full density.</summary>
+        public float labelBorderWeight = 1f;
+
         public static DecimateOptions ForTriangleCount(int triangles) =>
             new DecimateOptions { targetTriangles = triangles };
     }
@@ -57,6 +68,7 @@ namespace NativeRemesher
         public int rejectedTopology;
         public int rejectedNormalFlip;
         public int rejectedBoundary;
+        public int rejectedLabel, labelSlides, labelBorderStart;
 
         public float maxErrorApplied;
 
@@ -92,6 +104,8 @@ namespace NativeRemesher
             rejectedTopology += o.rejectedTopology;
             rejectedNormalFlip += o.rejectedNormalFlip;
             rejectedBoundary += o.rejectedBoundary;
+            rejectedLabel += o.rejectedLabel;
+            labelSlides += o.labelSlides;
             maxErrorApplied = Mathf.Max(maxErrorApplied, o.maxErrorApplied);
             solvedTargets += o.solvedTargets;
             fallbackTargets += o.fallbackTargets;
@@ -108,7 +122,7 @@ namespace NativeRemesher
                    $"({inputVertices:N0} -> {outputVertices:N0} verts), " +
                    $"collapses={collapsesApplied} rejTopo={rejectedTopology} " +
                    $"rejFlip={rejectedNormalFlip}(solved={rejectedFlipSolved} " +
-                   $"fallback={rejectedFlipFallback}) rejBoundary={rejectedBoundary} " +
+                   $"fallback={rejectedFlipFallback}) rejBoundary={rejectedBoundary} rejLabel={rejectedLabel} labelSlides={labelSlides} labelBorderStart={labelBorderStart} " +
                    $"targets={solvedTargets}solved/{fallbackTargets}fallback " +
                    $"drift={(solvedTargets + driftRejected > 0 ? driftSum / (solvedTargets + driftRejected) : 0):F2}mean/" +
                    $"{driftMax:F2}max edgeLengths rejByDrift={driftRejected} " +
@@ -135,6 +149,13 @@ namespace NativeRemesher
         /// the locks left dense and any imbalance between blocks, in the order it always used.
         /// </remarks>
         public static bool parallelBlocks = true;
+
+        /// <summary>
+        /// Label-border planes weighted by length squared, as a face's plane is by area (true), or
+        /// by length, as the open border's (false: at fine input scale that is a thousand times a
+        /// face, and the border keeps nearly every input vertex).
+        /// </summary>
+        public static bool labelWeightByArea = true;
 
         /// <summary>The parallel stage stops at this multiple of the target triangle count.</summary>
         public static float parallelStageRatio = 4f;
@@ -464,12 +485,21 @@ namespace NativeRemesher
             var positions = (Vector3[])topology.positions.Clone();
             var triangles = (int[])topology.triangles.Clone();
             var triangleCount = triangles.Length / 3;
+            var triLabel = options.labels != null && options.labels.labelCount > 1
+                ? options.labels.ForTopology(topology, sourceTriangles)
+                : null;
+
 
             stats = new DecimateStats
             {
                 inputTriangles = triangleCount,
                 inputVertices = positions.Length
             };
+            if (triLabel != null)
+            {
+                var lb = LabelBorderVertices(topology, triLabel);
+                foreach (var b in lb) if (b) stats.labelBorderStart++;
+            }
 
             var target = Mathf.Max(4, options.targetTriangles);
             if (triangleCount <= target)
@@ -485,12 +515,12 @@ namespace NativeRemesher
             if (allowParallel && triangleCount >= parallelMinTriangles && triangleCount > 2 * stageTarget)
             {
                 var stageQuadrics = BuildQuadrics(topology, positions, triangles, triangleCount,
-                    options.boundaryWeight);
+                    options.boundaryWeight, triLabel, options.labelBorderWeight);
                 msQuadrics = phase.ElapsedMilliseconds; phase.Restart();
 
                 var progressLock = new object();
                 ParallelStage(topology, positions, triangles, stageQuadrics, stageTarget, options,
-                    stats, out var stagePositions, out var stageTriangles,
+                    stats, LabelBorderVertices(topology, triLabel), out var stagePositions, out var stageTriangles,
                     onProgress == null ? null : f => { lock (progressLock) onProgress(0.7f * f); });
                 var msParallel = phase.ElapsedMilliseconds;
 
@@ -516,7 +546,7 @@ namespace NativeRemesher
             msIncident = phase.ElapsedMilliseconds; phase.Restart();
 
             var quadrics = BuildQuadrics(topology, positions, triangles, triangleCount,
-                options.boundaryWeight);
+                options.boundaryWeight, triLabel, options.labelBorderWeight);
             msQuadrics = phase.ElapsedMilliseconds; phase.Restart();
 
             // --- seed the heap with every edge ---
@@ -566,7 +596,7 @@ namespace NativeRemesher
 
             var maxFlipCos = Mathf.Cos(Mathf.Clamp(options.maxNormalFlipDegrees, 1f, 179f) * Mathf.Deg2Rad);
             var live = CollapseLoop(positions, triangles, triangleCount, quadrics, null, heap, triAlive,
-                vertAlive, version, incident, target, maxFlipCos, stats, onProgress);
+                vertAlive, version, incident, target, maxFlipCos, stats, onProgress, triLabel);
 
             msCollapse = phase.ElapsedMilliseconds; phase.Restart();
             // --- compact ---
@@ -610,7 +640,7 @@ namespace NativeRemesher
         static int CollapseLoop(Vector3[] positions, int[] triangles, int triangleCount,
             Quadric[] quadrics, bool[] locked, List<Candidate> heap, bool[] triAlive, bool[] vertAlive,
             int[] version, Incidence incident, int target, float maxFlipCos, DecimateStats stats,
-            Action<float> onProgress)
+            Action<float> onProgress, int[] triLabel = null)
         {
             var live = triangleCount;
 
@@ -654,6 +684,14 @@ namespace NativeRemesher
                 if (!PassesLinkCondition(incident, triangles, triAlive, best.u, best.v))
                 {
                     stats.rejectedTopology++;
+                    continue;
+                }
+
+                var slide = false;
+                if (triLabel != null && !LabelCollapseAllowed(incident, triangles, triAlive, triLabel,
+                        positions, best.u, best.v, ref best.target, out slide))
+                {
+                    stats.rejectedLabel++;
                     continue;
                 }
 
@@ -707,6 +745,7 @@ namespace NativeRemesher
 
                 version[best.u]++;
                 stats.collapsesApplied++;
+                if (slide) stats.labelSlides++;
                 stats.maxErrorApplied = Mathf.Max(stats.maxErrorApplied, (float)best.cost);
 
                 // Re-cost every edge now touching the survivor: one candidate per neighbour, not
@@ -753,7 +792,7 @@ namespace NativeRemesher
         /// </summary>
         static void ParallelStage(RemeshTopology topology, Vector3[] positions, int[] triangles,
             Quadric[] quadrics, int target, DecimateOptions options, DecimateStats stats,
-            out Vector3[] outPositions, out int[] outTriangles, Action<float> onProgress)
+            bool[] labelBorder, out Vector3[] outPositions, out int[] outTriangles, Action<float> onProgress)
         {
             var triangleCount = triangles.Length / 3;
             var vertexCount = positions.Length;
@@ -853,7 +892,8 @@ namespace NativeRemesher
                     var g = globalOf[l];
                     localPositions[l] = positions[g];
                     localQuadrics[l] = quadrics[g];
-                    locked[l] = vertexBlock[g] != b;
+                    // Label borders wait for the serial stage, which moves them only along themselves.
+                    locked[l] = vertexBlock[g] != b || (labelBorder != null && labelBorder[g]);
                     vertAlive[l] = true;
                 }
 
@@ -936,8 +976,85 @@ namespace NativeRemesher
         }
 
         // ------------------------------------------------------------------
+        // Vertices on a label border, for locking in the parallel stage.
+        static bool[] LabelBorderVertices(RemeshTopology topology, int[] triLabel)
+        {
+            if (triLabel == null) return null;
+            var result = new bool[topology.vertexCount];
+            for (var h = 0; h < topology.halfEdgeTwin.Length; h++)
+            {
+                var twin = topology.halfEdgeTwin[h];
+                if (twin < 0 || triLabel[h / 3] == triLabel[twin / 3]) continue;
+                result[topology.halfEdgeVertex[h]] = true;
+                result[topology.HalfEdgeTarget(h)] = true;
+            }
+            return result;
+        }
+
+        [ThreadStatic] static List<int> s_LabelsU, s_LabelsV;
+
+        // Whether collapsing v into u keeps the label borders: v off every border is free (and a
+        // border u keeps its place); v on a border goes only along it, onto u at u's place, and not
+        // at all where three labels meet or the border reaches the open edge.
+        static bool LabelCollapseAllowed(Incidence incident, int[] triangles, bool[] triAlive, int[] triLabel,
+            Vector3[] positions, int u, int v, ref Vector3 target, out bool slide)
+        {
+            slide = false;
+            void Labels(int x, List<int> into)
+            {
+                into.Clear();
+                var count = incident.Count(x);
+                for (var i = 0; i < count; i++)
+                {
+                    var t = incident.Get(x, i);
+                    if (!triAlive[t]) continue;
+                    if (!into.Contains(triLabel[t])) into.Add(triLabel[t]);
+                }
+            }
+            s_LabelsU ??= new List<int>();
+            s_LabelsV ??= new List<int>();
+            Labels(u, s_LabelsU);
+            Labels(v, s_LabelsV);
+            if (s_LabelsV.Count <= 1)
+            {
+                if (s_LabelsU.Count > 1) target = positions[u];
+                return true;
+            }
+            if (s_LabelsU.Count <= 1 || s_LabelsV.Count > 2) return false;
+            // The edge itself must be on the border: its two triangles labelled differently. And v
+            // must not be where the border meets the open edge (an edge of v in one triangle only).
+            int shared0 = -1, shared1 = -1;
+            var countV = incident.Count(v);
+            for (var i = 0; i < countV; i++)
+            {
+                var t = incident.Get(v, i);
+                if (!triAlive[t]) continue;
+                int a = triangles[3 * t], b = triangles[3 * t + 1], c = triangles[3 * t + 2];
+                if (a == u || b == u || c == u)
+                {
+                    if (shared0 < 0) shared0 = t; else shared1 = t;
+                }
+                foreach (var w in new[] { a, b, c })
+                {
+                    if (w == v) continue;
+                    var uses = 0;
+                    for (var j = 0; j < countV; j++)
+                    {
+                        var t2 = incident.Get(v, j);
+                        if (!triAlive[t2]) continue;
+                        if (triangles[3 * t2] == w || triangles[3 * t2 + 1] == w || triangles[3 * t2 + 2] == w) uses++;
+                    }
+                    if (uses == 1) return false;
+                }
+            }
+            if (shared0 < 0 || shared1 < 0 || triLabel[shared0] == triLabel[shared1]) return false;
+            target = positions[u];
+            slide = true;
+            return true;
+        }
+
         static Quadric[] BuildQuadrics(RemeshTopology topology, Vector3[] positions, int[] triangles,
-            int triangleCount, float boundaryWeight)
+            int triangleCount, float boundaryWeight, int[] triLabel = null, float labelWeight = 1f)
         {
             var quadrics = new Quadric[positions.Length];
 
@@ -971,7 +1088,9 @@ namespace NativeRemesher
             {
                 for (var h = 0; h < topology.halfEdgeTwin.Length; h++)
                 {
-                    if (topology.halfEdgeTwin[h] >= 0) continue;
+                    // An open edge, or one between two labels (planes from both sides).
+                    var twinH = topology.halfEdgeTwin[h];
+                    if (twinH >= 0 && (triLabel == null || triLabel[h / 3] == triLabel[twinH / 3])) continue;
 
                     var from = topology.halfEdgeVertex[h];
                     var to = topology.HalfEdgeTarget(h);
@@ -991,7 +1110,7 @@ namespace NativeRemesher
 
                     var d = -Vector3.Dot(planeNormal, positions[from]);
                     var plane = Quadric.FromPlane(planeNormal.x, planeNormal.y, planeNormal.z, d,
-                        boundaryWeight * length);
+                        twinH >= 0 ? labelWeight * length * (labelWeightByArea ? length : 1f) : boundaryWeight * length);
 
                     quadrics[from].Add(plane);
                     quadrics[to].Add(plane);

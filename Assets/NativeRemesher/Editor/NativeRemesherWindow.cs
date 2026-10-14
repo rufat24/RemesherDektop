@@ -65,6 +65,7 @@ namespace NativeRemesher
         [SerializeField] float m_AdaptiveSize = 50f;
         [SerializeField] bool m_DetectHardEdges = true;
         [SerializeField] SymmetryAxis m_Symmetry = SymmetryAxis.None;
+        [SerializeField] bool m_UseMaterials;
         [SerializeField] bool m_GlobalParametrization = true;
         // Renamed from m_QuadLayout so an open window picks up the new default (on) instead of its
         // serialised off: the layout measured better than the per-singularity rounding on the head
@@ -154,6 +155,12 @@ namespace NativeRemesher
                     "along the plane, so both sides get the same edge loops. The plane is the " +
                     "object's local origin when the mesh straddles it, else the middle of its bounds."),
                 m_Symmetry);
+            m_UseMaterials = EditorGUILayout.Toggle(
+                new GUIContent("Use Materials",
+                    "As QuadRemesher's option of the same name: the borders between the mesh's " +
+                    "materials (submeshes) become edge loops, and the result keeps one submesh per " +
+                    "material, with the source's materials on it."),
+                m_UseMaterials);
             using (new EditorGUI.DisabledScope(!m_GlobalParametrization || m_ExtractorChoice != RemeshExtractor.IntegerGrid))
                 m_QuadLayoutOn = EditorGUILayout.Toggle(
                     new GUIContent("Quad Layout",
@@ -622,6 +629,7 @@ namespace NativeRemesher
             var settings = RemeshSettings.Default;
             settings.targetQuadCount = m_TargetQuadCount;
             settings.symmetry = m_Symmetry;
+            settings.useMaterials = m_UseMaterials;
 
             // The profile owns the sweep counts, so the window's single iteration field is not
             // applied here: it drives the step-by-step orientation button above, where seeing the
@@ -651,7 +659,8 @@ namespace NativeRemesher
             // takes — produced output with no UV channel and therefore no texture at all, while
             // PerfProbe passed them and measured 52,047 UVs on the same asset. The instrument was
             // right and disagreed with the product, which is the worst way for this to fail.
-            RemeshTopology.ReadMesh(mesh, out var positions, out var triangles, out var sourceUvs);
+            RemeshTopology.ReadMesh(mesh, out var positions, out var triangles, out var sourceUvs,
+                out var triangleSubmesh);
 
             m_JobSelected = selected;
             m_JobStage = "Starting";
@@ -669,7 +678,7 @@ namespace NativeRemesher
                     token.ThrowIfCancellationRequested();
                     m_JobStage = stage;
                     m_JobProgress = progress;
-                }, sourceUvs, autoProfile), token);
+                }, sourceUvs, autoProfile, triangleSubmesh), token);
 
             EditorApplication.update += OnJobUpdate;
         }
@@ -789,7 +798,13 @@ namespace NativeRemesher
             var renderer = go.AddComponent<MeshRenderer>();
             var slots = Mathf.Max(1, outputMesh != null ? outputMesh.subMeshCount : 1);
             var materials = new Material[slots];
-            for (var i = 0; i < slots; i++) materials[i] = sourceMaterial;
+            // With materials kept, submesh i is the source's material i.
+            var sourceMaterials = sourceRenderer != null ? sourceRenderer.sharedMaterials : null;
+            var perMaterial = result.extraction != null && result.extraction.faceMaterials != null;
+            for (var i = 0; i < slots; i++)
+                materials[i] = perMaterial && sourceMaterials != null && i < sourceMaterials.Length
+                    ? sourceMaterials[i]
+                    : sourceMaterial;
             renderer.sharedMaterials = materials;
 
             Undo.CollapseUndoOperations(undoGroup);

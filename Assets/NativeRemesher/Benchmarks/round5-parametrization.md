@@ -279,3 +279,32 @@ decimation, mirror, weld the seam. head 3.5k: 3.72 % / p05 51.7 / 12.9 s (full 3
 0.0093 / p05 61.8 / 9.0 s (full 1.56 % / 0.0091 / 62.8 / 19.6 s), open 0.
 Renders: shots_final/r10_scan_before_after.png, r10_symmetry_head.png, r10_symmetry_body.png.
 Tests 188: 186 pass, 2 skipped (Headless/tests10.xml).
+
+## Round 11 (2026-10-14): Use Materials, scan speed
+
+**Use Materials** (`RemeshSettings.useMaterials`, window toggle; QuadRemesher's option): per-triangle
+submesh index read with the mesh (`RemeshTopology.ReadMesh(..., out triangleSubmesh)`); `MaterialLabels`
+labels any derived mesh by the nearest input triangle. The decimator keeps label borders
+(`DecimateOptions.labels`): border vertices locked in the parallel stage, in the serial stage moved
+only along their border onto the next border vertex (none where three labels meet or the border meets
+the open edge), planes along the border weighted by length squared like a face's (`labelWeightByArea`;
+by length kept nearly every input border vertex: 1650 of ~1800 on the head). Material borders are
+added to the refined features (field + lattice) and to the decimated feature edges (parametrisation +
+layout patch sides). Output faces labelled, one submesh per material (`faceMaterials`,
+`materialSlots`), source materials assigned per slot in the window. FBX export still one material.
+Synthetic test, harness `matsplit=axis,value` (head helmet at y 0.75, body waist at y 0.45):
+
+| case | irregular | Hausdorff | p05 | border off the true border (mean / max) |
+|---|---|---|---|---|
+| body 2k, materials | 2.98 % | 0.0112 | 59.0 | 0.0010 / 0.0060 |
+| body 2k, none | 2.82 % | 0.0115 | 60.2 | |
+| body 3.5k, materials | 1.69 % | 0.0091 | 61.6 | 0.0013 / 0.0067 |
+| body 3.5k, none | 1.56 % | 0.0091 | 62.8 | |
+| head 5k, materials | 3.02 % | 0.0104 | 54.3 | 0.0027 / 0.0219 |
+
+**Scan speed:** spiral loop passes skipped on meshes with an open border
+(`SeamlessParametrization.layoutLoopPassesOpen` 0): ccnb 5000 68 -> 29 s (old lattice path 49 s),
+irregular 5.43 -> 5.14 %, p05 47.8 -> 49.1, Hausdorff 0.0134 unchanged; body symmetric half
+1.64 -> 1.58 %. On closed meshes they stay (2): there only body 3.5k changes (1.56 % / 0.0091 / 19.6 s
+with, 1.71 % / 0.0098 / 12.3 s without), head and body otherwise identical.
+Render: shots_final/r11_materials.png. Tests 190: 188 pass, 2 skipped (Headless/tests11.xml).

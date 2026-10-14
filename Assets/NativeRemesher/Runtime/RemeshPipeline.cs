@@ -34,6 +34,11 @@ namespace NativeRemesher
                  "straddles it, else the middle of the bounds.")]
         public SymmetryAxis symmetry;
 
+        [Tooltip("As QuadRemesher's Use Materials: the borders between the input's materials " +
+                 "(submeshes) become edge loops, and every face keeps its material - the result " +
+                 "has one submesh per input material.")]
+        public bool useMaterials;
+
         public static RemeshSettings Default => new RemeshSettings
         {
             targetQuadCount = 2000,
@@ -56,7 +61,8 @@ namespace NativeRemesher
                 mergeThreshold = Mathf.Clamp(mergeThreshold, 0.05f, 0.95f),
                 faceCountIterations = Mathf.Clamp(faceCountIterations, 1, 8),
                 faceCountTolerance = Mathf.Clamp(faceCountTolerance, 0.01f, 0.5f),
-                symmetry = symmetry
+                symmetry = symmetry,
+                useMaterials = useMaterials
             };
         }
     }
@@ -145,6 +151,10 @@ namespace NativeRemesher
 
         /// <summary>Border ears removed from the decimated mesh for the quad layout.</summary>
         public int trimmedEars, splitBowties;
+
+        /// <summary>Material borders kept as edge loops (see <see cref="RemeshSettings.useMaterials"/>).</summary>
+        [NonSerialized] public MaterialLabels materials;
+        public int materialBorderEdges, decimatedMaterialBorderEdges;
 
         /// <summary>The mirror, when <see cref="RemeshSettings.symmetry"/> asked for one.</summary>
         public Symmetry.Stats symmetryStats;
@@ -429,13 +439,24 @@ namespace NativeRemesher
             RemeshSettings settings, RemeshProfile profile, Action<string, float> onProgress = null,
             Vector2[] sourceUvs = null, bool autoSelectProfile = false)
             => SolveInternal(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile,
-                SymmetryAxis.None, 0f);
+                SymmetryAxis.None, 0f, null);
+
+        /// <summary>
+        /// As above, with each triangle's material (submesh), which
+        /// <see cref="RemeshSettings.useMaterials"/> keeps.
+        /// </summary>
+        public static RemeshResult Solve(Vector3[] positions, int[] triangles,
+            RemeshSettings settings, RemeshProfile profile, Action<string, float> onProgress,
+            Vector2[] sourceUvs, bool autoSelectProfile, int[] triangleMaterials)
+            => SolveInternal(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile,
+                SymmetryAxis.None, 0f, triangleMaterials);
 
         // lockAxis/lockPlane: a symmetry half's cut. The decimated border vertices beside the plane
         // are put back on it, so the cut's grid line lies in the plane and the mirror meets it.
         static RemeshResult SolveInternal(Vector3[] positions, int[] triangles,
             RemeshSettings settings, RemeshProfile profile, Action<string, float> onProgress,
-            Vector2[] sourceUvs, bool autoSelectProfile, SymmetryAxis lockAxis, float lockPlane)
+            Vector2[] sourceUvs, bool autoSelectProfile, SymmetryAxis lockAxis, float lockPlane,
+            int[] triangleMaterials)
         {
             if (positions == null)
                 throw new ArgumentNullException(nameof(positions));
@@ -443,9 +464,15 @@ namespace NativeRemesher
             profile = profile.Validated();
             settings = profile.ApplyTo(settings).Validated();
             if (settings.symmetry != SymmetryAxis.None)
-                return SolveSymmetric(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile);
+                return SolveSymmetric(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile,
+                    triangleMaterials);
 
             var result = new RemeshResult { profile = profile };
+            if (settings.useMaterials && triangleMaterials != null && triangleMaterials.Length == triangles.Length / 3)
+            {
+                var labels = new MaterialLabels(positions, triangles, triangleMaterials);
+                if (labels.labelCount > 1) result.materials = labels;
+            }
             var watch = new System.Diagnostics.Stopwatch();
 
             // --- pre-decimation ---
@@ -477,7 +504,7 @@ namespace NativeRemesher
                     onProgress?.Invoke("Decimating input", 0f);
                     watch.Restart();
                     PreDecimate.Decimate(positions, triangles,
-                        DecimateOptions.ForTriangleCount(budget), out var decimateStats,
+                        DecimateFor(budget, result.materials), out var decimateStats,
                         out solvePositions, out solveTriangles,
                         p => onProgress?.Invoke("Decimating input", p));
                     result.decimateMs = watch.ElapsedMilliseconds;
@@ -538,27 +565,52 @@ namespace NativeRemesher
                 autoSelectProfile);
 
             TransferUvs(result, positions, triangles, sourceUvs, watch, onProgress);
+            LabelFaces(result);
             return result;
+        }
+
+        // Each output face's material, from the input surface under it.
+        static void LabelFaces(RemeshResult result)
+        {
+            var ex = result.extraction;
+            if (result.materials == null || ex == null || ex.positions == null) return;
+            ex.faceMaterials = result.materials.ForFaces(ex.positions, ex.faces);
+            ex.materialSlots = result.materials.slotCount;
         }
 
         /// <summary>
         /// One half (the positive side of the plane) solved with half the quads, mirrored and
         /// welded. See <see cref="Symmetry"/>.
         /// </summary>
+        static DecimateOptions DecimateFor(int budget, MaterialLabels labels)
+        {
+            var options = DecimateOptions.ForTriangleCount(budget);
+            options.labels = labels;
+            return options;
+        }
+
         static RemeshResult SolveSymmetric(Vector3[] positions, int[] triangles,
             RemeshSettings settings, RemeshProfile profile, Action<string, float> onProgress,
-            Vector2[] sourceUvs, bool autoSelectProfile)
+            Vector2[] sourceUvs, bool autoSelectProfile, int[] triangleMaterials)
         {
             var axis = settings.symmetry;
             var halfSettings = settings;
             halfSettings.symmetry = SymmetryAxis.None;
             var plane = Symmetry.PlaneOf(positions, axis);
-            Symmetry.Clip(positions, triangles, axis, plane, out var halfPositions, out var halfTriangles);
+            Symmetry.Clip(positions, triangles, axis, plane, out var halfPositions, out var halfTriangles,
+                out var parentTriangle);
             if (halfTriangles.Length == 0)
-                return Solve(positions, triangles, halfSettings, profile, onProgress, sourceUvs, autoSelectProfile);
+                return SolveInternal(positions, triangles, halfSettings, profile, onProgress, sourceUvs, autoSelectProfile,
+                    SymmetryAxis.None, 0f, triangleMaterials);
+            int[] halfMaterials = null;
+            if (triangleMaterials != null && triangleMaterials.Length == triangles.Length / 3)
+            {
+                halfMaterials = new int[parentTriangle.Length];
+                for (var t = 0; t < parentTriangle.Length; t++) halfMaterials[t] = triangleMaterials[parentTriangle[t]];
+            }
             halfSettings.targetQuadCount = Mathf.Max(4, (settings.targetQuadCount + 1) / 2);
             var result = SolveInternal(halfPositions, halfTriangles, halfSettings, profile, onProgress, null,
-                autoSelectProfile, axis, plane);
+                autoSelectProfile, axis, plane, halfMaterials);
             if (result.extraction == null || result.extraction.positions == null) return result;
 
             // Half the median output edge: the cut's vertices are that close to the plane or closer.
@@ -574,6 +626,12 @@ namespace NativeRemesher
             result.originalPositions = positions;
             result.originalTriangles = triangles;
             TransferUvs(result, positions, triangles, sourceUvs, new System.Diagnostics.Stopwatch(), onProgress);
+            if (result.materials != null && triangleMaterials != null)
+            {
+                // Labelled from the whole input: the mirror image lies on the other side's materials.
+                result.materials = new MaterialLabels(positions, triangles, triangleMaterials);
+                LabelFaces(result);
+            }
             return result;
         }
 
@@ -947,6 +1005,14 @@ namespace NativeRemesher
             }
             // Boundaries, and the profile's own creases where it has any.
             Add(FeatureGraph.Detect(topology, result.profile.featureAngleDegrees));
+            // Material borders (Use Materials): the decimator kept them as edge chains.
+            if (result.materials != null)
+            {
+                var materialEdges = MaterialLabels.BorderEdges(topology.triangles,
+                    result.materials.ForTriangles(topology.positions, topology.triangles));
+                result.decimatedMaterialBorderEdges = materialEdges.Count;
+                edges.AddRange(materialEdges);
+            }
             if (Extraction.IntegerGridMap.coherentCreases && result.profile.featureAngleDegrees <= 0f)
             {
                 var cell = topology.EdgeLengthForQuadCount(Mathf.Max(1, result.effectiveTargetQuadCount));
@@ -1247,6 +1313,19 @@ namespace NativeRemesher
                             Extraction.IntegerGridMap.coherentCreaseMaxShared,
                             out result.coherentCreasesThinned)
                         : toCut;
+                }
+            }
+
+            // --- material borders, as edge loops (Use Materials) ---
+            if (result.materials != null)
+            {
+                var materialEdges = MaterialLabels.BorderEdges(result.topology.triangles,
+                    result.materials.ForTriangles(result.topology.positions, result.topology.triangles));
+                result.materialBorderEdges = materialEdges.Count;
+                if (materialEdges.Count > 0)
+                {
+                    result.features = result.features.WithEdges(result.topology, materialEdges);
+                    if (coherentCreases != null) coherentCreases = coherentCreases.WithEdges(result.topology, materialEdges);
                 }
             }
 

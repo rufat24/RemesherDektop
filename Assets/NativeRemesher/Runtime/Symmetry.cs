@@ -45,6 +45,11 @@ namespace NativeRemesher
         /// </summary>
         public static void Clip(Vector3[] positions, int[] triangles, SymmetryAxis axis, float plane,
             out Vector3[] outPositions, out int[] outTriangles)
+            => Clip(positions, triangles, axis, plane, out outPositions, out outTriangles, out _);
+
+        /// <summary>As above, and per kept triangle the input triangle it is part of.</summary>
+        public static void Clip(Vector3[] positions, int[] triangles, SymmetryAxis axis, float plane,
+            out Vector3[] outPositions, out int[] outTriangles, out int[] parentTriangle)
         {
             var k = (int)axis - 1;
             float lo = float.PositiveInfinity, hi = float.NegativeInfinity;
@@ -82,13 +87,17 @@ namespace NativeRemesher
                 return pos.Count - 1;
             }
             var tris = new List<int>(triangles.Length / 2 + 16);
+            var parents = new List<int>(triangles.Length / 6 + 16);
+            var current = 0;
             void Add(int a, int b, int c)
             {
                 if (a == b || b == c || c == a) return;
                 tris.Add(a); tris.Add(b); tris.Add(c);
+                parents.Add(current);
             }
             for (var t = 0; t < triangles.Length; t += 3)
             {
+                current = t / 3;
                 int a = triangles[t], b = triangles[t + 1], c = triangles[t + 2];
                 var ia = d[a] >= 0f; var ib = d[b] >= 0f; var ic = d[c] >= 0f;
                 if (ia && ib && ic)
@@ -122,6 +131,7 @@ namespace NativeRemesher
             }
             outPositions = pos.ToArray();
             outTriangles = tris.ToArray();
+            parentTriangle = parents.ToArray();
         }
 
         /// <summary>

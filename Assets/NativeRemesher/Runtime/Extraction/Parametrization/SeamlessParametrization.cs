@@ -507,6 +507,14 @@ namespace NativeRemesher.Extraction
         /// <summary>Re-solves holding spiral loops' twist to whole cells (see the layout pass).</summary>
         public static int layoutLoopPasses = 2;
 
+        /// <summary>
+        /// As <see cref="layoutLoopPasses"/>, on a mesh with an open border (a scan, a symmetry
+        /// half). Measured there they cost a solve, an untangle and a layout each for nothing: the
+        /// ccnb scan 68 -> 28 s with irregular 5.43 -> 5.14 %, p05 47.8 -> 49.1; the body's half
+        /// 1.64 -> 1.58 %.
+        /// </summary>
+        public static int layoutLoopPassesOpen = 0;
+
         /// <summary>Closure weight when the layout is meshed: its separatrices cross every seam.</summary>
         public static float layoutClosureWeight = 1e5f;
 
@@ -2372,7 +2380,7 @@ namespace NativeRemesher.Extraction
                 stats.layout += "<<" + layoutStats.debug.Substring(0, Math.Min(layoutStats.debug.Length, 600)) + ">> ";
                 if (loopPass == 0) stats.layout = "";
                 stats.layout += layoutStats.ToString();
-                if (loops.Count == 0 || loopPass >= layoutLoopPasses) break;
+                if (loops.Count == 0 || loopPass >= (Array.IndexOf(boundary, true) >= 0 ? layoutLoopPassesOpen : layoutLoopPasses)) break;
 
                 // Spirals: a separatrix came back round a cylinder shifted sideways, because the
                 // map is twisted there -- its translation round that loop is not a whole number of

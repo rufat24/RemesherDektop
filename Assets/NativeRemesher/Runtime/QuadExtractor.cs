@@ -87,6 +87,14 @@ namespace NativeRemesher
         /// </summary>
         public Vector2[][] faceUvs;
 
+        /// <summary>
+        /// Per face, the input material (submesh) it lies on, when materials were kept (see
+        /// <see cref="RemeshSettings.useMaterials"/>); null otherwise. <see cref="materialSlots"/>
+        /// is the number of submeshes the mesh gets then.
+        /// </summary>
+        public int[] faceMaterials;
+        public int materialSlots;
+
         /// <summary>Extracted faces, each holding 3 or more vertex indices. Mostly quads.</summary>
         public List<int[]> faces = new List<int[]>();
 
@@ -1412,6 +1420,46 @@ namespace NativeRemesher
                 mesh.SetUVs(0, cornerUvs);
             else if (extraction.uvs != null && extraction.uvs.Length == extraction.positions.Length)
                 mesh.SetUVs(0, extraction.uvs);
+
+            if (extraction.faceMaterials != null && extraction.faceMaterials.Length == faces.Count
+                && extraction.materialSlots > 0)
+            {
+                // One submesh per input material, in the input's slot order, so the source
+                // renderer's materials go on as they were. A slot all quads keeps quad topology;
+                // any other is fanned into triangles (one topology per submesh).
+                var slots = extraction.materialSlots;
+                var perSlot = new List<int>[slots];
+                var allQuads = new bool[slots];
+                for (var m = 0; m < slots; m++) { perSlot[m] = new List<int>(); allQuads[m] = quadTopology; }
+                for (var f = 0; f < faces.Count; f++)
+                {
+                    var face = faces[f];
+                    if (face == null || face.Length < 3) continue;
+                    var m = Mathf.Clamp(extraction.faceMaterials[f], 0, slots - 1);
+                    if (face.Length != 4) allQuads[m] = false;
+                }
+                for (var f = 0; f < faces.Count; f++)
+                {
+                    var face = faces[f];
+                    if (face == null || face.Length < 3) continue;
+                    var m = Mathf.Clamp(extraction.faceMaterials[f], 0, slots - 1);
+                    if (allQuads[m]) { perSlot[m].AddRange(face); continue; }
+                    for (var i = 1; i + 1 < face.Length; i++)
+                    {
+                        perSlot[m].Add(face[0]);
+                        perSlot[m].Add(face[i]);
+                        perSlot[m].Add(face[i + 1]);
+                    }
+                }
+                mesh.subMeshCount = slots;
+                for (var m = 0; m < slots; m++)
+                    mesh.SetIndices(perSlot[m], allQuads[m] ? MeshTopology.Quads : MeshTopology.Triangles, m, false);
+                mesh.RecalculateBounds();
+                if (shading != null && shading.Length == positions.Length) mesh.SetNormals(shading);
+                else if (fallbackNormals != null && fallbackNormals.Length == positions.Length) mesh.SetNormals(fallbackNormals);
+                else mesh.RecalculateNormals();
+                return mesh;
+            }
 
             var quads = new List<int>(extraction.quadCount * 4);
             var triangles = new List<int>(16);
