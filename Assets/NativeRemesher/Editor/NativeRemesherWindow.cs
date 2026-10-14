@@ -66,6 +66,11 @@ namespace NativeRemesher
         [SerializeField] bool m_DetectHardEdges = true;
         [SerializeField] SymmetryAxis m_Symmetry = SymmetryAxis.None;
         [SerializeField] bool m_UseMaterials;
+        // On: the transferred UVs cut across every seam of a scan's atlas (ccnb at 5000: 6,530 of
+        // 14,884 faces), and the bake is closer to the source on screen (see TextureBake). Does
+        // nothing when the source has no UVs or no texture.
+        [SerializeField] bool m_BakeTexture = true;
+        [SerializeField] int m_BakeResolution = 4096;
         [SerializeField] bool m_GlobalParametrization = true;
         // Renamed from m_QuadLayout so an open window picks up the new default (on) instead of its
         // serialised off: the layout measured better than the per-singularity rounding on the head
@@ -161,6 +166,19 @@ namespace NativeRemesher
                     "materials (submeshes) become edge loops, and the result keeps one submesh per " +
                     "material, with the source's materials on it."),
                 m_UseMaterials);
+            m_BakeTexture = EditorGUILayout.Toggle(
+                new GUIContent("Bake Texture",
+                    "Give the result its own UV layout and bake the source's texture into it, with a " +
+                    "material using it. The source's own UVs would otherwise be carried over, and on a " +
+                    "scan, whose texture atlas is cut into thousands of pieces, about half the quads " +
+                    "straddle a cut and show a smeared strip. Reads the texture file at full size."),
+                m_BakeTexture);
+            if (m_BakeTexture)
+                using (new EditorGUI.IndentLevelScope())
+                    m_BakeResolution = EditorGUILayout.IntPopup(
+                        new GUIContent("Texture Size", "Width and height of the baked texture."),
+                        m_BakeResolution, new[] { new GUIContent("1024"), new GUIContent("2048"), new GUIContent("4096"), new GUIContent("8192") },
+                        new[] { 1024, 2048, 4096, 8192 });
             using (new EditorGUI.DisabledScope(!m_GlobalParametrization || m_ExtractorChoice != RemeshExtractor.IntegerGrid))
                 m_QuadLayoutOn = EditorGUILayout.Toggle(
                     new GUIContent("Quad Layout",
@@ -662,6 +680,13 @@ namespace NativeRemesher
             RemeshTopology.ReadMesh(mesh, out var positions, out var triangles, out var sourceUvs,
                 out var triangleSubmesh);
 
+            // The textures to bake, one per submesh, read here on the main thread.
+            TextureBake.Image[] bakeImages = null;
+            int[] bakeTriangleTexture = null;
+            var bakeResolution = m_BakeResolution;
+            if (m_BakeTexture && sourceUvs != null)
+                ReadSourceTextures(selected, triangleSubmesh, out bakeImages, out bakeTriangleTexture);
+
             m_JobSelected = selected;
             m_JobStage = "Starting";
             m_JobProgress = 0f;
@@ -670,15 +695,23 @@ namespace NativeRemesher
 
             var token = m_Cancel.Token;
 
-            m_Job = Task.Run(() => RemeshPipeline.Solve(positions, triangles, settings, profile,
-                (stage, progress) =>
+            m_Job = Task.Run(() =>
+            {
+                void Progress(string stage, float progress)
                 {
                     // Cancellation is observed here rather than polled, because this is the only
                     // point the solver hands control back often enough to matter.
                     token.ThrowIfCancellationRequested();
                     m_JobStage = stage;
                     m_JobProgress = progress;
-                }, sourceUvs, autoProfile, triangleSubmesh), token);
+                }
+                var solved = RemeshPipeline.Solve(positions, triangles, settings, profile, Progress,
+                    sourceUvs, autoProfile, triangleSubmesh);
+                if (bakeImages != null)
+                    RemeshPipeline.BakeTexture(solved, positions, triangles, sourceUvs, bakeTriangleTexture,
+                        bakeImages, bakeResolution, Progress);
+                return solved;
+            }, token);
 
             EditorApplication.update += OnJobUpdate;
         }
@@ -805,6 +838,31 @@ namespace NativeRemesher
                 materials[i] = perMaterial && sourceMaterials != null && i < sourceMaterials.Length
                     ? sourceMaterials[i]
                     : sourceMaterial;
+            if (result.bakedTexture != null)
+            {
+                // One baked texture over every submesh: each slot keeps its source material's
+                // shader and settings, with the bake as its main texture.
+                var baked = SaveBakedTexture(result, assetPath, selected.name);
+                var made = new Dictionary<Material, Material>();
+                for (var i = 0; i < slots; i++)
+                {
+                    var from = materials[i];
+                    var key = from != null ? from : sourceMaterial;
+                    if (key != null && made.TryGetValue(key, out var done)) { materials[i] = done; continue; }
+                    var mat = key != null ? new Material(key) : new Material(Shader.Find("Standard"));
+                    mat.name = selected.name + "_Quads";
+                    mat.mainTexture = baked;
+                    if (!string.IsNullOrEmpty(assetPath))
+                    {
+                        var matPath = AssetDatabase.GenerateUniqueAssetPath(
+                            Path.ChangeExtension(assetPath, null) + ".mat");
+                        AssetDatabase.CreateAsset(mat, matPath);
+                    }
+                    if (key != null) made[key] = mat;
+                    materials[i] = mat;
+                }
+                AssetDatabase.SaveAssets();
+            }
             renderer.sharedMaterials = materials;
 
             Undo.CollapseUndoOperations(undoGroup);
@@ -820,14 +878,152 @@ namespace NativeRemesher
                 ? $"{result.profile.kind} (auto)"
                 : result.profile.kind.ToString();
 
+            var bakeNote = result.bakeStats != null
+                ? $"\nbaked {result.bakedTextureSize}px texture, {result.bakeStats.charts} charts, " +
+                  $"{result.bakeStats.fill:P0} of it used, in {result.bakeStats.unwrapMs + result.bakeStats.bakeMs} ms"
+                : "";
             m_Status = $"{profileNote}: {result.extraction} in {result.totalMs} ms" +
-                       $"{decimated}{saved}";
+                       $"{decimated}{saved}{bakeNote}";
             Debug.Log($"[Native Remesher] {profileNote}: {result.extraction} " +
                       $"(decimate {result.decimateMs}ms, topo {result.topologyMs}ms, " +
                       $"orient {result.orientationMs}ms, pos {result.positionMs}ms, " +
                       $"extract {result.extractionMs}ms, {result.faceCountAttempts} count passes)" +
                       decimated, outputMesh);
             SceneView.RepaintAll();
+        }
+
+        // ------------------------------------------------------------------ texture bake
+
+        /// <summary>
+        /// Per submesh of the source, its material's main texture as pixels, and per triangle which
+        /// of them it reads. Nothing when no material has a texture.
+        /// </summary>
+        static void ReadSourceTextures(GameObject selected, int[] triangleSubmesh,
+            out TextureBake.Image[] images, out int[] triangleTexture)
+        {
+            images = null;
+            triangleTexture = null;
+            var renderer = selected.GetComponent<Renderer>();
+            if (renderer == null) return;
+            var materials = renderer.sharedMaterials;
+            var read = new Dictionary<Texture, int>();
+            var list = new List<TextureBake.Image>();
+            var slotImage = new int[Mathf.Max(1, materials.Length)];
+            for (var i = 0; i < slotImage.Length; i++)
+            {
+                slotImage[i] = -1;
+                var tex = i < materials.Length && materials[i] != null ? materials[i].mainTexture : null;
+                if (tex == null) continue;
+                if (!read.TryGetValue(tex, out var index))
+                {
+                    var image = ReadTexture(tex);
+                    index = image != null ? list.Count : -1;
+                    if (image != null) list.Add(image);
+                    read[tex] = index;
+                }
+                slotImage[i] = index;
+            }
+            if (list.Count == 0) return;
+            images = list.ToArray();
+            if (triangleSubmesh != null)
+            {
+                triangleTexture = new int[triangleSubmesh.Length];
+                for (var t = 0; t < triangleSubmesh.Length; t++)
+                {
+                    var slot = triangleSubmesh[t];
+                    // Unity draws the extra submeshes past the last material with the last one.
+                    if (slot >= slotImage.Length) slot = slotImage.Length - 1;
+                    triangleTexture[t] = slot >= 0 ? slotImage[slot] : -1;
+                }
+            }
+            else
+                // One submesh: its material's texture for every triangle.
+                images = slotImage[0] >= 0 ? new[] { images[slotImage[0]] } : null;
+        }
+
+        /// <summary>
+        /// A texture's pixels at full size: from its PNG or JPG file when it has one (the importer
+        /// may have shrunk it -- ccnb.jpg is 8192 square, imported at 2048), else from the GPU copy.
+        /// </summary>
+        static TextureBake.Image ReadTexture(Texture texture)
+        {
+            var path = AssetDatabase.GetAssetPath(texture);
+            var ext = Path.GetExtension(path).ToLowerInvariant();
+            if (ext == ".png" || ext == ".jpg" || ext == ".jpeg")
+            {
+                try
+                {
+                    var file = new Texture2D(2, 2, TextureFormat.RGBA32, false, false);
+                    if (file.LoadImage(File.ReadAllBytes(path), false))
+                    {
+                        var image = new TextureBake.Image(file.GetPixels32(), file.width, file.height);
+                        DestroyImmediate(file);
+                        return image;
+                    }
+                    DestroyImmediate(file);
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogWarning($"[Native Remesher] Could not read {path}: {e.Message}; using the imported texture.");
+                }
+            }
+            // Any other format, or none: through a render target, which needs no Read/Write.
+            var w = texture.width;
+            var h = texture.height;
+            var rt = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+            var previous = RenderTexture.active;
+            Graphics.Blit(texture, rt);
+            RenderTexture.active = rt;
+            var copy = new Texture2D(w, h, TextureFormat.RGBA32, false, false);
+            copy.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+            copy.Apply(false);
+            RenderTexture.active = previous;
+            RenderTexture.ReleaseTemporary(rt);
+            var result = new TextureBake.Image(copy.GetPixels32(), w, h);
+            DestroyImmediate(copy);
+            return result;
+        }
+
+        /// <summary>
+        /// The baked pixels as a texture: a PNG beside the mesh asset, imported at its full size,
+        /// when there is one; otherwise in memory only.
+        /// </summary>
+        static Texture2D SaveBakedTexture(RemeshResult result, string assetPath, string sourceName)
+        {
+            var size = result.bakedTextureSize;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, true, false)
+            {
+                name = sourceName + "_Quads_Albedo",
+                wrapMode = TextureWrapMode.Clamp,
+            };
+            texture.SetPixels32(result.bakedTexture);
+            texture.Apply(true);
+            if (string.IsNullOrEmpty(assetPath)) return texture;
+            try
+            {
+                var pngPath = AssetDatabase.GenerateUniqueAssetPath(
+                    Path.ChangeExtension(assetPath, null) + "_Albedo.png");
+                File.WriteAllBytes(pngPath, texture.EncodeToPNG());
+                AssetDatabase.ImportAsset(pngPath, ImportAssetOptions.ForceSynchronousImport);
+                if (AssetImporter.GetAtPath(pngPath) is TextureImporter importer)
+                {
+                    importer.maxTextureSize = Mathf.Max(importer.maxTextureSize, size);
+                    importer.wrapMode = TextureWrapMode.Clamp;
+                    importer.SaveAndReimport();
+                }
+                var saved = AssetDatabase.LoadAssetAtPath<Texture2D>(pngPath);
+                if (saved != null)
+                {
+                    DestroyImmediate(texture);
+                    Debug.Log($"[Native Remesher] Wrote {pngPath} ({result.bakeStats})");
+                    return saved;
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[Native Remesher] Could not save the baked texture: {e.Message}. It is in memory only.");
+            }
+            return texture;
         }
 
         // ------------------------------------------------------------------ drawing

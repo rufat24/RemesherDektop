@@ -92,6 +92,14 @@ namespace NativeRemesher
 
         /// <summary>Seam-aware UV transfer counters; null when the source had no UVs.</summary>
         public AttributeTransfer.FaceUvStats faceUvStats;
+
+        /// <summary>
+        /// The texture baked by <see cref="RemeshPipeline.BakeTexture"/>, square, row 0 at the
+        /// bottom; null when none was baked. The extraction's faceUvs then index it.
+        /// </summary>
+        public Color32[] bakedTexture;
+        public int bakedTextureSize;
+        public TextureBake.Stats bakeStats;
         public long refineMs;
         public OrientationField orientation;
         public HierarchicalStats positionLevels;
@@ -633,6 +641,32 @@ namespace NativeRemesher
                 LabelFaces(result);
             }
             return result;
+        }
+
+        /// <summary>
+        /// A new UV atlas for the result, and the source's textures baked into it (see
+        /// <see cref="TextureBake"/>): replaces the transferred UVs, which cut across every seam of
+        /// the source's atlas. <paramref name="triangleTexture"/> picks each source triangle's
+        /// texture from <paramref name="textures"/> (null: the first for all).
+        /// </summary>
+        public static void BakeTexture(RemeshResult result, Vector3[] positions, int[] triangles,
+            Vector2[] sourceUvs, int[] triangleTexture, TextureBake.Image[] textures, int resolution,
+            Action<string, float> onProgress = null)
+        {
+            var extraction = result?.extraction;
+            if (extraction == null || extraction.positions == null || sourceUvs == null
+                || sourceUvs.Length != positions.Length || textures == null || textures.Length == 0)
+                return;
+            onProgress?.Invoke("Baking texture", 0f);
+            var stats = new TextureBake.Stats();
+            var uvs = TextureBake.Unwrap(extraction.positions, extraction.faces, resolution, stats);
+            result.bakedTexture = TextureBake.Bake(positions, triangles, sourceUvs, triangleTexture, textures,
+                extraction.positions, extraction.faces, uvs, resolution, stats,
+                p => onProgress?.Invoke("Baking texture", p));
+            result.bakedTextureSize = resolution;
+            result.bakeStats = stats;
+            extraction.faceUvs = uvs;
+            extraction.uvs = null;
         }
 
         static void TransferUvs(RemeshResult result, Vector3[] positions, int[] triangles, Vector2[] sourceUvs,

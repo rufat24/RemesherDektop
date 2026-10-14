@@ -308,3 +308,35 @@ irregular 5.43 -> 5.14 %, p05 47.8 -> 49.1, Hausdorff 0.0134 unchanged; body sym
 1.64 -> 1.58 %. On closed meshes they stay (2): there only body 3.5k changes (1.56 % / 0.0091 / 19.6 s
 with, 1.71 % / 0.0098 / 12.3 s without), head and body otherwise identical.
 Render: shots_final/r11_materials.png. Tests 190: 188 pass, 2 skipped (Headless/tests11.xml).
+
+## Round 12 — texture bake for scans (2026-10-14)
+
+Per-corner UV transfer on ccnb at 5000 (14,884 faces): the source atlas has 2,197 charts and
+6,530 output faces straddle a seam; those are clamped to one side and show stretched texels.
+New `TextureBake` (Runtime) + window option **Bake Texture** (on, 4096): the output gets its own
+atlas (lattice charts grown across regular quads, cut into 16x16 tiles then solid rectangles,
+skyline-packed in four turns) and each texel reads the source texture at the nearest source
+point, from a mip level matching the texel ratio. The window reads PNG/JPG files at full size
+(ccnb.jpg is 8192 square; Unity imports it at 2048).
+
+Atlas fill: unbounded charts 21 %, seed windows 51 %, + skyline 61 %, + rectangles 70 %,
++ 1024-column skyline 72 % (unwrap 0.3 s).
+
+Rendered against the source (Blender, flat textured, 3000 px, same framing), PSNR:
+
+| | top | oblique |
+|---|---|---|
+| UV transfer (8192 source) | 25.63 dB | 26.68 dB |
+| bake 2048 | 26.38 dB | 28.00 dB |
+| bake 4096 (10 s in .NET 8, 24 s in the editor) | 26.50 dB | 28.04 dB |
+
+Renders: `shots_final/r12_bake_top.png` (source / transfer / bake 4096),
+`r12_bake_oblique_2048.png`. Window path verified end to end in batch Unity on Assets/ccnb
+(texture read 8192, PNG + material written and assigned). Tests 191 / 0 / 2.
+
+Scan geometry, measured this round (not changed): the parametrization keeps the building edges as
+grid lines (`shots_final/r12_scan_bends.png`, edges by bend angle), singularities sit at crease
+ends and clutter. Left off: global smooth field (p05 49.1 -> 51.3, same singularities), 30 field
+sweeps (51.1), relaxation drift 2 (mean move 0.009 cells: the grid is already relaxed),
+normal-only Taubin (median bend 1.82 -> 1.57 deg), Adaptive Size 0 at equal faces (p05 57.0,
+irregular 4.53 %, but the border loses 1.4 % of the area and the run takes 168 s).
