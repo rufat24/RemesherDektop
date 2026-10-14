@@ -72,6 +72,56 @@ namespace NativeRemesher.Tests
         }
 
         [Test]
+        public void ChamferedCornerIsFoundAtScale()
+        {
+            // A right-angled corner rounded by a 0.1-wide chamfer: two bends of 45 degrees, extruded.
+            var profile = new[]
+            {
+                new Vector2(-3f, 0f), new Vector2(-2f, 0f), new Vector2(-1f, 0f), new Vector2(-0.1f, 0f),
+                new Vector2(0f, 0.1f), new Vector2(0f, 1f), new Vector2(0f, 2f), new Vector2(0f, 3f),
+            };
+            const int rows = 10;
+            var p = new List<Vector3>();
+            for (var j = 0; j <= rows; j++)
+                foreach (var q in profile) p.Add(new Vector3(q.x, j, q.y));
+            var t = new List<int>();
+            var w = profile.Length;
+            for (var j = 0; j < rows; j++)
+                for (var i = 0; i + 1 < w; i++)
+                {
+                    var a = j * w + i;
+                    t.Add(a); t.Add(a + 1); t.Add(a + w);
+                    t.Add(a + 1); t.Add(a + w + 1); t.Add(a + w);
+                }
+            var topology = RemeshTopology.Build(p.ToArray(), t.ToArray());
+            int CreaseEdgesAlongTheCorner(FeatureGraph g)
+            {
+                var count = 0;
+                for (var j = 0; j < rows; j++)
+                    for (var i = 3; i <= 4; i++)
+                    {
+                        var a = Find(topology, p[j * w + i]);
+                        var b = Find(topology, p[(j + 1) * w + i]);
+                        if (g.IsFeatureEdge(a, b)) count++;
+                    }
+                return count;
+            }
+            Assert.AreEqual(0, CreaseEdgesAlongTheCorner(FeatureGraph.Detect(topology, 60f)), "edge by edge: 45 < 60");
+            var scaled = FeatureGraph.DetectAtScale(topology, 60f, 1f);
+            Assert.GreaterOrEqual(CreaseEdgesAlongTheCorner(scaled), rows, "at scale: the corner's 90 degrees");
+            // The flat faces either side stay quiet.
+            for (var j = 0; j < rows; j++)
+                Assert.IsFalse(scaled.IsFeatureEdge(Find(topology, p[j * w + 1]), Find(topology, p[(j + 1) * w + 1])));
+        }
+
+        static int Find(RemeshTopology topology, Vector3 target)
+        {
+            for (var v = 0; v < topology.vertexCount; v++)
+                if ((topology.positions[v] - target).sqrMagnitude < 1e-8f) return v;
+            return -1;
+        }
+
+        [Test]
         public void NotchAlongTheOutlineIsFilled()
         {
             const int n = 12;

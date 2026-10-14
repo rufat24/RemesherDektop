@@ -511,8 +511,21 @@ namespace NativeRemesher
                 {
                     onProgress?.Invoke("Decimating input", 0f);
                     watch.Restart();
+                    var decimateOptions = DecimateFor(budget, result.materials);
+                    if (decimateKeepsCreases && Extraction.IntegerGridMap.coherentCreases)
+                    {
+                        // Cells of the requested count, on the input's area.
+                        double area = 0;
+                        for (var t = 0; t + 2 < triangles.Length; t += 3)
+                            area += Vector3.Cross(positions[triangles[t + 1]] - positions[triangles[t]],
+                                positions[triangles[t + 2]] - positions[triangles[t]]).magnitude * 0.5;
+                        var cell = (float)Math.Sqrt(area / Math.Max(1, settings.targetQuadCount));
+                        decimateOptions.creaseAngle = Extraction.IntegerGridMap.coherentCreaseAngle;
+                        decimateOptions.creaseMinLength = decimateCreaseMinCells * cell;
+                        decimateOptions.creaseStraightness = decimateCreaseStraightness;
+                    }
                     PreDecimate.Decimate(positions, triangles,
-                        DecimateFor(budget, result.materials), out var decimateStats,
+                        decimateOptions, out var decimateStats,
                         out solvePositions, out solveTriangles,
                         p => onProgress?.Invoke("Decimating input", p));
                     result.decimateMs = watch.ElapsedMilliseconds;
@@ -590,6 +603,21 @@ namespace NativeRemesher
         /// One half (the positive side of the plane) solved with half the quads, mirrored and
         /// welded. See <see cref="Symmetry"/>.
         /// </summary>
+        /// <summary>
+        /// With Detect Hard Edges, pre-decimation keeps the long straight creases as edge chains
+        /// (DecimateOptions.creaseAngle): the ones at least this many cells of the requested count
+        /// long. Off (false): decimation as before, and a scan's wall foot comes out as slivers.
+        /// </summary>
+        public static bool decimateKeepsCreases = true;
+
+        public static float decimateCreaseMinCells = 4f;
+
+        /// <summary>
+        /// Straightness for those creases (end to end over walked length). Lower than the solver's:
+        /// on the full-resolution scan a crease follows the triangle edges in a zigzag.
+        /// </summary>
+        public static float decimateCreaseStraightness = 0.85f;
+
         static DecimateOptions DecimateFor(int budget, MaterialLabels labels)
         {
             var options = DecimateOptions.ForTriangleCount(budget);
@@ -1044,6 +1072,26 @@ namespace NativeRemesher
         /// <summary>On a scan, the straightness a kept crease needs (end to end over its length). 0: the general one.</summary>
         public static float scanCreaseStraightness = 0.85f;
 
+        /// <summary>
+        /// Detect Hard Edges measures each edge's bend between the faces within this many cells
+        /// either side of it (FeatureGraph.DetectAtScale), so a decimated corner rounded into a
+        /// chamfer still reads as the corner it is. 0: edge by edge (FeatureGraph.Detect).
+        /// </summary>
+        public static float creaseScaleCells = 0.25f;
+
+        /// <summary>
+        /// Apply <see cref="creaseScaleCells"/> on open meshes only. Measured over ccnb, the head and
+        /// the body at three counts each: it is what puts a scan's wall foot on a grid line, while
+        /// the closed sculpts -- auto-selected as Photogrammetry too -- came out a little better
+        /// without it (mean p05 over head and body 60.7 against 59.7).
+        /// </summary>
+        public static bool creaseScaleOpenOnly = true;
+
+        static FeatureGraph DetectCreases(RemeshResult result, RemeshTopology topology, float cell) =>
+            creaseScaleCells > 0f && (!creaseScaleOpenOnly || topology.boundaryEdgeCount > 0)
+                ? FeatureGraph.DetectAtScale(topology, Extraction.IntegerGridMap.coherentCreaseAngle, creaseScaleCells * cell)
+                : FeatureGraph.Detect(topology, Extraction.IntegerGridMap.coherentCreaseAngle);
+
         static bool IsScan(RemeshResult result) => result.profile.kind == RemeshProfileKind.Photogrammetry;
 
         static float CreaseMinCells(RemeshResult result, float general) =>
@@ -1053,6 +1101,17 @@ namespace NativeRemesher
             IsScan(result) && scanCreaseStraightness > 0f
                 ? scanCreaseStraightness
                 : Extraction.IntegerGridMap.coherentCreaseStraightness;
+
+        /// <summary>Diagnostics: when set, the solver's crease edges after each filter, by stage name.</summary>
+        public static List<(string stage, Vector3 a, Vector3 b)> debugCreaseStages;
+
+        static void DebugStage(string stage, FeatureGraph graph, RemeshTopology topology)
+        {
+            if (debugCreaseStages == null) return;
+            for (var c = 0; c < graph.polylineCount; c++)
+                for (var i = graph.polylineStart[c] + 1; i < graph.polylineStart[c + 1]; i++)
+                    debugCreaseStages.Add((stage, topology.positions[graph.polylineVertices[i - 1]], topology.positions[graph.polylineVertices[i]]));
+        }
 
         static List<(int a, int b)> DecimatedFeatureEdges(RemeshResult result, RemeshTopology topology)
         {
@@ -1077,7 +1136,9 @@ namespace NativeRemesher
             if (Extraction.IntegerGridMap.coherentCreases && result.profile.featureAngleDegrees <= 0f)
             {
                 var cell = topology.EdgeLengthForQuadCount(Mathf.Max(1, result.effectiveTargetQuadCount));
-                var creases = FeatureGraph.Detect(topology, Extraction.IntegerGridMap.coherentCreaseAngle)
+                var detected = DetectCreases(result, topology, cell);
+                DebugStage("detected", detected, topology);
+                var creases = detected
                     .KeepCoherentCurves(topology, CreaseMinCells(result, Extraction.IntegerGridMap.parametrizationCreaseMinCells) * cell,
                         CreaseStraightness(result), out _, out _);
                 // Two grid lines closer than a cell squash the cells between them flat.
@@ -1086,10 +1147,12 @@ namespace NativeRemesher
                 var separation = Extraction.IntegerGridMap.parametrizationLayout
                     ? Mathf.Max(Extraction.IntegerGridMap.parametrizationCreaseSeparationCells, Extraction.IntegerGridMap.layoutCreaseSeparationCells)
                     : Extraction.IntegerGridMap.parametrizationCreaseSeparationCells;
+                DebugStage("coherent", creases, topology);
                 if (separation > 0f)
                     creases = creases.KeepSeparatedCurves(topology,
                         separation * cell,
                         Extraction.IntegerGridMap.coherentCreaseMaxShared, out _);
+                DebugStage("separated", creases, topology);
                 Add(creases);
             }
             return edges;
@@ -1345,8 +1408,7 @@ namespace NativeRemesher
                 && result.profile.featureAngleDegrees <= 0f)
             {
                 var creaseCell = result.topology.EdgeLengthForQuadCount(Mathf.Max(1, settings.targetQuadCount));
-                coherentCreases = FeatureGraph.Detect(result.topology,
-                        Extraction.IntegerGridMap.coherentCreaseAngle)
+                coherentCreases = DetectCreases(result, result.topology, creaseCell)
                     .KeepCoherentCurves(result.topology,
                         CreaseMinCells(result, Extraction.IntegerGridMap.coherentCreaseMinCells) * creaseCell,
                         CreaseStraightness(result),

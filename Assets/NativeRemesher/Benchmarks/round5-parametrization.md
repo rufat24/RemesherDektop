@@ -374,3 +374,43 @@ slanted and its brick shows wider from above. Renders: `shots_final/r13_scan_top
 
 Still open: a wall a cell or two tall gets one row of quads, its ends break into a large quad and
 a triangle fan; the parametrization's grid still bends a few degrees across flat roofs.
+
+## Round 14 — walls: both edges laid, two rows (2026-10-15)
+
+The 4 m wall at x 68.9 (ccnb, 5000) had a quad row on the wall and the foot row slanting out to
+the ground grid line 2 m away: the foot was not a grid line. Traced back:
+
+1. The 50k-triangle pre-decimation rounds the foot off: slivers 4-7 m long run from wall to
+   ground, dihedrals 2-32 degrees, so no crease exists there to find.
+   -> `DecimateOptions.creaseAngle` (via `RemeshPipeline.decimateKeepsCreases`, on): long straight
+   creases of each stage (`decimateCreaseMinCells` 4 of the requested count) get their two face
+   planes weighted 1000 x length -- vertices slide along them, not off.
+2. Kept that way the foot became a zipper of collinear slivers with normals anywhere.
+   -> `PreDecimate.sliverGuardQuality` 0.1: no collapse may leave a triangle of quality under 0.1
+   that was better before (48k collapses refused on ccnb; target still reached).
+3. What remains is a 0.3 m chamfer: two 45-degree bends, edge by edge mostly under 35.
+   -> `FeatureGraph.DetectAtScale` (`RemeshPipeline.creaseScaleCells` 0.25, open meshes only via
+   `creaseScaleOpenOnly`): an edge's dihedral between the area-weighted normals of the faces
+   within a quarter cell either side; it must still bend a third of the angle itself.
+4. `FeatureGraph.bridgeGapFraction` 0.15: crease ends pointing at each other across a gap up to
+   0.15 of the minimum length are joined, the gap's mesh edges added.
+
+Foot of that wall (y 40-70) in the solver's crease set: 4.3 m -> 23 m; roof edge 18.9 -> 21 m.
+Render: `shots_final/r14_wall_src_r13_now.png` (scan / round 13 / now): two straight rows along
+the wall. `r14_top_r13_now.png` from above.
+
+| | irregular | p05 | Hausdorff |
+|---|---|---|---|
+| ccnb 2000 r13 / now | 6.95 / 5.79 % | 49.0 / 48.3 | .0170 / .0150 |
+| ccnb 5000 | 4.96 / 4.78 % | 53.5 / 55.4 | .0135 / .0169 (a 5 m pole flattened) |
+| ccnb 10000 | 4.08 / 4.14 % | 55.2 / 56.2 | .0134 / .0072 |
+| head 2000 | 5.37 / 4.47 % | 46.5 / 44.3 | .0170 / .0191 |
+| head 3500 | 3.22 / 2.77 % | 56.2 / 57.0 | .0140 / .0133 |
+| head 5000 | 2.58 / 2.51 % | 57.2 / 59.2 | .0103 / .0115 |
+| body 2000 | 2.52 / 1.61 % | 66.6 / 68.9 | .0107 / .0126 |
+| body 3500 | 1.63 / 1.38 % | 67.5 / 67.3 | .0092 / .0094 |
+| body 5000 | 1.15 / 1.13 % | 68.2 / 67.2 | .0093 / .0077 |
+
+Mean irregular 3.61 -> 3.15 %. Single runs move by a few tenths of a percent and a few
+thousandths of Hausdorff with any change (head 2000 with every new piece on: Hausdorff .026,
+with any one off .016-.019), so read the table as a whole. Tests 196 (194 / 0 / 2).

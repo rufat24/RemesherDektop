@@ -48,6 +48,23 @@ namespace NativeRemesher
         /// </summary>
         public MaterialLabels labels;
 
+        /// <summary>
+        /// Keep hard edges: creases over this dihedral angle (degrees) that run at least
+        /// <see cref="creaseMinLength"/> fairly straight (FeatureGraph.KeepCoherentCurves) get their
+        /// two face planes weighted by <see cref="creaseWeight"/>, so a vertex on one slides along
+        /// it and not off it. 0: off.
+        /// </summary>
+        /// <remarks>
+        /// Without it the quadric error rounds a concave corner off as cheaply as anything else:
+        /// measured on ccnb at 5000, the foot of a 4 m wall came out of decimation as slivers 4-7 m
+        /// long running from wall to ground, with dihedrals of 2-32 degrees, so no crease could be
+        /// found there and the grid cut the wall's lower half off diagonally.
+        /// </remarks>
+        public float creaseAngle;
+        public float creaseMinLength;
+        public float creaseStraightness = 0.85f;
+        public float creaseWeight = 1000f;
+
         /// <summary>Weight of the planes along label borders, against a face's own plane (both by
         /// area: length squared). Low: a material border on a dense input zigzags triangle by
         /// triangle, and a heavy weight keeps every zig at full density.</summary>
@@ -69,6 +86,8 @@ namespace NativeRemesher
         public int rejectedNormalFlip;
         public int rejectedBoundary;
         public int rejectedLabel, labelSlides, labelBorderStart;
+        public int creaseEdges;
+        public int rejectedSliver;
 
         public float maxErrorApplied;
 
@@ -105,6 +124,8 @@ namespace NativeRemesher
             rejectedNormalFlip += o.rejectedNormalFlip;
             rejectedBoundary += o.rejectedBoundary;
             rejectedLabel += o.rejectedLabel;
+            creaseEdges += o.creaseEdges;
+            rejectedSliver += o.rejectedSliver;
             labelSlides += o.labelSlides;
             maxErrorApplied = Mathf.Max(maxErrorApplied, o.maxErrorApplied);
             solvedTargets += o.solvedTargets;
@@ -122,7 +143,7 @@ namespace NativeRemesher
                    $"({inputVertices:N0} -> {outputVertices:N0} verts), " +
                    $"collapses={collapsesApplied} rejTopo={rejectedTopology} " +
                    $"rejFlip={rejectedNormalFlip}(solved={rejectedFlipSolved} " +
-                   $"fallback={rejectedFlipFallback}) rejBoundary={rejectedBoundary} rejLabel={rejectedLabel} labelSlides={labelSlides} labelBorderStart={labelBorderStart} " +
+                   $"fallback={rejectedFlipFallback}) rejBoundary={rejectedBoundary} rejLabel={rejectedLabel} creaseEdges={creaseEdges} rejSliver={rejectedSliver} labelSlides={labelSlides} labelBorderStart={labelBorderStart} " +
                    $"targets={solvedTargets}solved/{fallbackTargets}fallback " +
                    $"drift={(solvedTargets + driftRejected > 0 ? driftSum / (solvedTargets + driftRejected) : 0):F2}mean/" +
                    $"{driftMax:F2}max edgeLengths rejByDrift={driftRejected} " +
@@ -488,6 +509,7 @@ namespace NativeRemesher
             var triLabel = options.labels != null && options.labels.labelCount > 1
                 ? options.labels.ForTopology(topology, sourceTriangles)
                 : null;
+            var creases = CreaseEdges(topology, options);
 
 
             stats = new DecimateStats
@@ -495,6 +517,7 @@ namespace NativeRemesher
                 inputTriangles = triangleCount,
                 inputVertices = positions.Length
             };
+            if (creases != null) stats.creaseEdges = creases.Count;
             if (triLabel != null)
             {
                 var lb = LabelBorderVertices(topology, triLabel);
@@ -515,7 +538,7 @@ namespace NativeRemesher
             if (allowParallel && triangleCount >= parallelMinTriangles && triangleCount > 2 * stageTarget)
             {
                 var stageQuadrics = BuildQuadrics(topology, positions, triangles, triangleCount,
-                    options.boundaryWeight, triLabel, options.labelBorderWeight);
+                    options.boundaryWeight, triLabel, options.labelBorderWeight, creases, options.creaseWeight);
                 msQuadrics = phase.ElapsedMilliseconds; phase.Restart();
 
                 var progressLock = new object();
@@ -546,7 +569,7 @@ namespace NativeRemesher
             msIncident = phase.ElapsedMilliseconds; phase.Restart();
 
             var quadrics = BuildQuadrics(topology, positions, triangles, triangleCount,
-                options.boundaryWeight, triLabel, options.labelBorderWeight);
+                options.boundaryWeight, triLabel, options.labelBorderWeight, creases, options.creaseWeight);
             msQuadrics = phase.ElapsedMilliseconds; phase.Restart();
 
             // --- seed the heap with every edge ---
@@ -692,6 +715,13 @@ namespace NativeRemesher
                         positions, best.u, best.v, ref best.target, out slide))
                 {
                     stats.rejectedLabel++;
+                    continue;
+                }
+
+                if (sliverGuardQuality > 0f && WouldMakeSliver(incident, triangles, triAlive, positions,
+                        best.u, best.v, best.target, sliverGuardQuality))
+                {
+                    stats.rejectedSliver++;
                     continue;
                 }
 
@@ -1053,8 +1083,33 @@ namespace NativeRemesher
             return true;
         }
 
+        // The long straight creases of this mesh, as edges (boundaries left out), or null.
+        static HashSet<long> CreaseEdges(RemeshTopology topology, DecimateOptions options)
+        {
+            if (!(options.creaseAngle > 0f) || !(options.creaseMinLength > 0f) || topology.halfEdgeTwin == null)
+                return null;
+            var graph = FeatureGraph.Detect(topology, options.creaseAngle)
+                .KeepCoherentCurves(topology, options.creaseMinLength, options.creaseStraightness, out _, out _);
+            var edges = new HashSet<long>(Extraction.EdgeKey.Comparer);
+            for (var h = 0; h < topology.halfEdgeTwin.Length; h++)
+            {
+                if (topology.halfEdgeTwin[h] < 0) continue;
+                int a = topology.halfEdgeVertex[h], b = topology.HalfEdgeTarget(h);
+                if (graph.IsFeatureEdge(a, b)) edges.Add(Extraction.EdgeKey.PackUndirected(a, b));
+            }
+            if (debugCreaseSegments != null)
+                lock (debugCreaseSegments)
+                    foreach (var key in edges)
+                        debugCreaseSegments.Add((topology.positions[Extraction.EdgeKey.First(key)], topology.positions[Extraction.EdgeKey.Second(key)]));
+            return edges.Count > 0 ? edges : null;
+        }
+
+        /// <summary>Diagnostics: when set, every kept crease edge of every stage is added here.</summary>
+        public static List<(Vector3 a, Vector3 b)> debugCreaseSegments;
+
         static Quadric[] BuildQuadrics(RemeshTopology topology, Vector3[] positions, int[] triangles,
-            int triangleCount, float boundaryWeight, int[] triLabel = null, float labelWeight = 1f)
+            int triangleCount, float boundaryWeight, int[] triLabel = null, float labelWeight = 1f,
+            HashSet<long> creases = null, float creaseWeight = 0f)
         {
             var quadrics = new Quadric[positions.Length];
 
@@ -1112,6 +1167,29 @@ namespace NativeRemesher
                     var plane = Quadric.FromPlane(planeNormal.x, planeNormal.y, planeNormal.z, d,
                         twinH >= 0 ? labelWeight * length * (labelWeightByArea ? length : 1f) : boundaryWeight * length);
 
+                    quadrics[from].Add(plane);
+                    quadrics[to].Add(plane);
+                }
+            }
+
+            // Hard edges: each side's face plane again, heavily, at both ends -- the two meet in
+            // the crease line, so moving along it is free and moving off it is not.
+            if (creases != null && creaseWeight > 0f && topology.halfEdgeTwin != null)
+            {
+                for (var h = 0; h < topology.halfEdgeTwin.Length; h++)
+                {
+                    if (topology.halfEdgeTwin[h] < 0) continue;
+                    var from = topology.halfEdgeVertex[h];
+                    var to = topology.HalfEdgeTarget(h);
+                    if (from >= positions.Length || to >= positions.Length) continue;
+                    if (!creases.Contains(Extraction.EdgeKey.PackUndirected(from, to))) continue;
+                    var length = (positions[to] - positions[from]).magnitude;
+                    var faceNormal = TriangleNormal(positions, triangles, h / 3);
+                    if (length <= 1e-20f || faceNormal.sqrMagnitude <= 1e-20f) continue;
+                    faceNormal = MeshMath.SafeNormalize(faceNormal, Vector3.zero);
+                    if (faceNormal == Vector3.zero) continue;
+                    var d = -Vector3.Dot(faceNormal, positions[from]);
+                    var plane = Quadric.FromPlane(faceNormal.x, faceNormal.y, faceNormal.z, d, creaseWeight * length);
                     quadrics[from].Add(plane);
                     quadrics[to].Add(plane);
                 }
@@ -1295,6 +1373,53 @@ namespace NativeRemesher
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Refuse a collapse that leaves a triangle of shape quality under this (4 sqrt 3 area over
+        /// the sum of squared edges: 1 equilateral, 0 degenerate) and worse than it was. 0: off.
+        /// </summary>
+        /// <remarks>
+        /// With hard edges kept (DecimateOptions.creaseAngle) vertices from both sides of a crease
+        /// slide onto it, and the triangles between them flatten into a zipper of slivers along the
+        /// line, whose normals point anywhere: measured on ccnb, the foot of a wall kept as 101 m
+        /// of edges came out with dihedrals of 9-46 degrees along it instead of 90, and no crease
+        /// could be found there again.
+        /// </remarks>
+        public static float sliverGuardQuality = 0.1f;
+
+        static float TriangleQuality(Vector3 a, Vector3 b, Vector3 c)
+        {
+            var sum = (b - a).sqrMagnitude + (c - b).sqrMagnitude + (a - c).sqrMagnitude;
+            if (!(sum > 0f)) return 0f;
+            return 6.92820323f * 0.5f * Vector3.Cross(b - a, c - a).magnitude / sum;
+        }
+
+        static bool WouldMakeSliver(Incidence incident, int[] triangles, bool[] triAlive,
+            Vector3[] positions, int u, int v, Vector3 target, float minQuality)
+        {
+            for (var pass = 0; pass < 2; pass++)
+            {
+                var moving = pass == 0 ? u : v;
+                var count = incident.Count(moving);
+                for (var i = 0; i < count; i++)
+                {
+                    var t = incident.Get(moving, i);
+                    if (!triAlive[t]) continue;
+                    int a = triangles[t * 3], b = triangles[t * 3 + 1], c = triangles[t * 3 + 2];
+                    var touchesU = a == u || b == u || c == u;
+                    var touchesV = a == v || b == v || c == v;
+                    if (touchesU && touchesV) continue;
+                    Vector3 pa = positions[a], pb = positions[b], pc = positions[c];
+                    var before = TriangleQuality(pa, pb, pc);
+                    if (a == u || a == v) pa = target;
+                    if (b == u || b == v) pb = target;
+                    if (c == u || c == v) pc = target;
+                    var after = TriangleQuality(pa, pb, pc);
+                    if (after < minQuality && after < before) return true;
+                }
+            }
+            return false;
         }
 
         static bool WouldFlipNormals(Incidence incident, int[] triangles, bool[] triAlive,

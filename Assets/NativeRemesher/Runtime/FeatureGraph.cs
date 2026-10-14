@@ -280,6 +280,10 @@ namespace NativeRemesher
             var joined = new int[2 * polylineCount];
             for (var i = 0; i < joined.Length; i++) joined[i] = -1;
             if (joinThroughJunctions) JoinThroughJunctions(positions, minExtent / 3f, IsCrease, joined, Find, stroke);
+            // Across short gaps too: where the dihedral dips under the threshold for an edge or two.
+            var bridges = bridgeGapFraction > 0f
+                ? BridgeGaps(topology, minExtent / 3f, bridgeGapFraction * minExtent, IsCrease, joined, Find, stroke)
+                : null;
 
             // Each stroke measured as a whole: its length, and the distance between its two free ends.
             var strokeWalked = new Dictionary<int, float>();
@@ -289,6 +293,14 @@ namespace NativeRemesher
                 if (!IsCrease(c)) continue;
                 var s = Find(c);
                 strokeWalked[s] = (strokeWalked.TryGetValue(s, out var w) ? w : 0f) + Walked(c);
+                // A bridged gap counts once, from the end with the lower id.
+                for (var side = 0; side < 2; side++)
+                {
+                    var e = 2 * c + side;
+                    if (bridges != null && bridges.TryGetValue(e, out var path) && e < joined[e])
+                        for (var i = 1; i < path.Count; i++)
+                            strokeWalked[s] += (positions[path[i]] - positions[path[i - 1]]).magnitude;
+                }
                 if (!strokeEnds.TryGetValue(s, out var ends)) strokeEnds[s] = ends = new List<int>(2);
                 if (!polylineClosed[c])
                 {
@@ -318,6 +330,12 @@ namespace NativeRemesher
                 keptCurves++;
                 for (var i = from + 1; i < to; i++)
                     kept.Add((polylineVertices[i - 1], polylineVertices[i]));
+                for (var side = 0; side < 2; side++)
+                {
+                    var e = 2 * c + side;
+                    if (bridges != null && bridges.TryGetValue(e, out var path) && e < joined[e])
+                        for (var i = 1; i < path.Count; i++) kept.Add((path[i - 1], path[i]));
+                }
             }
 
             var result = Empty(topology.vertexCount);
@@ -344,6 +362,145 @@ namespace NativeRemesher
 
         /// <summary>The most two pieces may turn at a junction and still be one stroke, degrees.</summary>
         public static float joinMaxTurnDegrees = 30f;
+
+        /// <summary>
+        /// Bridge a gap in a crease up to this fraction of the minimum length, where two ends point
+        /// at each other: the gap's mesh edges join the crease, and both pieces are measured as one.
+        /// </summary>
+        /// <remarks>
+        /// A scan's crease drops under the dihedral threshold for an edge or two wherever something
+        /// rounds it off -- a bin against the foot of a wall, a patch of noise. Measured on ccnb, a
+        /// 15 m stretch of wall kept 19 m of its roof edge and 4 m of its foot, so the grid ran
+        /// along the ground a cell out from the wall and cut its lower half off diagonally. Every
+        /// gap left open is also a crease end, which the layout turns into a singularity. 0: off.
+        /// </remarks>
+        public static float bridgeGapFraction = 0.15f;
+
+        // Pairs of free crease ends across a gap; per end, the mesh path to the other end.
+        Dictionary<int, List<int>> BridgeGaps(RemeshTopology topology, float reach, float maxGap,
+            Func<int, bool> isCrease, int[] joined, Func<int, int> find, int[] stroke)
+        {
+            var positions = topology.positions;
+            var ends = new List<(int end, int v, Vector3 p, Vector3 dir)>();
+            for (var c = 0; c < polylineCount; c++)
+            {
+                if (!isCrease(c) || polylineClosed[c]) continue;
+                var from = polylineStart[c];
+                var to = polylineStart[c + 1];
+                for (var side = 0; side < 2; side++)
+                {
+                    if (joined[2 * c + side] >= 0) continue;
+                    var tip = side == 0 ? from : to - 1;
+                    var step = side == 0 ? 1 : -1;
+                    var p = positions[polylineVertices[tip]];
+                    var q = p;
+                    for (var i = tip + step; i >= from && i < to; i += step)
+                    {
+                        q = positions[polylineVertices[i]];
+                        if ((q - p).sqrMagnitude >= reach * reach) break;
+                    }
+                    var dir = p - q;
+                    if (dir.sqrMagnitude <= 0f) continue;
+                    ends.Add((2 * c + side, polylineVertices[tip], p, dir.normalized));
+                }
+            }
+            if (ends.Count < 2 || maxGap <= 0f) return null;
+
+            // Candidate pairs from a grid of the ends, cell = the largest gap.
+            var cellOf = new Dictionary<(int, int, int), List<int>>();
+            (int, int, int) Cell(Vector3 p) => (Mathf.FloorToInt(p.x / maxGap), Mathf.FloorToInt(p.y / maxGap), Mathf.FloorToInt(p.z / maxGap));
+            for (var i = 0; i < ends.Count; i++)
+            {
+                var key = Cell(ends[i].p);
+                if (!cellOf.TryGetValue(key, out var list)) cellOf[key] = list = new List<int>(2);
+                list.Add(i);
+            }
+            var aim = Mathf.Cos(joinMaxTurnDegrees * Mathf.Deg2Rad);
+            var pairs = new List<(float gap, int i, int j)>();
+            for (var i = 0; i < ends.Count; i++)
+            {
+                var (cx, cy, cz) = Cell(ends[i].p);
+                for (var dx = -1; dx <= 1; dx++)
+                for (var dy = -1; dy <= 1; dy++)
+                for (var dz = -1; dz <= 1; dz++)
+                {
+                    if (!cellOf.TryGetValue((cx + dx, cy + dy, cz + dz), out var list)) continue;
+                    foreach (var j in list)
+                    {
+                        if (j <= i || ends[i].end / 2 == ends[j].end / 2) continue;
+                        var g = ends[j].p - ends[i].p;
+                        var gap = g.magnitude;
+                        if (gap > maxGap || gap <= 0f) continue;
+                        var u = g / gap;
+                        // Each end pointing at the other.
+                        if (Vector3.Dot(ends[i].dir, u) < aim || Vector3.Dot(ends[j].dir, -u) < aim) continue;
+                        pairs.Add((gap, i, j));
+                    }
+                }
+            }
+            pairs.Sort((x, y) => x.gap.CompareTo(y.gap));
+
+            var bridges = new Dictionary<int, List<int>>();
+            foreach (var (gap, i, j) in pairs)
+            {
+                int ei = ends[i].end, ej = ends[j].end;
+                if (joined[ei] >= 0 || joined[ej] >= 0) continue;
+                int ri = find(ei / 2), rj = find(ej / 2);
+                if (ri == rj) continue;
+                var path = MeshPath(topology, ends[i].v, ends[j].v, 2f * gap);
+                if (path == null) continue;
+                joined[ei] = ej;
+                joined[ej] = ei;
+                stroke[ri] = rj;
+                bridges[ei] = path;
+                var back = new List<int>(path);
+                back.Reverse();
+                bridges[ej] = back;
+            }
+            return bridges;
+        }
+
+        // The shortest path along mesh edges from a to b, no longer than maxLength; null if none.
+        static List<int> MeshPath(RemeshTopology topology, int a, int b, float maxLength)
+        {
+            var positions = topology.positions;
+            var start = topology.adjacencyStart;
+            var adjacency = topology.adjacency;
+            if (start == null || adjacency == null) return null;
+            var dist = new Dictionary<int, float> { [a] = 0f };
+            var prev = new Dictionary<int, int>();
+            var open = new SortedSet<(float d, int v)> { (0f, a) };
+            while (open.Count > 0)
+            {
+                var (d, v) = open.Min;
+                open.Remove(open.Min);
+                if (v == b) break;
+                for (var k = start[v]; k < start[v + 1]; k++)
+                {
+                    var w = adjacency[k];
+                    if (w == v) continue;
+                    var nd = d + (positions[w] - positions[v]).magnitude;
+                    if (nd > maxLength) continue;
+                    if (dist.TryGetValue(w, out var old))
+                    {
+                        if (old <= nd) continue;
+                        open.Remove((old, w));
+                    }
+                    dist[w] = nd;
+                    prev[w] = v;
+                    open.Add((nd, w));
+                }
+            }
+            if (!dist.ContainsKey(b)) return null;
+            var path = new List<int>();
+            for (var v = b; ; v = prev[v])
+            {
+                path.Add(v);
+                if (v == a) break;
+            }
+            path.Reverse();
+            return path;
+        }
 
         void JoinThroughJunctions(Vector3[] positions, float reach, Func<int, bool> isCrease,
             int[] joined, Func<int, int> find, int[] stroke)
@@ -582,6 +739,96 @@ namespace NativeRemesher
             graph.BuildPolylines(neighbours);
 
             return graph;
+        }
+
+        /// <summary>
+        /// As <see cref="Detect"/>, with each edge's dihedral measured between the area-weighted
+        /// normals of the faces on either side of it within <paramref name="radius"/>, not between
+        /// its two triangles alone. An edge must still bend by <paramref name="minLocalFraction"/> of
+        /// the angle itself, so the flat faces beside a corner do not light up with it.
+        /// </summary>
+        /// <remarks>
+        /// A decimated scan rounds a right-angled corner into a chamfer a few tenths of a metre
+        /// wide: two bends of about 45 degrees, each under a 35-degree test's notice or not, edge by
+        /// edge. Measured on ccnb at 5000, the foot of a 4 m wall bent 9-46 degrees along its edges
+        /// and 34 m of 94 passed, so the grid ran a cell out along the ground and cut the wall's
+        /// lower half off diagonally. Over half a metre either side the corner is the 90 degrees it is.
+        /// </remarks>
+        public static FeatureGraph DetectAtScale(RemeshTopology topology, float angleDegrees, float radius,
+            float minLocalFraction = 1f / 3f)
+        {
+            if (topology == null) throw new ArgumentNullException(nameof(topology));
+            if (!(radius > 0f) || !(angleDegrees > 0f)) return Detect(topology, angleDegrees);
+            var T = topology.triangles;
+            var P = topology.positions;
+            var faceCount = T.Length / 3;
+            var normal = new Vector3[faceCount];
+            var centroid = new Vector3[faceCount];
+            var area = new float[faceCount];
+            for (var f = 0; f < faceCount; f++)
+            {
+                Vector3 a = P[T[3 * f]], b = P[T[3 * f + 1]], c = P[T[3 * f + 2]];
+                var cr = Vector3.Cross(b - a, c - a);
+                area[f] = 0.5f * cr.magnitude;
+                normal[f] = MeshMath.SafeFaceNormal(a, b, c, Vector3.up);
+                centroid[f] = (a + b + c) / 3f;
+            }
+            var cosAngle = Mathf.Cos(Mathf.Clamp(angleDegrees, 0.01f, 179.99f) * Mathf.Deg2Rad);
+            var cosLocal = Mathf.Cos(Mathf.Clamp(angleDegrees * minLocalFraction, 0.01f, 179.99f) * Mathf.Deg2Rad);
+            var twin = topology.halfEdgeTwin;
+            var halfEdgeCount = topology.halfEdgeVertex?.Length ?? 0;
+            var crease = new bool[halfEdgeCount];
+            var r2 = radius * radius;
+            System.Threading.Tasks.Parallel.For(0, halfEdgeCount,
+                () => (queue: new List<int>(64), seen: new HashSet<int>()),
+                (h, _, local) =>
+                {
+                    var tw = twin[h];
+                    if (tw < 0 || tw < h) return local;
+                    int f1 = h / 3, f2 = tw / 3;
+                    if (Vector3.Dot(normal[f1], normal[f2]) >= cosLocal) return local;
+                    var a = topology.halfEdgeVertex[h];
+                    var b = topology.HalfEdgeTarget(h);
+                    var m = 0.5f * (P[a] + P[b]);
+                    var t = P[b] - P[a];
+                    var tl = t.magnitude;
+                    if (tl <= 0f) return local;
+                    t /= tl;
+                    Vector3 Across(Vector3 p) { var w = p - m; return w - t * Vector3.Dot(w, t); }
+                    var d1 = Across(centroid[f1]).normalized;
+                    var d2 = Across(centroid[f2]).normalized;
+                    Vector3 n1 = Vector3.zero, n2 = Vector3.zero;
+                    var queue = local.queue; var seen = local.seen;
+                    queue.Clear(); seen.Clear();
+                    queue.Add(f1); queue.Add(f2); seen.Add(f1); seen.Add(f2);
+                    for (var i = 0; i < queue.Count; i++)
+                    {
+                        var g = queue[i];
+                        var w = Across(centroid[g]);
+                        if (Vector3.Dot(w, d1) >= Vector3.Dot(w, d2)) n1 += normal[g] * area[g];
+                        else n2 += normal[g] * area[g];
+                        for (var k = 0; k < 3; k++)
+                        {
+                            var o = twin[3 * g + k];
+                            if (o < 0) continue;
+                            var nb = o / 3;
+                            if (seen.Contains(nb)) continue;
+                            seen.Add(nb);
+                            if ((centroid[nb] - m).sqrMagnitude > r2) continue;
+                            queue.Add(nb);
+                        }
+                    }
+                    if (n1.sqrMagnitude > 0f && n2.sqrMagnitude > 0f
+                        && Vector3.Dot(MeshMath.SafeNormalize(n1, Vector3.zero), MeshMath.SafeNormalize(n2, Vector3.zero)) < cosAngle)
+                        crease[h] = true;
+                    return local;
+                }, _ => { });
+
+            var edges = new List<(int a, int b)>();
+            for (var h = 0; h < halfEdgeCount; h++)
+                if (crease[h]) edges.Add((topology.halfEdgeVertex[h], topology.HalfEdgeTarget(h)));
+            // Boundaries, as Detect gives them.
+            return Detect(topology, 0f).WithEdges(topology, edges);
         }
 
         static Vector3 TriangleNormal(RemeshTopology topology, int triangle)
