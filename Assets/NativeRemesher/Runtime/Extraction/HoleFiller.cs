@@ -18,6 +18,7 @@
 // pinch — is split at the repeat into simple sub-loops. Anything still not simple is left open
 // and counted, because a wrong cap is worse than a reported hole.
 
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -124,6 +125,9 @@ namespace NativeRemesher.Extraction
         /// </remarks>
         public int loopsLeftOpen;
 
+        /// <summary>Stretches of the outline loop running inside the input's outline, closed and capped.</summary>
+        public int outlineNotchesFilled;
+
         /// <summary>Corner count of the largest cap emitted — a big one is a quality warning.</summary>
         public int largestCap;
 
@@ -137,7 +141,7 @@ namespace NativeRemesher.Extraction
                    $"ngonCaps={ngonCaps} fanned={loopsFanned} added={verticesAdded} " +
                    $"abandoned={loopsAbandoned}(dead={abandonedDeadEnd} long={abandonedTooLong} " +
                    $"offSurface={loopsOffSurface} " +
-                   $"longest={longestAbandoned}) leftOpen={loopsLeftOpen} uncovered={edgesLeftUncovered} " +
+                   $"longest={longestAbandoned}) leftOpen={loopsLeftOpen} notches={outlineNotchesFilled} uncovered={edgesLeftUncovered} " +
                    $"largestCap={largestCap} fans={Sizes(fanSizes)} refused={Sizes(refusedSizes)}";
         }
 
@@ -483,6 +487,10 @@ namespace NativeRemesher.Extraction
                     {
                         foreach (var edge in walkEdges) consumed.Add(edge);
                         stats.loopsLeftOpen++;
+                        if (fillOutlineNotches)
+                            FillOutlineNotches(new List<int>(loop), faces, vertexCount, stats, addedVertices,
+                                positions, outlineVertices, outlineEdges, outlineGrid, outlineTolerance,
+                                probe, incidence);
                         continue;
                     }
 
@@ -1158,6 +1166,172 @@ namespace NativeRemesher.Extraction
         /// half is to leave it open — a reported hole is a defect the user can see and measure,
         /// where an outline welded shut is a silent change to what the mesh *is*.
         /// </remarks>
+        /// <summary>
+        /// Close the notches in a loop that is the input's outline: stretches of it running well
+        /// inside the outline, where the extractor lost a strip along the edge.
+        /// </summary>
+        /// <remarks>
+        /// A hole touching the outline is not a loop of its own -- it opens into the outline loop,
+        /// which is rightly left open, so the hole was never capped. Measured on ccnb, the quad
+        /// layout gave no grid to one strip along the slanted east edge (a two-sided patch between
+        /// two border corners) and the scan came out with an 8 m notch: 0.47 % of its area
+        /// uncovered and Hausdorff 0.0134 -> 0.0207. Each such stretch is closed along the input's
+        /// own outline, resampled at the stretch's edge length, and capped like any hole. Off: the
+        /// notch stays open.
+        /// </remarks>
+        public static bool fillOutlineNotches = true;
+
+        static void FillOutlineNotches(List<int> loop, List<int[]> faces, int vertexCount,
+            HoleFillStats stats, List<Vector3> addedVertices, Vector3[] positions,
+            Vector3[] outlineVertices, int[] outlineEdges, OutlineGrid outline, float tolerance,
+            SurfaceProbe probe, Dictionary<long, int> incidence)
+        {
+            var n = loop.Count;
+            if (n < 4) return;
+            Vector3 Pos(int v) => v < vertexCount ? positions[v] : addedVertices[v - vertexCount];
+            var near = new bool[n];
+            var anyNear = false;
+            for (var i = 0; i < n; i++)
+            {
+                near[i] = outline.WithinSqr(Pos(loop[i]), tolerance * tolerance);
+                anyNear |= near[i];
+            }
+            if (!anyNear) return;
+
+            // The outline as a graph, for paths along it.
+            Dictionary<int, List<int>> graph = null;
+
+            // Runs of far vertices, from a near vertex to the next.
+            var start = 0;
+            while (!near[start]) start++;
+            for (var step = 0; step < n;)
+            {
+                var a = (start + step) % n;
+                if (!near[a]) { step++; continue; }
+                var run = 0;
+                while (run + 1 < n && !near[(a + 1 + run) % n]) run++;
+                step += run + 1;
+                if (run < 2) continue;
+                var b = (a + run + 1) % n;
+                if (run > 4 * maxCapSize) continue;
+
+                graph ??= OutlineGraph(outlineEdges);
+                var anchorA = loop[a];
+                var anchorB = loop[b];
+                var path = OutlinePath(graph, outlineVertices, Pos(anchorB), Pos(anchorA),
+                    3f * (Pos(anchorA) - Pos(anchorB)).magnitude + 4f * tolerance);
+                if (path == null) continue;
+
+                // The new outline points, at the stretch's own edge length.
+                var edgeSum = 0f;
+                for (var k = 0; k <= run; k++)
+                    edgeSum += (Pos(loop[(a + k + 1) % n]) - Pos(loop[(a + k) % n])).magnitude;
+                var spacing = Mathf.Max(1e-6f, edgeSum / (run + 1));
+                var total = 0f;
+                for (var k = 1; k < path.Count; k++) total += (path[k] - path[k - 1]).magnitude;
+                var pieces = Mathf.Max(1, Mathf.RoundToInt(total / spacing));
+
+                var hole = new List<int>(run + 2 + pieces);
+                for (var k = 0; k <= run + 1; k++) hole.Add(loop[(a + k) % n]);
+                var firstNew = addedVertices.Count;
+                for (var p = 1; p < pieces; p++)
+                {
+                    addedVertices.Add(PointAlong(path, total * p / pieces));
+                    hole.Add(vertexCount + addedVertices.Count - 1);
+                }
+
+                // Emit reads rim positions from one array, so the rim's new points go in with it.
+                var extended = new Vector3[vertexCount + addedVertices.Count];
+                Array.Copy(positions, extended, Math.Min(positions.Length, vertexCount));
+                for (var k = 0; k < addedVertices.Count; k++) extended[vertexCount + k] = addedVertices[k];
+                var facesBefore = faces.Count;
+                EmitSimpleLoops(hole, faces, vertexCount, stats, addedVertices, extended, probe, incidence);
+                if (faces.Count == facesBefore)
+                {
+                    // Nothing capped it: take the outline points back.
+                    addedVertices.RemoveRange(firstNew, addedVertices.Count - firstNew);
+                    continue;
+                }
+                stats.outlineNotchesFilled++;
+            }
+        }
+
+        static Dictionary<int, List<int>> OutlineGraph(int[] edges)
+        {
+            var graph = new Dictionary<int, List<int>>();
+            for (var e = 0; e + 1 < edges.Length; e += 2)
+            {
+                int a = edges[e], b = edges[e + 1];
+                (graph.TryGetValue(a, out var la) ? la : graph[a] = new List<int>(2)).Add(b);
+                (graph.TryGetValue(b, out var lb) ? lb : graph[b] = new List<int>(2)).Add(a);
+            }
+            return graph;
+        }
+
+        // The shortest way along the outline from the outline vertex nearest `from` to the one
+        // nearest `to`, as points from `from` to `to`; null if longer than maxLength or none.
+        static List<Vector3> OutlinePath(Dictionary<int, List<int>> graph, Vector3[] vertices,
+            Vector3 from, Vector3 to, float maxLength)
+        {
+            int Nearest(Vector3 p)
+            {
+                var best = -1;
+                var bestSqr = float.PositiveInfinity;
+                foreach (var v in graph.Keys)
+                {
+                    var d = (vertices[v] - p).sqrMagnitude;
+                    if (d < bestSqr) { bestSqr = d; best = v; }
+                }
+                return best;
+            }
+            var s = Nearest(from);
+            var t = Nearest(to);
+            if (s < 0 || t < 0) return null;
+            var dist = new Dictionary<int, float> { [s] = 0f };
+            var prev = new Dictionary<int, int>();
+            var open = new SortedSet<(float d, int v)> { (0f, s) };
+            while (open.Count > 0)
+            {
+                var (d, v) = open.Min;
+                open.Remove(open.Min);
+                if (v == t) break;
+                if (d > maxLength) return null;
+                foreach (var w in graph[v])
+                {
+                    var nd = d + (vertices[w] - vertices[v]).magnitude;
+                    if (dist.TryGetValue(w, out var old) && old <= nd) continue;
+                    if (dist.ContainsKey(w)) open.Remove((old, w));
+                    dist[w] = nd;
+                    prev[w] = v;
+                    open.Add((nd, w));
+                }
+            }
+            if (!dist.ContainsKey(t) || dist[t] > maxLength) return null;
+            var path = new List<Vector3>();
+            for (var v = t; ; v = prev[v])
+            {
+                path.Add(vertices[v]);
+                if (v == s) break;
+            }
+            path.Reverse();
+            path[0] = from;
+            path[path.Count - 1] = to;
+            if (path.Count == 1) path.Add(to);
+            return path;
+        }
+
+        static Vector3 PointAlong(List<Vector3> path, float s)
+        {
+            for (var k = 1; k < path.Count; k++)
+            {
+                var len = (path[k] - path[k - 1]).magnitude;
+                if (s <= len || k == path.Count - 1)
+                    return Vector3.Lerp(path[k - 1], path[k], len > 0f ? Mathf.Clamp01(s / len) : 0f);
+                s -= len;
+            }
+            return path[path.Count - 1];
+        }
+
         static bool IsOnInputOutline(List<int> loop, Vector3[] positions, OutlineGrid outline,
             float tolerance)
         {

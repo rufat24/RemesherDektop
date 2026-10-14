@@ -35,6 +35,7 @@ namespace NativeRemesher.Extraction
         public double quantDeviation, freeResidual;
         public int quads, mergedPoints, flatFaces, unequalFaces, degenerateQuads, walkFailed, walkCrossings, clamped;
         public int offFaces, longPatches, walkReplaced, walkOtherCorner;
+        public int slivers;
         public int borderVertices, borderDropped, exteriorFaces, borderHits, borderMissed, alongLaid, circling, leakingFaces, nonManifoldBorder;
         public int creaseTraces, creaseLoops, creaseExtensions, creaseClashes, crossings, layoutAttempts, duplicateEnds, creaseDropped, spirals, ringsClosed, truncated, truncatedJunctions;
         public long ms;
@@ -44,7 +45,7 @@ namespace NativeRemesher.Extraction
         public override string ToString() => debug +
             $"tris={faces} folded={foldedFaces} singular={singularVertices} coneMismatch={coneMismatch} " +
             $"creases={creaseTraces}(loops {creaseLoops} extensions {creaseExtensions} clashes {creaseClashes}) attempts={layoutAttempts} crossings={crossings} dupEnds={duplicateEnds} creaseDropped={creaseDropped} spirals={spirals} rings={ringsClosed} truncated={truncated}/{truncatedJunctions} traces={traces} steps={steps} hit[trace {hitTrace} collinear {hitCollinear} self {hitSelf} boundary {hitBoundary} fold {hitFold} limit {hitLimit} circling {circling}] " +
-            $"nodes={nodes} arcs={arcs} faces={layoutFaces} (rect {rectangles} annuli {annuli} other {otherFaces} reflex {reflexCorners} open {openWalks}) corners[{faceCorners}] quant[rows {constraintRows} free residual {freeResidual:G3} deviation {quantDeviation:F1} zero {zeroArcs} clamped {clampedArcs} violated {violatedRows} propagated {propagated} conflicts {propagationConflicts} repairs {repairs} repairFailed {repairFailed} (expanded {repairExpanded}) solves {quantSolves} failed {quantFactorFailures}] mesh[quads {quads} merged {mergedPoints} flat {flatFaces} unequal {unequalFaces} degenerate {degenerateQuads} walkFailed {walkFailed} crossings {walkCrossings} clamped {clamped} replaced {walkReplaced} otherCorner {walkOtherCorner}] time[{timing}] border[vertices {borderVertices} dropped {borderDropped} exterior {exteriorFaces} leaking {leakingFaces} nonManifold {nonManifoldBorder} hits {borderHits} missed {borderMissed} alongLaid {alongLaid}] ms={ms}";
+            $"nodes={nodes} arcs={arcs} faces={layoutFaces} (rect {rectangles} annuli {annuli} other {otherFaces} reflex {reflexCorners} open {openWalks}) corners[{faceCorners}] quant[rows {constraintRows} free residual {freeResidual:G3} deviation {quantDeviation:F1} zero {zeroArcs} clamped {clampedArcs} violated {violatedRows} propagated {propagated} conflicts {propagationConflicts} repairs {repairs} repairFailed {repairFailed} (expanded {repairExpanded}) solves {quantSolves} failed {quantFactorFailures}] mesh[quads {quads} merged {mergedPoints} flat {flatFaces} unequal {unequalFaces} degenerate {degenerateQuads} walkFailed {walkFailed} crossings {walkCrossings} clamped {clamped} replaced {walkReplaced} otherCorner {walkOtherCorner}] time[{timing}] border[slivers {slivers} vertices {borderVertices} dropped {borderDropped} exterior {exteriorFaces} leaking {leakingFaces} nonManifold {nonManifoldBorder} hits {borderHits} missed {borderMissed} alongLaid {alongLaid}] ms={ms}";
     }
 
     /// <summary>
@@ -74,6 +75,16 @@ namespace NativeRemesher.Extraction
         /// carry many arcs.
         /// </summary>
         public static bool quantizeAugmented = true;
+
+        /// <summary>Diagnostics: log the position and shape of every exterior, leaking or non-rectangular face.</summary>
+        public static bool debugRejectedFaces = false;
+
+        /// <summary>
+        /// Retry without a traced line that closes off a two- or three-sided strip against the open
+        /// border: measured on ccnb, such a strip got no grid and came out as an 8 m notch in the
+        /// scan's edge. Off: the strip is left as it was.
+        /// </summary>
+        public static bool suppressBorderSlivers = true;
 
         /// <summary>Fraction of the open lengths rounded per solve.</summary>
         public static double quantizeBatch = 0.1;
@@ -411,6 +422,8 @@ namespace NativeRemesher.Extraction
             public bool border, insideLeft;
             // Laid in advance along mesh edges (a crease or the border), not traced.
             public bool laid;
+            // The vertex and direction it was emitted from (-1: not emitted from a vertex).
+            public int emitVertex = -1, emitPos;
             // Its pieces, in order: (face, start, end, direction, length at the start).
             public readonly List<(int face, double ax, double ay, double bx, double by, int dir, double s0)> path
                 = new List<(int, double, double, double, double, int, double)>();
@@ -627,9 +640,10 @@ namespace NativeRemesher.Extraction
             HashSet<int> badArcs = null;
             var extraEmits = new List<(int v, int pos)>();
             var continueThrough = new HashSet<int>();
+            var suppressed = new HashSet<(int v, int pos)>();
             for (var attempt = 0; ; attempt++)
             {
-                stats.traces = stats.steps = stats.hitTrace = stats.hitCollinear = stats.hitBoundary = stats.hitFold = stats.hitLimit = stats.hitSelf = stats.circling = stats.leakingFaces = stats.exteriorFaces = 0;
+                stats.traces = stats.steps = stats.hitTrace = stats.hitCollinear = stats.hitBoundary = stats.hitFold = stats.hitLimit = stats.hitSelf = stats.circling = stats.leakingFaces = stats.exteriorFaces = stats.slivers = 0;
                 stats.nodes = stats.arcs = stats.layoutFaces = stats.rectangles = stats.annuli = stats.otherFaces = stats.reflexCorners = stats.openWalks = 0;
                 stats.creaseTraces = stats.creaseLoops = stats.creaseExtensions = stats.creaseClashes = stats.crossings = stats.duplicateEnds = stats.creaseDropped = stats.ringsClosed = stats.truncated = stats.truncatedJunctions = 0;
                 stats.faceCorners = "";
@@ -690,8 +704,9 @@ namespace NativeRemesher.Extraction
                 }
                 void Emit(int v, int c, int d, int pos)
                 {
+                    if (suppressed.Contains((v, pos))) { stats.slivers++; return; }
                     var nodeId = NodeOf(v);
-                    var tr = new Trace { startNode = nodeId, face = c / 3, dir = d, px = U(c), py = V(c) };
+                    var tr = new Trace { startNode = nodeId, face = c / 3, dir = d, px = U(c), py = V(c), emitVertex = v, emitPos = pos };
                     tr.points.Add((0, nodeId));
                     traces.Add(tr);
                     nodes[nodeId].ends.Add((-1 - (traces.Count - 1), 0, pos));
@@ -1323,6 +1338,31 @@ namespace NativeRemesher.Extraction
                         var tb = traces[arcs[hb / 2].trace];
                         if (tb.border && (hb % 2 == 0) != tb.insideLeft) outsideSides++;
                     }
+                    if (debugRejectedFaces)
+                    {
+                        // Where each face lies (its nodes' mean), what it is, for finding a lost patch.
+                        var c = Vector3.zero; var cn = 0;
+                        foreach (var hb in halfs)
+                        {
+                            var nd = nodes[arcs[hb / 2].node0];
+                            if (nd.vertex >= 0) { c += topology.positions[nd.vertex]; cn++; }
+                            else if (nd.face >= 0) { c += topology.positions[T[3 * nd.face]]; cn++; }
+                        }
+                        if (cn > 0) c /= cn;
+                        var t1 = 0; var t3 = false; var sm = 0;
+                        foreach (var t in turns) { if (t == 1) t1++; if (t >= 3) t3 = true; sm += 2 - t; }
+                        var kind = outsideSides == halfs.Count ? "ext" : !(t1 == 4 && !t3 && sm == 4) ? "nonrect" : outsideSides > 0 ? "leak" : null;
+                        if (kind != null)
+                        {
+                            stats.debug += $"[face a{attempt} {kind} at {-c.x:F1},{c.y:F1},{c.z:F1} sides {halfs.Count} out {outsideSides} c{t1} sum{sm}:";
+                            for (var i = 0; i < halfs.Count && i < 8; i++)
+                            {
+                                var tb = traces[arcs[halfs[i] / 2].trace];
+                                stats.debug += $" t{turns[i]}/{(tb.border ? "border" : tb.laid ? "laid" : "traced")}{(tb.emitVertex >= 0 ? "@v" + tb.emitVertex : "")}";
+                            }
+                            stats.debug += "] ";
+                        }
+                    }
                     if (outsideSides == halfs.Count) { stats.exteriorFaces++; continue; }
                     if (outsideSides > 0) stats.leakingFaces++;
                     stats.layoutFaces++;
@@ -1355,7 +1395,22 @@ namespace NativeRemesher.Extraction
                         }
                     }
                     if (!(corners == 4 && !reflex && sum == 4)) foreach (var hb in halfs) badArcs.Add(hb / 2);
+                    var sliver = false;
+                    if (!(corners == 4 && !reflex && sum == 4) && suppressBorderSlivers && attempt < layoutAttempts
+                        && outsideSides > 0 && halfs.Count <= 3)
+                    {
+                        // A traced line that leaves the border and comes back to it, closing off a
+                        // strip with two or three sides: no grid fits, and the strip was lost from
+                        // the output. The next attempt does not emit that line.
+                        foreach (var hb in halfs)
+                        {
+                            var tb = traces[arcs[hb / 2].trace];
+                            if (tb.border || tb.laid || tb.emitVertex < 0) continue;
+                            if (suppressed.Add((tb.emitVertex, tb.emitPos))) { fixes++; sliver = true; }
+                        }
+                    }
                     if (corners == 4 && !reflex && sum == 4) { stats.rectangles++; rectFaces.Add((halfs, turns)); }
+                    else if (sliver) { }
                     else if (attempt < layoutAttempts)
                     {
                         // One more line into this face: from a corner bending back (an L-shaped face)

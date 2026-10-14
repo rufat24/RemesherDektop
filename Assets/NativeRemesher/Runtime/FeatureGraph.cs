@@ -262,20 +262,52 @@ namespace NativeRemesher
 
             var kept = new List<(int a, int b)>();
             var positions = topology.positions;
+            float Walked(int c)
+            {
+                var walked = 0f;
+                for (var i = polylineStart[c] + 1; i < polylineStart[c + 1]; i++)
+                    walked += (positions[polylineVertices[i]] - positions[polylineVertices[i - 1]]).magnitude;
+                return walked;
+            }
+            bool IsCrease(int c) => polylineStart[c + 1] - polylineStart[c] >= 2
+                && !boundary.Contains(Key(polylineVertices[polylineStart[c]], polylineVertices[polylineStart[c] + 1]));
+
+            // Strokes: polylines joined where one runs on straight through a junction into another.
+            var stroke = new int[polylineCount];
+            for (var c = 0; c < polylineCount; c++) stroke[c] = c;
+            int Find(int c) { while (stroke[c] != c) c = stroke[c] = stroke[stroke[c]]; return c; }
+            // Per polyline end (2c = start, 2c + 1 = end), the end it is joined to, or -1.
+            var joined = new int[2 * polylineCount];
+            for (var i = 0; i < joined.Length; i++) joined[i] = -1;
+            if (joinThroughJunctions) JoinThroughJunctions(positions, minExtent / 3f, IsCrease, joined, Find, stroke);
+
+            // Each stroke measured as a whole: its length, and the distance between its two free ends.
+            var strokeWalked = new Dictionary<int, float>();
+            var strokeEnds = new Dictionary<int, List<int>>();
             for (var c = 0; c < polylineCount; c++)
             {
+                if (!IsCrease(c)) continue;
+                var s = Find(c);
+                strokeWalked[s] = (strokeWalked.TryGetValue(s, out var w) ? w : 0f) + Walked(c);
+                if (!strokeEnds.TryGetValue(s, out var ends)) strokeEnds[s] = ends = new List<int>(2);
+                if (!polylineClosed[c])
+                {
+                    if (joined[2 * c] < 0) ends.Add(polylineVertices[polylineStart[c]]);
+                    if (joined[2 * c + 1] < 0) ends.Add(polylineVertices[polylineStart[c + 1] - 1]);
+                }
+            }
+            for (var c = 0; c < polylineCount; c++)
+            {
+                if (!IsCrease(c)) continue;
                 var from = polylineStart[c];
                 var to = polylineStart[c + 1];
-                if (to - from < 2) continue;
-                if (boundary.Contains(Key(polylineVertices[from], polylineVertices[from + 1])))
-                    continue;
-
-                var walked = 0f;
-                for (var i = from + 1; i < to; i++)
-                    walked += (positions[polylineVertices[i]] - positions[polylineVertices[i - 1]]).magnitude;
-                var span = (positions[polylineVertices[to - 1]] - positions[polylineVertices[from]]).magnitude;
+                var s = Find(c);
+                var walked = strokeWalked[s];
+                var ends = strokeEnds[s];
                 // A closed loop has no span; its size is what it encloses, so take half its length.
-                if (polylineClosed[c]) span = 0.5f * walked;
+                var span = ends.Count == 2
+                    ? (positions[ends[1]] - positions[ends[0]]).magnitude
+                    : 0.5f * walked;
 
                 if (span < minExtent || walked <= 0f || span / walked < minStraightness)
                 {
@@ -293,6 +325,83 @@ namespace NativeRemesher
             foreach (var key in boundary) boundaryOnly.Add((EdgeKey.First(key), EdgeKey.Second(key)));
             boundaryOnly.AddRange(kept);
             return result.WithEdges(topology, boundaryOnly);
+        }
+
+        /// <summary>
+        /// Measure a crease through the junctions it runs straight through, not just between them.
+        /// </summary>
+        /// <remarks>
+        /// Polylines break at every junction, and on a scan a long clean line is crossed by noise
+        /// every few metres: a downpipe, an aerial, a ragged patch of wall. Measured on ccnb, a
+        /// 33 m roof edge came out as a dozen pieces of 1-10 m with short spurs hanging off each
+        /// junction, and under a 3-cell minimum (6 m there) two thirds of it was dropped as noise,
+        /// while the foot of the same wall, crossed less often, survived. At a junction the two
+        /// pieces that continue each other most nearly straight are one stroke; the spurs stay
+        /// strokes of their own and are judged, and dropped, on their own length. Off: each piece
+        /// between junctions is judged alone, as before.
+        /// </remarks>
+        public static bool joinThroughJunctions = true;
+
+        /// <summary>The most two pieces may turn at a junction and still be one stroke, degrees.</summary>
+        public static float joinMaxTurnDegrees = 30f;
+
+        void JoinThroughJunctions(Vector3[] positions, float reach, Func<int, bool> isCrease,
+            int[] joined, Func<int, int> find, int[] stroke)
+        {
+            // Each open crease polyline's two ends, by the vertex they sit on, with the direction
+            // pointing out of the polyline there, as a chord over about `reach` of it.
+            var endsAt = new Dictionary<int, List<(int end, Vector3 dir)>>();
+            for (var c = 0; c < polylineCount; c++)
+            {
+                if (!isCrease(c) || polylineClosed[c]) continue;
+                var from = polylineStart[c];
+                var to = polylineStart[c + 1];
+                for (var side = 0; side < 2; side++)
+                {
+                    var tip = side == 0 ? from : to - 1;
+                    var step = side == 0 ? 1 : -1;
+                    var p = positions[polylineVertices[tip]];
+                    var q = p;
+                    for (var i = tip + step; i >= from && i < to; i += step)
+                    {
+                        q = positions[polylineVertices[i]];
+                        if ((q - p).sqrMagnitude >= reach * reach) break;
+                    }
+                    var dir = p - q;
+                    if (dir.sqrMagnitude <= 0f) continue;
+                    var v = polylineVertices[tip];
+                    if (!endsAt.TryGetValue(v, out var list)) endsAt[v] = list = new List<(int, Vector3)>(3);
+                    list.Add((2 * c + side, dir.normalized));
+                }
+            }
+
+            var straight = -Mathf.Cos(joinMaxTurnDegrees * Mathf.Deg2Rad);
+            var pairs = new List<(float dot, int a, int b)>();
+            foreach (var list in endsAt.Values)
+            {
+                if (list.Count < 2) continue;
+                // The straightest pairs first, each end used once.
+                pairs.Clear();
+                for (var i = 0; i < list.Count; i++)
+                    for (var j = i + 1; j < list.Count; j++)
+                    {
+                        if (list[i].end / 2 == list[j].end / 2) continue;
+                        var dot = Vector3.Dot(list[i].dir, list[j].dir);
+                        if (dot <= straight) pairs.Add((dot, list[i].end, list[j].end));
+                    }
+                pairs.Sort((x, y) => x.dot.CompareTo(y.dot));
+                foreach (var (_, a, b) in pairs)
+                {
+                    if (joined[a] >= 0 || joined[b] >= 0) continue;
+                    // Not into a ring: a stroke closing on itself through a junction is a loop
+                    // already measured by its own length.
+                    int ra = find(a / 2), rb = find(b / 2);
+                    if (ra == rb) continue;
+                    joined[a] = b;
+                    joined[b] = a;
+                    stroke[ra] = rb;
+                }
+            }
         }
 
         /// <summary>

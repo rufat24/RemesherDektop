@@ -340,3 +340,37 @@ ends and clutter. Left off: global smooth field (p05 49.1 -> 51.3, same singular
 sweeps (51.1), relaxation drift 2 (mean move 0.009 cells: the grid is already relaxed),
 normal-only Taubin (median bend 1.82 -> 1.57 deg), Adaptive Size 0 at equal faces (p05 57.0,
 irregular 4.53 %, but the border loses 1.4 % of the area and the run takes 168 s).
+
+## Round 13 — scan hard edges and border notches (2026-10-14)
+
+Diagnosis on ccnb at 5000: a 100 m wall's foot was kept as a crease over 50 m, its roof edge
+over 21 m of 76 m found. The roof edge is crossed every few metres by short noise chains
+(downpipes, ragged wall); polylines end at every junction, so it came out as 1-10 m pieces under
+the 3-cell (6 m) minimum and was dropped, while clutter (cars, AC units, the junkyard) of 3+
+cells was kept.
+
+- `FeatureGraph.joinThroughJunctions` (on): pieces continuing each other within 30 degrees at a
+  junction are measured as one stroke. Roof edge kept 21 -> 42 m.
+- `RemeshPipeline.scanCreaseMinCells` 8 / `scanCreaseStraightness` 0.85 (Photogrammetry only).
+- `HoleFiller.fillOutlineNotches` (on): stretches of the outline loop more than a cell inside the
+  input's outline are closed along it and capped. The layout leaves a two-sided border patch
+  ungridded now and then (ccnb at 5000 with the new creases: an 8 m notch on the slanted east
+  edge; at 10000 already before: Hausdorff 0.0478).
+- `QuantizedLayout.suppressBorderSlivers` (on; does not fire on ccnb -- the sliver's sides there
+  are both border) and `debugRejectedFaces` (diagnostics).
+
+| | irregular | p05 | Hausdorff | dihedral p90 |
+|---|---|---|---|---|
+| ccnb 2000 old / new | 6.90 / 6.95 % | 49.3 / 49.0 | .0205 / .0170 | 50.7 / 45.9 |
+| ccnb 5000 | 5.14 / 4.96 % | 49.1 / 53.5 | .0134 / .0135 | 48.4 / 45.9 |
+| ccnb 10000 | 3.97 / 4.08 % | 57.1 / 55.2 | .0478 / .0134 | 42.9 / 41.6 |
+| head 2000 / 3500 / 5000 | 4.77/3.61/2.73 -> 5.37/3.22/2.58 % | 45.7/51.0/55.3 -> 46.5/56.2/57.2 | .0163/.0150/.0097 -> .0170/.0140/.0103 | |
+| body 2000 / 3500 / 5000 | 2.82/1.56/1.53 -> 2.52/1.63/1.15 % | 60.2/62.8/62.1 -> 66.6/67.5/68.2 | .0115/.0091/.0092 -> .0107/.0092/.0093 | open 4 -> 0 at 5000 |
+
+Textured render PSNR against the source (bake 4096): old geometry 26.50 / 28.04 dB, new 25.57 /
+27.28 (top / oblique) -- the parapet lines come out straight, but the wall in view is more
+slanted and its brick shows wider from above. Renders: `shots_final/r13_scan_top_old_new.png`,
+`r13_scan_wall_old_new.png`, `r13_scan_textured_src_old_new.png`. Tests 193 / 0 / 2.
+
+Still open: a wall a cell or two tall gets one row of quads, its ends break into a large quad and
+a triangle fan; the parametrization's grid still bends a few degrees across flat roofs.

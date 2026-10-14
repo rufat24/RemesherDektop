@@ -1027,6 +1027,33 @@ namespace NativeRemesher
                 result.profile.featureAngleDegrees);
         }
 
+        /// <summary>
+        /// On a scan (the Photogrammetry profile), Detect Hard Edges keeps only creases at least
+        /// this many cells long, end to end through the junctions they run straight through.
+        /// </summary>
+        /// <remarks>
+        /// A scan's clutter -- cars, air-conditioning units, the junkyard -- has creases a few metres
+        /// long, and each one laid as a patch border puts singularities at its ends and crumples
+        /// the quads round it. The building edges that matter run tens of metres. Measured on ccnb
+        /// at 5000, with FeatureGraph.joinThroughJunctions so the roof edges are measured whole:
+        /// 3 cells / 0.6 straight -> 8 / 0.85: irregular 5.16 -> 4.96 %, p05 49.0 -> 53.5,
+        /// Hausdorff 0.0134 -> 0.0135. 0: the general coherentCreaseMinCells / parametrizationCreaseMinCells.
+        /// </remarks>
+        public static float scanCreaseMinCells = 8f;
+
+        /// <summary>On a scan, the straightness a kept crease needs (end to end over its length). 0: the general one.</summary>
+        public static float scanCreaseStraightness = 0.85f;
+
+        static bool IsScan(RemeshResult result) => result.profile.kind == RemeshProfileKind.Photogrammetry;
+
+        static float CreaseMinCells(RemeshResult result, float general) =>
+            IsScan(result) && scanCreaseMinCells > 0f ? scanCreaseMinCells : general;
+
+        static float CreaseStraightness(RemeshResult result) =>
+            IsScan(result) && scanCreaseStraightness > 0f
+                ? scanCreaseStraightness
+                : Extraction.IntegerGridMap.coherentCreaseStraightness;
+
         static List<(int a, int b)> DecimatedFeatureEdges(RemeshResult result, RemeshTopology topology)
         {
             var edges = new List<(int a, int b)>();
@@ -1051,8 +1078,8 @@ namespace NativeRemesher
             {
                 var cell = topology.EdgeLengthForQuadCount(Mathf.Max(1, result.effectiveTargetQuadCount));
                 var creases = FeatureGraph.Detect(topology, Extraction.IntegerGridMap.coherentCreaseAngle)
-                    .KeepCoherentCurves(topology, Extraction.IntegerGridMap.parametrizationCreaseMinCells * cell,
-                        Extraction.IntegerGridMap.coherentCreaseStraightness, out _, out _);
+                    .KeepCoherentCurves(topology, CreaseMinCells(result, Extraction.IntegerGridMap.parametrizationCreaseMinCells) * cell,
+                        CreaseStraightness(result), out _, out _);
                 // Two grid lines closer than a cell squash the cells between them flat.
                 // The layout lays every crease as a patch border, so it always wants them apart:
                 // the helmet rim's cable and lip a fraction of a cell apart came out as spikes.
@@ -1321,8 +1348,8 @@ namespace NativeRemesher
                 coherentCreases = FeatureGraph.Detect(result.topology,
                         Extraction.IntegerGridMap.coherentCreaseAngle)
                     .KeepCoherentCurves(result.topology,
-                        Extraction.IntegerGridMap.coherentCreaseMinCells * creaseCell,
-                        Extraction.IntegerGridMap.coherentCreaseStraightness,
+                        CreaseMinCells(result, Extraction.IntegerGridMap.coherentCreaseMinCells) * creaseCell,
+                        CreaseStraightness(result),
                         out result.coherentCreasesKept, out result.coherentCreasesDropped);
                 // Cutting along them as well -- sharp offsets, crease resampling, vertex placement
                 // -- glues long strips of the lattice into single cells wherever a crease is doubled
