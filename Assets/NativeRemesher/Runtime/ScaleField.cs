@@ -604,6 +604,23 @@ namespace NativeRemesher
         /// onto a coarser vertex set, principally. Recomputes the summary statistics rather than
         /// trusting the caller for them.
         /// </summary>
+        /// <summary>
+        /// The field multiplied by a factor per vertex (painted areas, DensityPaint), graded again
+        /// so a hard brush rim does not step the lattice faster than it can follow. Not normalised:
+        /// the caller raises the target by what the paint adds.
+        /// </summary>
+        public static ScaleField Painted(RemeshTopology topology, ScaleField field, float[] factors, float gradation)
+        {
+            if (field?.spacing == null || factors == null || factors.Length != field.spacing.Length) return field;
+            var values = new float[factors.Length];
+            for (var i = 0; i < values.Length; i++) values[i] = field.spacing[i] * factors[i];
+            Grade(topology, values, Mathf.Max(1.01f, gradation));
+            var areas = topology.areas;
+            double weighted = 0, total = 0;
+            for (var i = 0; i < values.Length; i++) { weighted += values[i] * areas[i]; total += areas[i]; }
+            return FromSpacings(values, total > 0 ? (float)(weighted / total) : field.meanSpacing);
+        }
+
         public static ScaleField FromSpacings(float[] values, float meanSpacing)
         {
             if (values == null) throw new ArgumentNullException(nameof(values));

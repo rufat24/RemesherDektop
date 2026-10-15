@@ -13,7 +13,7 @@ using UnityEngine;
 
 namespace NativeRemesher
 {
-    internal sealed class NativeRemesherWindow : EditorWindow
+    internal sealed partial class NativeRemesherWindow : EditorWindow
     {
         [SerializeField] int m_Iterations = 50;
         [SerializeField] int m_TargetQuadCount = 2000;
@@ -113,6 +113,9 @@ namespace NativeRemesher
         {
             SceneView.duringSceneGui -= OnSceneGUI;
             Selection.selectionChanged -= Repaint;
+            m_Painting = false;
+            ReleasePaintMesh();
+            if (m_OverlayMaterial != null) DestroyImmediate(m_OverlayMaterial);
 
             // A worker holding a million-vertex array must not outlive the window that started it,
             // and EditorApplication.update would otherwise keep a dead instance subscribed.
@@ -199,6 +202,8 @@ namespace NativeRemesher
                         "the border is laid as patch sides too."),
                     m_QuadLayoutOn);
 
+            DrawPaintGUI(mesh != null ? selected : null);
+
             EditorGUILayout.Space();
             m_SaveAsAsset = EditorGUILayout.Toggle(
                 new GUIContent("Save As Asset",
@@ -255,7 +260,13 @@ namespace NativeRemesher
             {
                 using (new EditorGUI.DisabledScope(mesh == null))
                 {
-                    if (GUILayout.Button("Remesh", GUILayout.Height(28)))
+                    // A result selected runs its source again, with whatever was painted since.
+                    var again = mesh != null && Selection.activeGameObject != null
+                                && SourceOf(Selection.activeGameObject) == selected
+                                && Selection.activeGameObject != selected;
+                    if (GUILayout.Button(new GUIContent(again ? $"Remesh '{selected.name}' Again" : "Remesh",
+                            again ? "Runs the source of the selected result again, with the painted fix areas, " +
+                                    "and hides the old result (Undo brings it back)." : ""), GUILayout.Height(28)))
                         RunPipeline();
                 }
             }
@@ -447,6 +458,10 @@ namespace NativeRemesher
                 error = "Select a GameObject with a mesh.";
                 return null;
             }
+
+            // A result made here stands for its source: running it again is what selecting it and
+            // pressing Remesh means once fixes are painted on it.
+            selected = SourceOf(selected);
 
             var mesh = MeshOn(selected);
 
@@ -644,6 +659,7 @@ namespace NativeRemesher
         static BackgroundScheduler s_Scheduler;
         CancellationTokenSource m_Cancel;
         GameObject m_JobSelected;
+        GameObject m_JobReplaces;
         System.Diagnostics.Stopwatch m_JobWatch;
 
         // Written by the worker, read by the main thread. A reference assignment and a float store
@@ -703,6 +719,10 @@ namespace NativeRemesher
             int[] bakeTriangleTexture = null;
             var bakeResolution = m_BakeResolution;
             var bakeNormals = m_BakeNormalMap;
+            settings.densityPaint = PaintFor(selected);
+            // The result this run replaces, when it was the one selected.
+            var current = Selection.activeGameObject;
+            m_JobReplaces = current != null && current != selected && SourceOf(current) == selected ? current : null;
             if (m_BakeTexture && sourceUvs != null)
                 ReadSourceTextures(selected, triangleSubmesh, out bakeImages, out bakeTriangleTexture);
 
@@ -840,6 +860,13 @@ namespace NativeRemesher
             go.transform.localRotation = selected.transform.localRotation;
             go.transform.localScale = selected.transform.localScale;
             go.AddComponent<MeshFilter>().sharedMesh = outputMesh;
+            go.AddComponent<RemeshSource>().source = selected;
+            if (m_JobReplaces != null)
+            {
+                Undo.RecordObject(m_JobReplaces, "Native Remesh");
+                m_JobReplaces.SetActive(false);
+                m_JobReplaces = null;
+            }
 
             var sourceRenderer = selected.GetComponent<Renderer>();
             var sourceMaterial = sourceRenderer != null ? sourceRenderer.sharedMaterial : null;
@@ -907,12 +934,15 @@ namespace NativeRemesher
                 ? $"{result.profile.kind} (auto)"
                 : result.profile.kind.ToString();
 
+            var paintNote = result.paintCountRatio > 0f
+                ? $"\npainted fix areas: target x{result.paintCountRatio:0.00}"
+                : "";
             var bakeNote = result.bakeStats != null
                 ? $"\nbaked {result.bakedTextureSize}px texture, {result.bakeStats.charts} charts, " +
                   $"{result.bakeStats.fill:P0} of it used, in {result.bakeStats.unwrapMs + result.bakeStats.bakeMs} ms"
                 : "";
             m_Status = $"{profileNote}: {result.extraction} in {result.totalMs} ms" +
-                       $"{decimated}{saved}{bakeNote}";
+                       $"{decimated}{saved}{paintNote}{bakeNote}";
             Debug.Log($"[Native Remesher] {profileNote}: {result.extraction} " +
                       $"(decimate {result.decimateMs}ms, topo {result.topologyMs}ms, " +
                       $"orient {result.orientationMs}ms, pos {result.positionMs}ms, " +
@@ -1153,6 +1183,7 @@ namespace NativeRemesher
 
         void OnSceneGUI(SceneView view)
         {
+            if (m_Painting) PaintSceneGUI(view);
             if (!m_ShowField || m_SegmentsU == null || m_Source == null)
                 return;
 

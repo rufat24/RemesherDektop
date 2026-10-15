@@ -862,8 +862,11 @@ namespace NativeRemesher
             {
                 var n = nrm[id];
                 var t = tan[id] - n * Vector3.Dot(n, tan[id]);
-                if (t.sqrMagnitude < 1e-24f) t = Vector3.Cross(n, Mathf.Abs(n.x) < 0.9f ? Vector3.right : Vector3.up);
-                t.Normalize();
+                if (t.sqrMagnitude < 1e-30f) t = Vector3.Cross(n, Mathf.Abs(n.x) < 0.9f ? Vector3.right : Vector3.up);
+                // Divided by hand: the sum is area-weighted, and Vector3.Normalize returns ZERO under
+                // 1e-5 -- every corner of a quad a few millimetres across on a model a metre tall
+                // (fix areas painted on the body), which shaded black.
+                t /= Mathf.Sqrt(t.sqrMagnitude);
                 var w = Vector3.Dot(Vector3.Cross(n, t), bit[id]) < 0f ? -1f : 1f;
                 finished[id] = new Vector4(t.x, t.y, t.z, w);
             }

@@ -39,6 +39,12 @@ namespace NativeRemesher
                  "has one submesh per input material.")]
         public bool useMaterials;
 
+        /// <summary>
+        /// Areas painted for more or fewer quads, in the input's space (the window's Paint Fix
+        /// Areas). Null or empty: none.
+        /// </summary>
+        public DensityPaint densityPaint;
+
         public static RemeshSettings Default => new RemeshSettings
         {
             targetQuadCount = 2000,
@@ -62,7 +68,8 @@ namespace NativeRemesher
                 faceCountIterations = Mathf.Clamp(faceCountIterations, 1, 8),
                 faceCountTolerance = Mathf.Clamp(faceCountTolerance, 0.01f, 0.5f),
                 symmetry = symmetry,
-                useMaterials = useMaterials
+                useMaterials = useMaterials,
+                densityPaint = densityPaint
             };
         }
     }
@@ -128,6 +135,18 @@ namespace NativeRemesher
 
         /// <summary>The graded lattice spacing actually solved, or null when uniform.</summary>
         public ScaleField scaleField;
+
+        /// <summary>The painted areas this run sized by (RemeshSettings.densityPaint); null when none.</summary>
+        public DensityPaint densityPaint;
+
+        /// <summary>
+        /// Quads the painted field asks for over the unpainted one: the target is raised by it, so
+        /// painted areas gain quads instead of taking them from the rest.
+        /// </summary>
+        public float paintCountRatio;
+
+        internal float[] paintFactors;
+        internal RemeshTopology paintFactorsFor;
 
         /// <summary>Lattice spacing actually used, after face-count correction.</summary>
         public float scale;
@@ -505,6 +524,8 @@ namespace NativeRemesher
                     triangleMaterials);
 
             var result = new RemeshResult { profile = profile };
+            if (settings.densityPaint != null && !settings.densityPaint.isEmpty)
+                result.densityPaint = settings.densityPaint;
             if (settings.useMaterials && triangleMaterials != null && triangleMaterials.Length == triangles.Length / 3)
             {
                 var labels = new MaterialLabels(positions, triangles, triangleMaterials);
@@ -566,6 +587,27 @@ namespace NativeRemesher
                     : profile.decimateBudgetPerQuad;
                 var budget = Mathf.Max(k_MinimumBudget, Mathf.RoundToInt(
                     settings.targetQuadCount * perQuad));
+                // Painted areas ask for up to range^2 the quads there: the solve mesh gets the
+                // triangles for them, and they are kept where the paint is (weights below).
+                float[] paintDensity = null;
+                if (result.densityPaint != null)
+                {
+                    var factors = result.densityPaint.SpacingFactors(positions);
+                    if (factors != null)
+                    {
+                        double area = 0, painted = 0;
+                        for (var t = 0; t + 2 < triangles.Length; t += 3)
+                        {
+                            var a = Vector3.Cross(positions[triangles[t + 1]] - positions[triangles[t]],
+                                positions[triangles[t + 2]] - positions[triangles[t]]).magnitude;
+                            var f = (factors[triangles[t]] + factors[triangles[t + 1]] + factors[triangles[t + 2]]) / 3f;
+                            area += a;
+                            painted += a / (f * f);
+                        }
+                        if (area > 0) budget = Mathf.RoundToInt(budget * Mathf.Clamp((float)(painted / area), 1f, 8f));
+                        paintDensity = factors;
+                    }
+                }
                 if (maxSolveTriangles > 0 && budget > maxSolveTriangles)
                 {
                     budget = Mathf.Max(k_MinimumBudget, maxSolveTriangles);
@@ -577,6 +619,18 @@ namespace NativeRemesher
                     onProgress?.Invoke("Decimating input", 0f);
                     watch.Restart();
                     var decimateOptions = DecimateFor(budget, result.materials);
+                    if (paintDensity != null)
+                    {
+                        var paint = result.densityPaint;
+                        decimateOptions.vertexWeights = topology =>
+                        {
+                            var f = paint.SpacingFactors(topology.positions);
+                            if (f == null) return null;
+                            var w = new float[f.Length];
+                            for (var i = 0; i < w.Length; i++) w[i] = Mathf.Max(1f, 1f / (f[i] * f[i]));
+                            return w;
+                        };
+                    }
                     if (decimateKeepsCreases && Extraction.IntegerGridMap.coherentCreases)
                     {
                         // Cells of the requested count, on the input's area.
@@ -1287,6 +1341,10 @@ namespace NativeRemesher
 
         static ScaleField SizingField(RemeshResult result, int target, float adaptivity)
         {
+            // Painted: sized for the count the unpainted surface takes, then multiplied by the paint.
+            var paintFactors = result.paintCountRatio > 0f ? PaintFactors(result) : null;
+            if (paintFactors != null)
+                target = Mathf.Max(4, Mathf.RoundToInt(target / result.paintCountRatio));
             var field = SizingFieldCore(result, target, adaptivity);
             if (smallPartSizing && smallPartGaps && result.topology != null)
                 field = ScaleField.ShrunkToGaps(result.topology, field, target, smallPartAngle, smallPartFraction,
@@ -1294,7 +1352,21 @@ namespace NativeRemesher
             else if (smallPartSizing && result.topology != null)
                 field = ScaleField.ShrunkToSmallParts(result.topology, field, target, smallPartAngle, smallPartFraction,
                     smallPartMaxExtentCells, smallPartMinLengthCells, smallPartSlope, smallPartFloorCells);
+            if (paintFactors != null)
+                field = ScaleField.Painted(result.topology, field, paintFactors, result.profile.curvatureGradation);
             return field;
+        }
+
+        /// <summary>The paint's spacing multiplier at each vertex of the current topology, cached.</summary>
+        static float[] PaintFactors(RemeshResult result)
+        {
+            if (result.densityPaint == null || result.topology == null) return null;
+            if (result.paintFactorsFor != result.topology)
+            {
+                result.paintFactors = result.densityPaint.SpacingFactors(result.topology.positions);
+                result.paintFactorsFor = result.topology;
+            }
+            return result.paintFactors;
         }
 
         static ScaleField SizingFieldCore(RemeshResult result, int target, float adaptivity)
@@ -1489,6 +1561,33 @@ namespace NativeRemesher
             // It is capped because the relationship stops paying well before then: at four
             // times this the same asset gets WORSE, 681 irregular, the field having been
             // smoothed past the detail the singularities need to sit on.
+            // --- painted areas ---
+            //
+            // The field is sized for the target as if nothing were painted, then multiplied by the
+            // paint; the target is raised by the quads that adds, so the count control downstream
+            // does not take them back from the unpainted surface. See SizingField.
+            if (result.densityPaint != null && settings.targetQuadCount > 0)
+            {
+                result.paintCountRatio = 0f;
+                var unpainted = SizingFieldCore(result, settings.targetQuadCount, result.profile.curvatureAdaptivity);
+                var factors = PaintFactors(result);
+                if (factors != null)
+                {
+                    var areas = result.topology.areas;
+                    double plain = 0, painted = 0;
+                    for (var i = 0; i < factors.Length; i++)
+                    {
+                        var h = unpainted.spacing[i];
+                        if (!(h > 0f)) continue;
+                        plain += areas[i] / (h * h);
+                        painted += areas[i] / (h * h * factors[i] * factors[i]);
+                    }
+                    var ratio = plain > 0 ? Mathf.Clamp((float)(painted / plain), 0.125f, 8f) : 1f;
+                    result.paintCountRatio = ratio;
+                    settings.targetQuadCount = Mathf.Max(4, Mathf.RoundToInt(settings.targetQuadCount * ratio));
+                }
+            }
+
             // --- Adaptive Quad Count (integer grid map) ---
             //
             // QuadRemesher's own default, and a different reading of the target: it sizes the quads
@@ -1511,7 +1610,11 @@ namespace NativeRemesher
                     ? Mathf.Clamp01(Extraction.IntegerGridMap.adaptiveSize)
                     : result.profile.curvatureAdaptivity;
                 var shape = SizingField(result, requested, countAdaptivity);
-                var uniform = result.topology.EdgeLengthForQuadCount(requested);
+                // Against the request as it was before the paint raised it: the paint's quads are
+                // already in it, and the flat spacing is the unpainted surface's.
+                var uniform = result.topology.EdgeLengthForQuadCount(result.paintCountRatio > 0f
+                    ? Mathf.Max(4, Mathf.RoundToInt(requested / result.paintCountRatio))
+                    : requested);
                 // "Flat" is the spacing most of the surface is at the coarse end of -- a high
                 // percentile rather than the maximum, which one flat vertex could set.
                 var flat = AreaPercentile(shape.spacing, result.topology.areas,
@@ -1538,7 +1641,7 @@ namespace NativeRemesher
             // its local cell is split down to half of it. The field is recomputed on the refined
             // mesh below as usual; midpoint splits do not change the surface, so it grades the same.
             if (result.profile.integerGridMap && Extraction.IntegerGridMap.gradeSpacing
-                && result.profile.curvatureAdaptivity > 0f)
+                && (result.profile.curvatureAdaptivity > 0f || result.paintCountRatio > 0f))
             {
                 var localTarget = settings.targetQuadCount;
                 var localCeiling = result.topology.MaxQuadCountForInput();
@@ -1928,7 +2031,7 @@ namespace NativeRemesher
             // every edge by its LOCAL cell, and IntegerGridMap.gradeSpacing lets the field through.
             // With it the head comes out in one piece at graded spacing where it had torn into
             // five, so the switch is on; off, this reverts to the uniform lattice described above.
-            if (result.profile.curvatureAdaptivity > 0f
+            if ((result.profile.curvatureAdaptivity > 0f || result.paintCountRatio > 0f)
                 && (!result.profile.integerGridMap || Extraction.IntegerGridMap.gradeSpacing))
             {
                 onProgress?.Invoke("Sizing by curvature", 0f);

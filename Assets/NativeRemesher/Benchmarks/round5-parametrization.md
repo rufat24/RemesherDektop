@@ -532,3 +532,28 @@ Checked in Unity itself (batch-mode render through the Standard shader with the 
 in the 1.5M-triangle source. The Blender previews show thin lines at chart borders only because
 Blender computes its own tangents. Weak: the cable, under a cell thick, is not in the low poly and
 comes through only in part.
+
+## Round 20: normal map on body and ccnb; Paint Fix Areas
+
+Normal map through Unity's Standard shader (`RenderCheck`, views now from `RC_VIEWS`):
+- body at 5,000 (9,085 quads, 2048 px): vest plates, MOLLE rows, straps and pockets read as in the
+  source (`shots_final/r20_body_paint_before_after.png`, "before" columns).
+- ccnb at 100,000 (92,981 faces, 4096 px, 41k of the used texels without a hit): roof panel seams,
+  rooftop units and the wall's window rows come back (`shots_final/r20_ccnb_normalmap.png`).
+
+Body's collar rim and back straps: every output vertex is on the source (worst 1.1 mm), but the
+lip and the straps are thinner than a cell (~1.5 cm), so the lattice samples them unevenly -- horns
+on the rim, wavy strap edges. Not a fold or a tear: too few quads there.
+
+Paint Fix Areas (window, Fix Areas section): a Scene-view brush, on the result or the source, kept
+as dabs in the source's space (`DensityPaint`, `RemeshPaint` component) so it survives any remesh.
+The sizing field is the unpainted one times `range^-value` (3x finer at full paint), graded again
+(`ScaleField.Painted`), and the target is raised by the quads that adds (`paintCountRatio`) so the
+count control does not take them back from the rest; the pre-decimation budget grows by the same
+area ratio and the paint weights its quadrics. Selecting the result and pressing Remesh runs the
+source again and hides the old result. Body, neck rim and both back straps painted: ratio 1.29,
+9,085 -> 12,443 quads; the rim is round with its lip, the buckles are blocks.
+
+Fixed on the way: `TextureBake.Tangents` normalised its area-weighted sum with Vector3.Normalize,
+which returns zero under 1e-5 -- every corner of the painted millimetre quads (153 vertices) had a
+zero tangent and shaded black.

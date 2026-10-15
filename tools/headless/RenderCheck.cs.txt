@@ -2,7 +2,8 @@
 // mesh's own tangents. Not part of the package: a measurement script for the headless project.
 //
 // Unity.exe -batchmode -projectPath Headless -executeMethod RenderCheck.Run -quit
-// env RC_OBJ (source .obj), RC_OUT (output prefix), RC_TARGET (quads), RC_RES (bake size)
+// env RC_OBJ (source .obj), RC_OUT (output prefix), RC_TARGET (quads), RC_RES (bake size),
+// RC_VIEWS (name:dir[:centre,half];...), RC_PAINT (x,y,z,radius,strength;...), RC_DUMP (output .obj)
 
 using System;
 using System.Collections.Generic;
@@ -30,10 +31,39 @@ public static class RenderCheck
         settings.targetQuadCount = target;
         var profile = RemeshProfile.For(RemeshProfileKind.GameAsset);
         profile.extractor = RemeshExtractor.IntegerGrid;
+        // RC_PAINT = x,y,z,radius,strength;... in OBJ coordinates, each centre snapped to the nearest vertex.
+        var paintSpec = Environment.GetEnvironmentVariable("RC_PAINT");
+        if (!string.IsNullOrEmpty(paintSpec))
+        {
+            var paint = new DensityPaint();
+            var ci = CultureInfo.InvariantCulture;
+            foreach (var d in paintSpec.Split(';'))
+            {
+                var f = Array.ConvertAll(d.Split(','), x => float.Parse(x, ci));
+                var c = new Vector3(-f[0], f[1], f[2]);
+                var best = c; var bestD = float.MaxValue;
+                foreach (var p in positions) { var dd = (p - c).sqrMagnitude; if (dd < bestD) { bestD = dd; best = p; } }
+                paint.dabs.Add(new DensityPaint.Dab { centre = best, radius = f[3], strength = f[4] });
+            }
+            settings.densityPaint = paint;
+        }
         var result = RemeshPipeline.Solve(positions, triangles, settings, profile, null, null, true);
+        Debug.Log($"[RenderCheck] paintCountRatio={result.paintCountRatio} requested={result.requestedQuadCount} adapt={result.adaptiveQuadCountFactor}");
         RemeshPipeline.BakeNormalMap(result, positions, triangles, res);
         RemeshPipeline.BuildOutputMesh(result, "head");
         Debug.Log($"[RenderCheck] {result.extraction} {result.bakeStats} missed={result.bakeStats.normalMissed}");
+        {
+            var tg = result.mesh.tangents; var nm = result.mesh.normals;
+            int nanT = 0, nanN = 0, zeroT = 0;
+            foreach (var t in tg) { if (float.IsNaN(t.x + t.y + t.z + t.w) || float.IsInfinity(t.x + t.y + t.z)) nanT++; else if (new Vector3(t.x, t.y, t.z).sqrMagnitude < 0.5f) zeroT++; }
+            foreach (var n in nm) if (float.IsNaN(n.x + n.y + n.z) || n.sqrMagnitude < 0.5f) nanN++;
+            int back = 0;
+            foreach (var c in result.bakedNormalMap) if (c.a > 0 && c.b < 128) back++;
+            Debug.Log($"[RenderCheck] tangents {tg.Length} nan={nanT} short={zeroT} normals {nm.Length} bad={nanN} mapBackfacing={back} verts={result.mesh.vertexCount}");
+            var raw = new byte[result.bakedNormalMap.Length * 4];
+            for (var i = 0; i < result.bakedNormalMap.Length; i++) { var c = result.bakedNormalMap[i]; raw[4 * i] = c.r; raw[4 * i + 1] = c.g; raw[4 * i + 2] = c.b; raw[4 * i + 3] = c.a; }
+            File.WriteAllBytes(outPrefix + "_nmap.rgba", raw);
+        }
 
         var source = new Mesh { indexFormat = IndexFormat.UInt32 };
         source.SetVertices(positions);
@@ -70,16 +100,42 @@ public static class RenderCheck
 
         // The q2 view of the Blender renders: OBJ direction (0.85, 0, 0.45), x negated here.
         var bounds = source.bounds;
-        var dir = new Vector3(-0.85f, 0f, 0.45f).normalized;
-        var views = new (string name, Vector3 centre, float half)[]
+        var dir0 = new Vector3(-0.85f, 0f, 0.45f).normalized;
+        var dir = dir0;
+        var views = new List<(string name, Vector3 dir, Vector3 centre, float half)>
         {
-            ("full", bounds.center, bounds.extents.y * 1.05f),
-            ("zoom", new Vector3(-0.25f, 0.8f, 0.05f), 0.175f),
+            ("full", dir0, bounds.center, bounds.extents.y * 1.05f),
+            ("zoom", dir0, new Vector3(-0.25f, 0.8f, 0.05f), 0.175f),
         };
-        foreach (var (name, centre, half) in views)
+        // RC_VIEWS = name:dx,dy,dz[:cx,cy,cz,half];...  (Unity coordinates, x already negated)
+        var spec = Environment.GetEnvironmentVariable("RC_VIEWS");
+        if (!string.IsNullOrEmpty(spec))
         {
+            views.Clear();
+            var ci = CultureInfo.InvariantCulture;
+            foreach (var v in spec.Split(';'))
+            {
+                var parts = v.Split(':');
+                var d = Array.ConvertAll(parts[1].Split(','), x => float.Parse(x, ci));
+                var c = bounds.center;
+                var h = Mathf.Max(bounds.extents.x, bounds.extents.y, bounds.extents.z) * 1.05f;
+                if (parts.Length > 2)
+                {
+                    var f = Array.ConvertAll(parts[2].Split(','), x => float.Parse(x, ci));
+                    c = new Vector3(f[0], f[1], f[2]);
+                    h = f[3];
+                }
+                views.Add((parts[0], new Vector3(d[0], d[1], d[2]).normalized, c, h));
+            }
+        }
+        var dumpPath = Environment.GetEnvironmentVariable("RC_DUMP");
+        if (!string.IsNullOrEmpty(dumpPath)) DumpObj(result, dumpPath);
+        foreach (var (name, vdir, centre, half) in views)
+        {
+            dir = vdir;
             cam.transform.position = centre + dir * bounds.size.magnitude * 2f;
-            cam.transform.rotation = Quaternion.LookRotation(-dir, Vector3.up);
+            var up = Mathf.Abs(dir.y) > 0.95f ? Vector3.forward : Vector3.up;
+            cam.transform.rotation = Quaternion.LookRotation(-dir, up);
             cam.orthographicSize = half;
             cam.nearClipPlane = 0.01f;
             cam.farClipPlane = bounds.size.magnitude * 6f;
@@ -103,6 +159,20 @@ public static class RenderCheck
             }
         }
         Debug.Log("[RenderCheck] done");
+    }
+
+    static void DumpObj(RemeshResult result, string path)
+    {
+        var e = result.extraction;
+        var ci = CultureInfo.InvariantCulture;
+        using var w = new StreamWriter(path);
+        foreach (var p in e.positions) w.WriteLine(string.Format(ci, "v {0} {1} {2}", -p.x, p.y, p.z));
+        foreach (var f in e.faces)
+        {
+            w.Write("f");
+            for (var k = f.Length - 1; k >= 0; k--) w.Write(" " + (f[k] + 1));
+            w.WriteLine();
+        }
     }
 
     static void LoadObj(string path, out Vector3[] positions, out int[] triangles)
