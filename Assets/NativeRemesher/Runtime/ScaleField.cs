@@ -33,6 +33,7 @@
 // to be one.
 
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace NativeRemesher
@@ -345,6 +346,205 @@ namespace NativeRemesher
 
         // Absolute spacings from relative ones: the quads they make on the topology's area add up
         // to the target count.
+        /// <summary>
+        /// The field shrunk round small sharp parts: every connected group of edges sharper than
+        /// <paramref name="angle"/> whose extent is under <paramref name="maxExtentCells"/> cells (a
+        /// slot's rim, a screw's, a buckle's) asks for spacing <paramref name="fraction"/> of that
+        /// extent at its vertices, spread outward growing by <paramref name="slope"/> per unit
+        /// distance, then all of it renormalised to the count.
+        /// </summary>
+        /// <remarks>
+        /// The reference remesh of the helmet head draws its slots and screws with several grid
+        /// lines across a part a centimetre wide; a cell of 1.9 cm cannot hold even two. Curvature
+        /// does not find them -- on that sculpt the normals turn 37 degrees within 4 mm at the
+        /// median point, fabric and all -- but their rims are sharp edges.
+        /// </remarks>
+        public static ScaleField ShrunkToSmallParts(RemeshTopology topology, ScaleField field, int targetQuadCount,
+            float angle, float fraction, float maxExtentCells, float minLengthCells, float slope, float floorCells)
+        {
+            var n = topology.vertexCount;
+            var cell = topology.EdgeLengthForQuadCount(Mathf.Max(1, targetQuadCount));
+            var graph = FeatureGraph.Detect(topology, angle);
+            var spacing = (float[])field.spacing.Clone();
+            // Groups: polylines sharing a vertex.
+            var parent = new int[graph.polylineCount];
+            for (var c = 0; c < parent.Length; c++) parent[c] = c;
+            int Find(int x) { while (parent[x] != x) x = parent[x] = parent[parent[x]]; return x; }
+            var owner = new Dictionary<int, int>();
+            for (var c = 0; c < graph.polylineCount; c++)
+                for (var i = graph.polylineStart[c]; i < graph.polylineStart[c + 1]; i++)
+                {
+                    var v = graph.polylineVertices[i];
+                    if (owner.TryGetValue(v, out var o)) parent[Find(c)] = Find(o);
+                    else owner[v] = c;
+                }
+            var lo = new Dictionary<int, Vector3>();
+            var hi = new Dictionary<int, Vector3>();
+            var length = new Dictionary<int, float>();
+            for (var c = 0; c < graph.polylineCount; c++)
+            {
+                var g = Find(c);
+                for (var i = graph.polylineStart[c]; i < graph.polylineStart[c + 1]; i++)
+                {
+                    var p = topology.positions[graph.polylineVertices[i]];
+                    lo[g] = lo.TryGetValue(g, out var l) ? Vector3.Min(l, p) : p;
+                    hi[g] = hi.TryGetValue(g, out var h) ? Vector3.Max(h, p) : p;
+                    if (i > graph.polylineStart[c])
+                        length[g] = (length.TryGetValue(g, out var len) ? len : 0f)
+                                    + (p - topology.positions[graph.polylineVertices[i - 1]]).magnitude;
+                }
+            }
+            var seeds = new List<int>();
+            var partSet = new HashSet<int>();
+            for (var c = 0; c < graph.polylineCount; c++)
+            {
+                var g = Find(c);
+                var extent = (hi[g] - lo[g]).magnitude;
+                if (extent > maxExtentCells * cell || !length.TryGetValue(g, out var len) || len < minLengthCells * cell) continue;
+                partSet.Add(g);
+                var want = Mathf.Max(floorCells * cell, fraction * extent);
+                for (var i = graph.polylineStart[c]; i < graph.polylineStart[c + 1]; i++)
+                {
+                    var v = graph.polylineVertices[i];
+                    if (want < spacing[v]) { spacing[v] = want; seeds.Add(v); }
+                }
+            }
+            lastSmallParts = partSet.Count;
+            if (seeds.Count == 0) return field;
+            // Spread: spacing(u) <= spacing(v) + slope * |uv|, Dijkstra from the seeds.
+            var heap = new SortedSet<(float s, int v)>();
+            foreach (var v in seeds) heap.Add((spacing[v], v));
+            while (heap.Count > 0)
+            {
+                var top = heap.Min;
+                heap.Remove(top);
+                if (top.s > spacing[top.v]) continue;
+                for (var k = topology.adjacencyStart[top.v]; k < topology.adjacencyStart[top.v + 1]; k++)
+                {
+                    var u = topology.adjacency[k];
+                    if (u == top.v) continue;
+                    var s = spacing[top.v] + slope * (topology.positions[u] - topology.positions[top.v]).magnitude;
+                    if (s >= spacing[u]) continue;
+                    heap.Remove((spacing[u], u));
+                    spacing[u] = s;
+                    heap.Add((s, u));
+                }
+            }
+            return Normalised(topology, spacing, targetQuadCount);
+        }
+
+        /// <summary>
+        /// As <see cref="ShrunkToSmallParts"/>, measured by the GAP between sharp edges rather than
+        /// the size of a group of them: at each vertex of a sharp edge, the distance to the nearest
+        /// other sharp edge it cannot reach along the edges within <paramref name="detour"/> times
+        /// that distance -- the far rim of a slot, the far side of a screw's circle. The rail's
+        /// rims all join into one group, so a group's size says nothing about its slots.
+        /// </summary>
+        public static ScaleField ShrunkToGaps(RemeshTopology topology, ScaleField field, int targetQuadCount,
+            float angle, float fraction, float maxGapCells, float minLengthCells, float slope, float floorCells,
+            float detour)
+        {
+            var cell = topology.EdgeLengthForQuadCount(Mathf.Max(1, targetQuadCount));
+            var graph = FeatureGraph.Detect(topology, angle);
+            if (minLengthCells > 0f)
+                graph = graph.KeepCoherentCurves(topology, minLengthCells * cell, 0f, out _, out _);
+            var p = topology.positions;
+            var creaseNeighbours = new Dictionary<int, List<int>>();
+            for (var c = 0; c < graph.polylineCount; c++)
+                for (var i = graph.polylineStart[c] + 1; i < graph.polylineStart[c + 1]; i++)
+                {
+                    int a = graph.polylineVertices[i - 1], b = graph.polylineVertices[i];
+                    if (!creaseNeighbours.TryGetValue(a, out var la)) creaseNeighbours[a] = la = new List<int>(2);
+                    if (!creaseNeighbours.TryGetValue(b, out var lb)) creaseNeighbours[b] = lb = new List<int>(2);
+                    if (!la.Contains(b)) la.Add(b);
+                    if (!lb.Contains(a)) lb.Add(a);
+                }
+            var verts = new List<int>(creaseNeighbours.Keys);
+            var maxGap = maxGapCells * cell;
+            var hash = new Dictionary<(int, int, int), List<int>>();
+            (int, int, int) Key(Vector3 x) => (Mathf.FloorToInt(x.x / maxGap), Mathf.FloorToInt(x.y / maxGap), Mathf.FloorToInt(x.z / maxGap));
+            foreach (var v in verts)
+            {
+                var k = Key(p[v]);
+                if (!hash.TryGetValue(k, out var list)) hash[k] = list = new List<int>();
+                list.Add(v);
+            }
+            var gap = new float[verts.Count];
+            System.Threading.Tasks.Parallel.For(0, verts.Count, BackgroundScheduler.Options, i =>
+            {
+                var v = verts[i];
+                // Distances along the sharp edges from v, out to detour x maxGap.
+                var along = new Dictionary<int, float> { [v] = 0f };
+                var frontier = new List<int> { v };
+                var reach = detour * maxGap;
+                while (frontier.Count > 0)
+                {
+                    var next = new List<int>();
+                    foreach (var x in frontier)
+                        foreach (var y in creaseNeighbours[x])
+                        {
+                            var d = along[x] + (p[y] - p[x]).magnitude;
+                            if (d > reach || along.TryGetValue(y, out var old) && old <= d) continue;
+                            along[y] = d;
+                            next.Add(y);
+                        }
+                    frontier = next;
+                }
+                var best = float.MaxValue;
+                var (kx, ky, kz) = Key(p[v]);
+                for (var dx = -1; dx <= 1; dx++)
+                for (var dy = -1; dy <= 1; dy++)
+                for (var dz = -1; dz <= 1; dz++)
+                {
+                    if (!hash.TryGetValue((kx + dx, ky + dy, kz + dz), out var list)) continue;
+                    foreach (var w in list)
+                    {
+                        if (w == v) continue;
+                        var straight = (p[w] - p[v]).magnitude;
+                        if (straight >= best || straight > maxGap) continue;
+                        if (along.TryGetValue(w, out var path) && path <= detour * straight) continue;
+                        best = straight;
+                    }
+                }
+                gap[i] = best;
+            });
+            var spacing = (float[])field.spacing.Clone();
+            var seeds = new List<int>();
+            for (var i = 0; i < verts.Count; i++)
+            {
+                if (gap[i] > maxGap) continue;
+                var v = verts[i];
+                var want = Mathf.Max(floorCells * cell, fraction * gap[i]);
+                if (want >= spacing[v]) continue;
+                spacing[v] = want;
+                seeds.Add(v);
+            }
+            lastSmallParts = seeds.Count;
+            if (seeds.Count == 0) return field;
+            var heap = new SortedSet<(float s, int v)>();
+            foreach (var v in seeds) heap.Add((spacing[v], v));
+            while (heap.Count > 0)
+            {
+                var top = heap.Min;
+                heap.Remove(top);
+                if (top.s > spacing[top.v]) continue;
+                for (var k = topology.adjacencyStart[top.v]; k < topology.adjacencyStart[top.v + 1]; k++)
+                {
+                    var u = topology.adjacency[k];
+                    if (u == top.v) continue;
+                    var s = spacing[top.v] + slope * (p[u] - p[top.v]).magnitude;
+                    if (s >= spacing[u]) continue;
+                    heap.Remove((spacing[u], u));
+                    spacing[u] = s;
+                    heap.Add((s, u));
+                }
+            }
+            return Normalised(topology, spacing, targetQuadCount);
+        }
+
+        /// <summary>Diagnostics: small parts the last ShrunkToSmallParts found.</summary>
+        public static int lastSmallParts;
+
         static ScaleField Normalised(RemeshTopology topology, float[] relative, int targetQuadCount)
         {
             var count = relative.Length;

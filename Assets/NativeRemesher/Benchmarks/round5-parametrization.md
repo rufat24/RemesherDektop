@@ -488,3 +488,29 @@ rim and the rail's outline come through, the slots and screws do not, and the qu
 (min angle p50 44 against 75). Distance numbers at 0.1-0.5 % of the diagonal do not see a 3 mm slot.
 Tried and not better: curvature-weighted quadrics (power 1-3), crease-kept simplification, no split
 (quad-dominant on a 4x denser base: greedy pairing leaves 20-25 % triangles).
+
+## Round 18: screws and slots -- what was tried, what held
+
+Goal: the rail's slots and screws in the head at ~6,600 faces, as the reference has them.
+
+- **The reference's density is not curvature.** Within 4 mm the sculpt's normals turn 37 degrees at
+  the median point (fabric, panel lines, thin shells); at the reference's densest spots 30-40. No
+  curvature sizing separates them. Full-strength curvature sizing on the lattice (adaptivity 1,
+  ratio 8; spacing 0.007-0.16) left the rail as dense as before, 305 s, one hole.
+- At several of the reference's densest spots it does not follow the source at all (round cups
+  where the source has shallow raised squares); spot counts are not a target.
+- **Detail Quads, sharp-edge weighting** (`DetailQuads.edgeWeight`, planes within 0.3 cell of a
+  30-degree edge x30): the simplification spends its budget on hard-surface rims instead of the
+  fabric. Visibly better helmet (`shots_final/r18_head_edge_weighted.png`); numbers: out->in p99
+  0.337 %, in->out p99 0.465 %, max 0.882 % (reference 0.398 / 0.422 / 0.909). Default on.
+- Not better, left off: a size limit in the simplification from the normals' turn
+  (`featureSizeRadiusCells`; the fabric limits everything), crease chains kept through the
+  simplification (`creaseAngle`, now actually reaching the decimator), relaxing all points, no
+  split with looser pairing (crumpled), small-part sizing on the lattice by group extent
+  (`RemeshPipeline.smallPartSizing`: 1,249 parts, a hole in the rail) and by gap between rims
+  (`smallPartGaps`: 9,254 seeds, fabric again; GameAsset crashed in QuantizedLayout.Build).
+- GameAsset + all decimated creases + FeatureFit (L0) is the cleanest lattice result -- grid lines
+  along the rail's rims -- but slow at a budget of 40 a quad (264k-triangle solve, 540 s).
+
+Not solved: a slot or a screw a centimetre across needs cells under half a centimetre there and
+grid lines along its rim; nothing here produces both.

@@ -77,6 +77,13 @@ namespace NativeRemesher
         /// </summary>
         public Func<RemeshTopology, float[]> vertexWeights;
 
+        /// <summary>
+        /// Optional longest edge allowed at each of the given points: a collapse that would leave an
+        /// edge longer than the smaller of its two ends' sizes is refused, so small parts keep
+        /// their triangles whatever the budget. Null: no limit.
+        /// </summary>
+        public Func<Vector3[], float[]> vertexSizes;
+
         public static DecimateOptions ForTriangleCount(int triangles) =>
             new DecimateOptions { targetTriangles = triangles };
     }
@@ -95,6 +102,7 @@ namespace NativeRemesher
         public int rejectedLabel, labelSlides, labelBorderStart;
         public int creaseEdges;
         public int rejectedSliver;
+        public int rejectedSize;
 
         public float maxErrorApplied;
 
@@ -133,6 +141,7 @@ namespace NativeRemesher
             rejectedLabel += o.rejectedLabel;
             creaseEdges += o.creaseEdges;
             rejectedSliver += o.rejectedSliver;
+            rejectedSize += o.rejectedSize;
             labelSlides += o.labelSlides;
             maxErrorApplied = Mathf.Max(maxErrorApplied, o.maxErrorApplied);
             solvedTargets += o.solvedTargets;
@@ -150,7 +159,7 @@ namespace NativeRemesher
                    $"({inputVertices:N0} -> {outputVertices:N0} verts), " +
                    $"collapses={collapsesApplied} rejTopo={rejectedTopology} " +
                    $"rejFlip={rejectedNormalFlip}(solved={rejectedFlipSolved} " +
-                   $"fallback={rejectedFlipFallback}) rejBoundary={rejectedBoundary} rejLabel={rejectedLabel} creaseEdges={creaseEdges} rejSliver={rejectedSliver} labelSlides={labelSlides} labelBorderStart={labelBorderStart} " +
+                   $"fallback={rejectedFlipFallback}) rejBoundary={rejectedBoundary} rejLabel={rejectedLabel} creaseEdges={creaseEdges} rejSliver={rejectedSliver} rejSize={rejectedSize} labelSlides={labelSlides} labelBorderStart={labelBorderStart} " +
                    $"targets={solvedTargets}solved/{fallbackTargets}fallback " +
                    $"drift={(solvedTargets + driftRejected > 0 ? driftSum / (solvedTargets + driftRejected) : 0):F2}mean/" +
                    $"{driftMax:F2}max edgeLengths rejByDrift={driftRejected} " +
@@ -518,6 +527,7 @@ namespace NativeRemesher
                 : null;
             var creases = CreaseEdges(topology, options);
             var vertexWeight = options.vertexWeights?.Invoke(topology);
+            var vertexSize = options.vertexSizes?.Invoke(positions);
 
 
             stats = new DecimateStats
@@ -551,7 +561,7 @@ namespace NativeRemesher
 
                 var progressLock = new object();
                 ParallelStage(topology, positions, triangles, stageQuadrics, stageTarget, options,
-                    stats, LabelBorderVertices(topology, triLabel), out var stagePositions, out var stageTriangles,
+                    stats, LabelBorderVertices(topology, triLabel), vertexSize, out var stagePositions, out var stageTriangles,
                     onProgress == null ? null : f => { lock (progressLock) onProgress(0.7f * f); });
                 var msParallel = phase.ElapsedMilliseconds;
 
@@ -627,7 +637,7 @@ namespace NativeRemesher
 
             var maxFlipCos = Mathf.Cos(Mathf.Clamp(options.maxNormalFlipDegrees, 1f, 179f) * Mathf.Deg2Rad);
             var live = CollapseLoop(positions, triangles, triangleCount, quadrics, null, heap, triAlive,
-                vertAlive, version, incident, target, maxFlipCos, stats, onProgress, triLabel);
+                vertAlive, version, incident, target, maxFlipCos, stats, onProgress, triLabel, vertexSize);
 
             msCollapse = phase.ElapsedMilliseconds; phase.Restart();
             // --- compact ---
@@ -671,7 +681,7 @@ namespace NativeRemesher
         static int CollapseLoop(Vector3[] positions, int[] triangles, int triangleCount,
             Quadric[] quadrics, bool[] locked, List<Candidate> heap, bool[] triAlive, bool[] vertAlive,
             int[] version, Incidence incident, int target, float maxFlipCos, DecimateStats stats,
-            Action<float> onProgress, int[] triLabel = null)
+            Action<float> onProgress, int[] triLabel = null, float[] size = null)
         {
             var live = triangleCount;
 
@@ -741,6 +751,13 @@ namespace NativeRemesher
                     else stats.rejectedFlipFallback++;
                     continue;
                 }
+
+                if (size != null && WouldExceedSize(incident, triangles, triAlive, positions, size, best.u, best.v, best.target))
+                {
+                    stats.rejectedSize++;
+                    continue;
+                }
+                if (size != null) size[best.u] = Mathf.Min(size[best.u], size[best.v]);
 
                 // --- apply ---
                 positions[best.u] = best.target;
@@ -830,7 +847,7 @@ namespace NativeRemesher
         /// </summary>
         static void ParallelStage(RemeshTopology topology, Vector3[] positions, int[] triangles,
             Quadric[] quadrics, int target, DecimateOptions options, DecimateStats stats,
-            bool[] labelBorder, out Vector3[] outPositions, out int[] outTriangles, Action<float> onProgress)
+            bool[] labelBorder, float[] vertexSize, out Vector3[] outPositions, out int[] outTriangles, Action<float> onProgress)
         {
             var triangleCount = triangles.Length / 3;
             var vertexCount = positions.Length;
@@ -961,8 +978,14 @@ namespace NativeRemesher
 
                 var incident = new Incidence(localCount, localTriangles, count);
                 var localTarget = Mathf.Max(4, (int)((long)count * target / triangleCount));
+                float[] localSize = null;
+                if (vertexSize != null)
+                {
+                    localSize = new float[localCount];
+                    for (var l = 0; l < localCount; l++) localSize[l] = vertexSize[globalOf[l]];
+                }
                 CollapseLoop(localPositions, localTriangles, count, localQuadrics, locked, heap, triAlive,
-                    vertAlive, version, incident, localTarget, maxFlipCos, blockStat, null);
+                    vertAlive, version, incident, localTarget, maxFlipCos, blockStat, null, null, localSize);
 
                 // Unlocked vertices belong to this block alone, so these writes never collide.
                 for (var l = 0; l < localCount; l++)
@@ -1404,6 +1427,31 @@ namespace NativeRemesher
             var sum = (b - a).sqrMagnitude + (c - b).sqrMagnitude + (a - c).sqrMagnitude;
             if (!(sum > 0f)) return 0f;
             return 6.92820323f * 0.5f * Vector3.Cross(b - a, c - a).magnitude / sum;
+        }
+
+        // Whether collapsing v into u at `target` leaves an edge longer than its ends allow.
+        static bool WouldExceedSize(Incidence incident, int[] triangles, bool[] triAlive, Vector3[] positions, float[] size,
+            int u, int v, Vector3 target)
+        {
+            var s = Mathf.Min(size[u], size[v]);
+            for (var pass = 0; pass < 2; pass++)
+            {
+                var w = pass == 0 ? u : v;
+                var count = incident.Count(w);
+                for (var i = 0; i < count; i++)
+                {
+                    var t = incident.Get(w, i);
+                    if (!triAlive[t]) continue;
+                    for (var k = 0; k < 3; k++)
+                    {
+                        var o = triangles[t * 3 + k];
+                        if (o == u || o == v) continue;
+                        var limit = Mathf.Min(s, size[o]);
+                        if ((positions[o] - target).sqrMagnitude > limit * limit) return true;
+                    }
+                }
+            }
+            return false;
         }
 
         static bool WouldMakeSliver(Incidence incident, int[] triangles, bool[] triAlive,

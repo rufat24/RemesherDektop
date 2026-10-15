@@ -1233,7 +1233,35 @@ namespace NativeRemesher
         /// <summary>Size each coarse vertex by its shortest edge rather than its mean.</summary>
         public static bool decimationSizingMinimum = true;
 
+        /// <summary>
+        /// Shrink the cells round small sharp parts (ScaleField.ShrunkToSmallParts): slots, screws,
+        /// buckles get several grid lines across instead of none. Off: as before.
+        /// </summary>
+        public static bool smallPartSizing = false;
+        public static float smallPartAngle = 30f;
+        public static float smallPartFraction = 0.35f;
+        public static float smallPartMaxExtentCells = 3f;
+        public static float smallPartMinLengthCells = 0.5f;
+        public static float smallPartSlope = 0.5f;
+        public static float smallPartFloorCells = 0.12f;
+
+        /// <summary>Measure small parts by the gap between sharp edges (ScaleField.ShrunkToGaps).</summary>
+        public static bool smallPartGaps = true;
+        public static float smallPartDetour = 1.5f;
+
         static ScaleField SizingField(RemeshResult result, int target, float adaptivity)
+        {
+            var field = SizingFieldCore(result, target, adaptivity);
+            if (smallPartSizing && smallPartGaps && result.topology != null)
+                field = ScaleField.ShrunkToGaps(result.topology, field, target, smallPartAngle, smallPartFraction,
+                    smallPartMaxExtentCells, smallPartMinLengthCells, smallPartSlope, smallPartFloorCells, smallPartDetour);
+            else if (smallPartSizing && result.topology != null)
+                field = ScaleField.ShrunkToSmallParts(result.topology, field, target, smallPartAngle, smallPartFraction,
+                    smallPartMaxExtentCells, smallPartMinLengthCells, smallPartSlope, smallPartFloorCells);
+            return field;
+        }
+
+        static ScaleField SizingFieldCore(RemeshResult result, int target, float adaptivity)
         {
             if (sizingFromDecimation && result.originalPositions != null && result.originalTriangles != null)
             {

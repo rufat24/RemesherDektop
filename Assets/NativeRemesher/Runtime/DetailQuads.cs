@@ -31,8 +31,10 @@ namespace NativeRemesher
             public int baseTriangles, pairs, loneTriangles, quads;
             public long decimateMs, buildMs, fitMs;
             public FeatureFit.Stats fit;
+            public string featureSize;
+            public int rejectedSize, creaseEdges;
             public override string ToString() =>
-                $"detail base={baseTriangles} pairs={pairs} lone={loneTriangles} quads={quads} decimate={decimateMs}ms build={buildMs}ms fit={fitMs}ms {fit}";
+                $"detail base={baseTriangles} pairs={pairs} lone={loneTriangles} quads={quads} decimate={decimateMs}ms build={buildMs}ms fit={fitMs}ms {fit} size[{featureSize} rejected={rejectedSize}] creases={creaseEdges}";
         }
 
         /// <summary>Simplified triangles per wanted quad, with the split.</summary>
@@ -60,18 +62,70 @@ namespace NativeRemesher
         /// <summary>Tangential smoothing passes over the split's new points before the fit.</summary>
         public static int relaxIterations = 2;
 
+        /// <summary>Smooth the simplification's own points too, not only the split's.</summary>
+        public static bool relaxAll = false;
+
         /// <summary>
         /// Exponent on (median spacing / curvature spacing) weighting the simplification's planes:
         /// curved ground (a screw, a slot's rim) costs more to flatten than its size says, so it
         /// keeps triangles the way a curvature-sized remesh would. 0: plain quadric error.
         /// </summary>
-        public static float curvatureWeightPower = 2f;
+        public static float curvatureWeightPower = 0f;
 
         /// <summary>Largest ratio of that weight's spacing over and under its median.</summary>
         public static float curvatureMaxRatio = 4f;
 
+        /// <summary>
+        /// Longest edge allowed where the surface turns: the normals within this many cells of a
+        /// point are compared, and where they turn by an angle a the simplification may not leave
+        /// edges longer than featureSizeAngle / a of that radius (a circle of radius r comes out in
+        /// segments turning by about featureSizeAngle). 0: off -- the quadric budget alone, which
+        /// spends almost nothing on a screw: at the reference's 12 densest spots it has 15-36 faces
+        /// within 1.5 cm, the simplification 0-4.
+        /// </summary>
+        public static float featureSizeRadiusCells = 0f;
+
+        /// <summary>Turn per segment, radians, for that limit.</summary>
+        public static float featureSizeAngle = 0.5f;
+
+        /// <summary>Smallest edge the limit asks for, in cells.</summary>
+        public static float featureSizeMinCells = 0.1f;
+
+        /// <summary>
+        /// The limit is scaled as a whole until the triangles it asks for, capped at this many
+        /// cells on flat ground, add up to this fraction of the budget: only the sharpest places
+        /// are held, the rest is left to the quadric error.
+        /// </summary>
+        public static float featureSizeBudgetShare = 1f;
+
+        /// <summary>Edge length taken for unlimited ground when counting, in cells.</summary>
+        public static float featureSizeFlatCells = 1.5f;
+
+        /// <summary>
+        /// Weight of the simplification's planes within edgeRadiusCells of a sharp edge (dihedral
+        /// over edgeAngle), against 1 elsewhere: hard-surface rims keep their triangles and organic
+        /// folds -- the fabric of the head's neck and face -- give theirs up, which is how the
+        /// reference spends its faces. 1: off.
+        /// </summary>
+        public static float edgeWeight = 30f;
+
+        /// <summary>Dihedral, degrees, of the edges edgeWeight looks for.</summary>
+        public static float edgeAngle = 30f;
+
+        /// <summary>Reach of edgeWeight from such an edge, in cells.</summary>
+        public static float edgeRadiusCells = 0.3f;
+
         /// <summary>Simplification keeps creases sharper than this as edge chains (0: off).</summary>
         public static float creaseAngle = 0f;
+
+        /// <summary>Shortest crease kept, in cells (the simplification's own filter needs it above 0).</summary>
+        public static float creaseMinCells = 0.15f;
+
+        /// <summary>Straightness (end to end over length) a kept crease needs.</summary>
+        public static float creaseStraightness = 0f;
+
+        /// <summary>Weight of a crease's planes against a face's.</summary>
+        public static float creaseWeight = 1000f;
 
         public static void Build(Vector3[] sourcePositions, int[] sourceTriangles, int targetQuads,
             out Vector3[] positions, out List<int[]> faces, out Stats stats)
@@ -80,8 +134,79 @@ namespace NativeRemesher
             var watch = System.Diagnostics.Stopwatch.StartNew();
             var budget = Mathf.Max(64, Mathf.RoundToInt(targetQuads * (split ? trianglesPerQuad : trianglesPerFaceUnsplit)));
             var options = DecimateOptions.ForTriangleCount(budget);
-            if (creaseAngle > 0f) { options.creaseAngle = creaseAngle; options.creaseMinLength = 0f; }
-            if (curvatureWeightPower > 0f)
+            double totalArea = 0;
+            for (var t = 0; t + 2 < sourceTriangles.Length; t += 3)
+                totalArea += 0.5 * Vector3.Cross(sourcePositions[sourceTriangles[t + 1]] - sourcePositions[sourceTriangles[t]],
+                    sourcePositions[sourceTriangles[t + 2]] - sourcePositions[sourceTriangles[t]]).magnitude;
+            var unit = (float)Math.Sqrt(totalArea / Math.Max(1, targetQuads));
+            if (creaseAngle > 0f)
+            {
+                options.creaseAngle = creaseAngle;
+                options.creaseMinLength = Mathf.Max(1e-6f, creaseMinCells * unit);
+                options.creaseStraightness = creaseStraightness;
+                options.creaseWeight = creaseWeight;
+            }
+            if (featureSizeRadiusCells > 0f)
+            {
+                double area = 0;
+                for (var t = 0; t + 2 < sourceTriangles.Length; t += 3)
+                    area += 0.5 * Vector3.Cross(sourcePositions[sourceTriangles[t + 1]] - sourcePositions[sourceTriangles[t]],
+                        sourcePositions[sourceTriangles[t + 2]] - sourcePositions[sourceTriangles[t]]).magnitude;
+                var cell = (float)Math.Sqrt(area / Math.Max(1, targetQuads));
+                var sizes = FeatureSize(sourcePositions, sourceTriangles, featureSizeRadiusCells * cell,
+                    featureSizeAngle, featureSizeMinCells * cell, out var sizeStats);
+                var scale = ScaleToBudget(sourcePositions, sourceTriangles, sizes, featureSizeFlatCells * cell,
+                    featureSizeBudgetShare * budget);
+                var floor = featureSizeMinCells * cell;
+                for (var i = 0; i < sizes.Length; i++)
+                    if (sizes[i] < float.MaxValue) sizes[i] = Mathf.Max(floor, sizes[i] * scale);
+                stats.featureSize = sizeStats + $" scale={scale:G3}";
+                var lookup = new SpatialGrid(sourcePositions, sourceTriangles);
+                options.vertexSizes = points =>
+                {
+                    var result = new float[points.Length];
+                    Parallel.For(0, points.Length, BackgroundScheduler.Options, i =>
+                    {
+                        lookup.NearestDistance(points[i], out var t);
+                        result[i] = t < 0 ? float.MaxValue : Mathf.Min(sizes[sourceTriangles[3 * t]],
+                            Mathf.Min(sizes[sourceTriangles[3 * t + 1]], sizes[sourceTriangles[3 * t + 2]]));
+                    });
+                    return result;
+                };
+            }
+            if (edgeWeight > 1f)
+            {
+                var reach = edgeRadiusCells * unit;
+                options.vertexWeights = topology =>
+                {
+                    var sharp = FeatureGraph.Detect(topology, edgeAngle).isFeatureVertex;
+                    var n = topology.vertexCount;
+                    var w = new float[n];
+                    var distance = new float[n];
+                    var queue = new Queue<int>();
+                    for (var v = 0; v < n; v++)
+                    {
+                        distance[v] = sharp[v] ? 0f : float.MaxValue;
+                        if (sharp[v]) queue.Enqueue(v);
+                    }
+                    // Breadth-first, by summed edge length: near enough for a reach of a third of a cell.
+                    while (queue.Count > 0)
+                    {
+                        var v = queue.Dequeue();
+                        for (var k = topology.adjacencyStart[v]; k < topology.adjacencyStart[v + 1]; k++)
+                        {
+                            var u = topology.adjacency[k];
+                            var d = distance[v] + (topology.positions[u] - topology.positions[v]).magnitude;
+                            if (d >= distance[u] || d > reach) continue;
+                            distance[u] = d;
+                            queue.Enqueue(u);
+                        }
+                    }
+                    for (var v = 0; v < n; v++) w[v] = distance[v] <= reach ? edgeWeight : 1f;
+                    return w;
+                };
+            }
+            else if (curvatureWeightPower > 0f)
                 options.vertexWeights = topology =>
                 {
                     var field = ScaleField.FromCurvature(topology, targetQuads, 1f, curvatureMaxRatio);
@@ -93,9 +218,11 @@ namespace NativeRemesher
                         w[v] = field.spacing[v] > 0f ? Mathf.Pow(median / field.spacing[v], curvatureWeightPower) : 1f;
                     return w;
                 };
-            PreDecimate.Decimate(sourcePositions, sourceTriangles, options, out _, out var basePositions,
+            PreDecimate.Decimate(sourcePositions, sourceTriangles, options, out var decimateStats, out var basePositions,
                 out var baseTriangles);
             stats.decimateMs = watch.ElapsedMilliseconds;
+            stats.rejectedSize = decimateStats.rejectedSize;
+            stats.creaseEdges = decimateStats.creaseEdges;
             stats.baseTriangles = baseTriangles.Length / 3;
 
             watch.Restart();
@@ -114,6 +241,7 @@ namespace NativeRemesher
             var placed = positions;
             Parallel.For(0, placed.Length, BackgroundScheduler.Options, v =>
                 placed[v] = surface.NearestPoint(placed[v], out _));
+            if (relaxAll) for (var v = 0; v < isNew.Length; v++) isNew[v] = true;
             Relax(positions, faces, isNew, surface, relaxIterations);
             stats.buildMs = watch.ElapsedMilliseconds;
 
@@ -121,6 +249,108 @@ namespace NativeRemesher
             if (fitIterations > 0)
                 stats.fit = FeatureFit.Fit(positions, faces, sourcePositions, sourceTriangles, fitIterations);
             stats.fitMs = watch.ElapsedMilliseconds;
+        }
+
+        // The factor on the sizes at which the triangles they ask for (equilateral, h capped at
+        // `flat`) number `budget`, by bisection on its logarithm.
+        static float ScaleToBudget(Vector3[] p, int[] t, float[] sizes, float flat, float budget)
+        {
+            var count = t.Length / 3;
+            var area = new float[count];
+            var h = new float[count];
+            for (var k = 0; k < count; k++)
+            {
+                area[k] = 0.5f * Vector3.Cross(p[t[3 * k + 1]] - p[t[3 * k]], p[t[3 * k + 2]] - p[t[3 * k]]).magnitude;
+                h[k] = Mathf.Min(sizes[t[3 * k]], Mathf.Min(sizes[t[3 * k + 1]], sizes[t[3 * k + 2]]));
+            }
+            double Count(double s)
+            {
+                double n = 0;
+                for (var k = 0; k < count; k++)
+                {
+                    var e = Math.Min(s * h[k], flat);
+                    n += area[k] / (0.433 * e * e);
+                }
+                return n;
+            }
+            double lo = -12, hi = 12;
+            for (var it = 0; it < 50; it++)
+            {
+                var mid = 0.5 * (lo + hi);
+                if (Count(Math.Exp(mid)) > budget) lo = mid; else hi = mid;
+            }
+            return (float)Math.Exp(0.5 * (lo + hi));
+        }
+
+        // Per input vertex, the longest edge the shape allows there: radius / (turn of the normals
+        // within radius) x angle, from the welded mesh. Unlimited where the surface is flat.
+        static float[] FeatureSize(Vector3[] p, int[] t, float radius, float angle, float minimum, out string info)
+        {
+            var weld = new Dictionary<Vector3, int>(p.Length);
+            var of = new int[p.Length];
+            var wp = new List<Vector3>(p.Length);
+            for (var i = 0; i < p.Length; i++)
+            {
+                if (!weld.TryGetValue(p[i], out var w)) { w = wp.Count; weld[p[i]] = w; wp.Add(p[i]); }
+                of[i] = w;
+            }
+            var n = wp.Count;
+            var normals = new Vector3[n];
+            var degree = new int[n + 1];
+            for (var k = 0; k + 2 < t.Length; k += 3)
+            {
+                int a = of[t[k]], b = of[t[k + 1]], c = of[t[k + 2]];
+                var fn = Vector3.Cross(wp[b] - wp[a], wp[c] - wp[a]);
+                normals[a] += fn; normals[b] += fn; normals[c] += fn;
+                degree[a] += 2; degree[b] += 2; degree[c] += 2;
+            }
+            for (var v = 0; v < n; v++) normals[v] = MeshMath.SafeNormalize(normals[v], Vector3.up);
+            var start = new int[n + 1];
+            for (var v = 0; v < n; v++) start[v + 1] = start[v] + degree[v];
+            var fill = (int[])start.Clone();
+            var adjacency = new int[start[n]];
+            for (var k = 0; k + 2 < t.Length; k += 3)
+            {
+                int a = of[t[k]], b = of[t[k + 1]], c = of[t[k + 2]];
+                adjacency[fill[a]++] = b; adjacency[fill[a]++] = c;
+                adjacency[fill[b]++] = c; adjacency[fill[b]++] = a;
+                adjacency[fill[c]++] = a; adjacency[fill[c]++] = b;
+            }
+            var welded = new float[n];
+            var r2 = radius * radius;
+            Parallel.For(0, n, BackgroundScheduler.Options,
+                () => (seen: new HashSet<int>(), queue: new List<int>(64)),
+                (v, _, local) =>
+                {
+                    local.seen.Clear();
+                    local.queue.Clear();
+                    local.queue.Add(v);
+                    local.seen.Add(v);
+                    var minDot = 1f;
+                    for (var q = 0; q < local.queue.Count && q < 4096; q++)
+                    {
+                        var x = local.queue[q];
+                        minDot = Mathf.Min(minDot, Vector3.Dot(normals[v], normals[x]));
+                        for (var s = start[x]; s < start[x + 1]; s++)
+                        {
+                            var y = adjacency[s];
+                            if ((wp[y] - wp[v]).sqrMagnitude > r2 || !local.seen.Add(y)) continue;
+                            local.queue.Add(y);
+                        }
+                    }
+                    var turn = Mathf.Acos(Mathf.Clamp(minDot, -1f, 1f));
+                    welded[v] = turn > 1e-4f ? Mathf.Max(minimum, angle * radius / turn) : float.MaxValue;
+                    return local;
+                }, _ => { });
+            var sizes = new float[p.Length];
+            var limited = 0;
+            for (var i = 0; i < p.Length; i++)
+            {
+                sizes[i] = welded[of[i]];
+                if (sizes[i] < 4f * radius) limited++;
+            }
+            info = $"radius={radius:G3} limited(<4r)={limited}/{p.Length}";
+            return sizes;
         }
 
         // Greedy matching on the shared edges, best quad first.
