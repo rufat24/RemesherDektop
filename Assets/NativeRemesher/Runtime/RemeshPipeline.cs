@@ -210,6 +210,9 @@ namespace NativeRemesher
         /// <summary>The solver's mesh was held to RemeshPipeline.maxSolveTriangles.</summary>
         public bool solveTrianglesCapped;
 
+        /// <summary>What RemeshPipeline.surfaceCleanIterations did, when on.</summary>
+        public SurfaceClean.Stats surfaceCleanStats;
+
         /// <summary>What RemeshPipeline.featureFitIterations did, when on.</summary>
         public FeatureFit.Stats featureFitStats;
 
@@ -302,6 +305,13 @@ namespace NativeRemesher
         /// moved onto the rims, creases and corners nearest it. 0: off.
         /// </summary>
         public static int featureFitIterations = 0;
+
+        /// <summary>
+        /// Passes of SurfaceClean over the output: lone spikes and dents, and faces folded over
+        /// their neighbours, smoothed into their ring. 0: every vertex stays where the solve put
+        /// it, as before.
+        /// </summary>
+        public static int surfaceCleanIterations = 2;
 
         /// <summary>
         /// Build the quads from an error-driven simplification of the input instead of a lattice
@@ -709,6 +719,15 @@ namespace NativeRemesher
                 onProgress?.Invoke("Fitting features", 0f);
                 result.featureFitStats = FeatureFit.Fit(result.extraction.positions, result.extraction.faces,
                     positions, triangles, featureFitIterations);
+            }
+
+            if (surfaceCleanIterations > 0 && result.extraction?.positions != null)
+            {
+                onProgress?.Invoke("Cleaning surface", 0f);
+                var ex = result.extraction;
+                result.surfaceCleanStats = SurfaceClean.Apply(ex.positions, ex.faces, surfaceCleanIterations);
+                if (ex.shadingNormals != null && ex.shadingNormals.Length == ex.positions.Length)
+                    ex.shadingNormals = Extraction.NormalRecalculator.Compute(ex.faces, ex.positions, ex.normals);
             }
 
             TransferUvs(result, positions, triangles, sourceUvs, watch, onProgress);

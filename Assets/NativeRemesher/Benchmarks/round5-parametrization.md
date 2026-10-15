@@ -557,3 +557,21 @@ source again and hides the old result. Body, neck rim and both back straps paint
 Fixed on the way: `TextureBake.Tangents` normalised its area-weighted sum with Vector3.Normalize,
 which returns zero under 1e-5 -- every corner of the painted millimetre quads (153 vertices) had a
 zero tangent and shaded black.
+
+## Round 21: SurfaceClean -- lone spikes and folds
+
+User, after painting: arms still look distorted, a small pop-out at the collar. Measured: arm quads
+are as regular as the legs' (corner angle off 90 median 6.0 / p90 15.3 deg; legs 6.0 / 12.7) -- the
+arm lumps are the sleeve folds, several cells wide, which the grid follows. The collar pop-out is a
+lone vertex half an edge out of its ring (umbrella offset -0.50, neighbours ~0.03).
+
+`SurfaceClean` (`RemeshPipeline.surfaceCleanIterations = 2`, 0 = off): a vertex further than 0.3
+edges from its ring's centre AND 2.5x its neighbours' own offset, or a corner of a face pointing
+against its neighbours, goes to its ring's centre. Body (painted) 76 -> 10 lone spikes, 2 -> 0 folds;
+head at 3,000: 94 -> 18 spikes, 39 -> 29 folds, renders unchanged elsewhere
+(`shots_final/r21_head_clean.png`, `r21_body_collar_clean.png`). 0.1 s.
+
+Tried and dropped: each vertex onto the source averaged over its ring plus tangential relaxation
+(no visible change on the arms, spikes 19 -> 54); smoothing a fold's whole ring (head 35 folds
+after four passes). The head's remaining folds are where the chin cable, thinner than a cell,
+meets the helmet rim.

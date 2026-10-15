@@ -27,6 +27,7 @@ public static class RenderCheck
         NativeRemesher.Extraction.IntegerGridMap.parametrization = true;
         NativeRemesher.Extraction.IntegerGridMap.parametrizationLayout = true;
         NativeRemesher.Extraction.IntegerGridMap.adaptiveSize = 0.5f;
+        RemeshPipeline.surfaceCleanIterations = int.Parse(Environment.GetEnvironmentVariable("RC_CLEAN") ?? "3");
         var settings = RemeshSettings.Default;
         settings.targetQuadCount = target;
         var profile = RemeshProfile.For(RemeshProfileKind.GameAsset);
@@ -48,6 +49,7 @@ public static class RenderCheck
             settings.densityPaint = paint;
         }
         var result = RemeshPipeline.Solve(positions, triangles, settings, profile, null, null, true);
+        Debug.Log($"[RenderCheck] {result.surfaceCleanStats}");
         Debug.Log($"[RenderCheck] paintCountRatio={result.paintCountRatio} requested={result.requestedQuadCount} adapt={result.adaptiveQuadCountFactor}");
         RemeshPipeline.BakeNormalMap(result, positions, triangles, res);
         RemeshPipeline.BuildOutputMesh(result, "head");
