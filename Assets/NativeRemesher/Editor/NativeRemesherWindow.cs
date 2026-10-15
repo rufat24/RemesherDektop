@@ -76,6 +76,7 @@ namespace NativeRemesher
         // serialised off: the layout measured better than the per-singularity rounding on the head
         // and the body at 2k, 3.5k and 5k (Benchmarks/round5-parametrization.md, round 9).
         [SerializeField] bool m_QuadLayoutOn = true;
+        [SerializeField] bool m_DetailQuads;
         [SerializeField] bool m_ShowAdvanced;
 
         [SerializeField] bool m_SaveAsAsset = true;
@@ -380,6 +381,13 @@ namespace NativeRemesher
                 ? "global integer map - torus 0 irregular, 100 % quads"
                 : "per-edge collapse - torus 366 irregular, 97 % quads", EditorStyles.miniLabel);
 
+            m_DetailQuads = EditorGUILayout.Toggle(
+                new GUIContent("Detail Quads (experimental)",
+                    "Build the quads from a simplification of the source instead of a grid: the edges " +
+                    "follow rims and corners and small parts are kept at a low face count, at the cost of " +
+                    "an irregular flow. Seconds instead of a minute. The settings below do not apply."),
+                m_DetailQuads);
+
             if (m_ExtractorChoice == RemeshExtractor.IntegerGrid)
             {
 
@@ -668,6 +676,7 @@ namespace NativeRemesher
             Extraction.IntegerGridMap.adaptiveSize = m_AdaptiveSize / 100f;
             Extraction.IntegerGridMap.coherentCreases = m_DetectHardEdges;
             Extraction.IntegerGridMap.parametrization = m_GlobalParametrization;
+            RemeshPipeline.detailQuads = m_DetailQuads;
             Extraction.IntegerGridMap.parametrizationLayout = m_GlobalParametrization && m_QuadLayoutOn;
             var autoProfile = m_AutoProfile;
 

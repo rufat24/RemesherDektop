@@ -459,3 +459,32 @@ of it extracting.
 iterations went to the shared pool -- so every runtime Parallel call now passes
 `BackgroundScheduler.Options`. Head at 5,000 on the scheduler: 0 pool work items during the solve,
 same output. Tests: BackgroundSchedulerTests.
+
+## Round 17: the head against the user's reference (heradremesh.fbx) -- Detail Quads
+
+The reference, 6,628 faces, is quad-dominant (627 triangles, 17.4 % irregular) and keeps the rail,
+slots and screws. Our lattice output at the same count melts them. Round the rail our cells are as
+dense as the reference's; the difference is placement -- its vertices sit on the rims and corners.
+
+Two pieces, both off by default:
+
+- `FeatureFit` (`RemeshPipeline.featureFitIterations`): each output vertex moved to the minimum of
+  the quadric of the input triangles nearest it, unconstrained directions left free (dual
+  contouring's placement), capped at half an edge, no face turned over. On the lattice output
+  (C, 6,732 faces): in->out p99 0.872 -> 0.483 % (reference 0.422), out->in p99 0.469 -> 0.316 %.
+- `DetailQuads` (`RemeshPipeline.detailQuads`, window: Detail Quads): quadric simplification to
+  0.42 triangles a quad, triangles paired into quads, one Catmull-Clark split, points onto the
+  input, FeatureFit. All quads, 4 s on the 1.5M-triangle head (the lattice: 56 s).
+
+| head | faces | out->in mean / p99 | in->out mean / p99 / max | normal err mean | irregular |
+|---|---|---|---|---|---|
+| reference | 6,628 | 0.138 / 0.398 | 0.171 / 0.422 / 0.909 | 13.3 | 17.4 % |
+| lattice C | 6,732 | 0.138 / 0.469 | 0.210 / 0.872 / 1.398 | 17.8 | 3.8 % |
+| lattice C + fit | 6,732 | 0.122 / 0.316 | 0.167 / 0.483 / 1.210 | 14.4 | |
+| Detail Quads | 6,336 | 0.127 / 0.313 | 0.167 / 0.448 / 1.043 | 12.9 | 25.9 % |
+
+By eye (`shots_final/r16_head_detail_quads.png`) it is still below the reference: the straps, the
+rim and the rail's outline come through, the slots and screws do not, and the quads are kites
+(min angle p50 44 against 75). Distance numbers at 0.1-0.5 % of the diagonal do not see a 3 mm slot.
+Tried and not better: curvature-weighted quadrics (power 1-3), crease-kept simplification, no split
+(quad-dominant on a 4x denser base: greedy pairing leaves 20-25 % triangles).

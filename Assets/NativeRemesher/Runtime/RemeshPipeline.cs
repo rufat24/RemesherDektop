@@ -186,6 +186,12 @@ namespace NativeRemesher
 
         /// <summary>The solver's mesh was held to RemeshPipeline.maxSolveTriangles.</summary>
         public bool solveTrianglesCapped;
+
+        /// <summary>What RemeshPipeline.featureFitIterations did, when on.</summary>
+        public FeatureFit.Stats featureFitStats;
+
+        /// <summary>What RemeshPipeline.detailQuads did, when on.</summary>
+        public DetailQuads.Stats detailQuadsStats;
         public bool targetWasClamped;
 
         /// <summary>Fraction of input vertices the feature detector marked as sitting in a crease.</summary>
@@ -267,6 +273,19 @@ namespace NativeRemesher
         /// solver ran on. Off is the original behaviour; see the comment at the surface index.
         /// </summary>
         public static bool projectOntoOriginal = false;
+
+        /// <summary>
+        /// Passes of FeatureFit over the output against the caller's original mesh: each vertex
+        /// moved onto the rims, creases and corners nearest it. 0: off.
+        /// </summary>
+        public static int featureFitIterations = 0;
+
+        /// <summary>
+        /// Build the quads from an error-driven simplification of the input instead of a lattice
+        /// (DetailQuads): irregular, but rims, corners and small parts kept at a low count, and
+        /// seconds rather than a minute. Off: the lattice pipeline.
+        /// </summary>
+        public static bool detailQuads = false;
 
         /// <summary>Diagnostic: overrides the chosen profile's relaxation sweeps when >= 0 (0 = off).</summary>
         public static int debugRelaxIterations = -1;
@@ -489,6 +508,37 @@ namespace NativeRemesher
             }
             var watch = new System.Diagnostics.Stopwatch();
 
+            if (detailQuads)
+            {
+                onProgress?.Invoke("Detail quads", 0f);
+                watch.Restart();
+                DetailQuads.Build(positions, triangles, Mathf.Max(1, settings.targetQuadCount),
+                    out var detailPositions, out var detailFaces, out result.detailQuadsStats);
+                var extraction = new QuadExtractionResult { positions = detailPositions, faces = detailFaces };
+                extraction.normals = new Vector3[detailPositions.Length];
+                foreach (var face in detailFaces)
+                {
+                    if (face.Length == 4) extraction.quadCount++;
+                    else if (face.Length == 3) extraction.triangleCount++;
+                    else extraction.ngonCount++;
+                    var fn = Vector3.zero;
+                    for (var k = 1; k + 1 < face.Length; k++)
+                        fn += Vector3.Cross(detailPositions[face[k]] - detailPositions[face[0]],
+                            detailPositions[face[k + 1]] - detailPositions[face[0]]);
+                    foreach (var v in face) extraction.normals[v] += fn;
+                }
+                for (var v = 0; v < extraction.normals.Length; v++)
+                    extraction.normals[v] = MeshMath.SafeNormalize(extraction.normals[v], Vector3.up);
+                result.extraction = extraction;
+                result.extractionMs = watch.ElapsedMilliseconds;
+                result.originalPositions = positions;
+                result.originalTriangles = triangles;
+                TransferUvs(result, positions, triangles, sourceUvs, watch, onProgress);
+                LabelFaces(result);
+                onProgress?.Invoke("Done", 1f);
+                return result;
+            }
+
             // --- pre-decimation ---
             //
             // Quality depends on the ratio of lattice spacing to input edge length, and past about
@@ -595,6 +645,13 @@ namespace NativeRemesher
             result.decimatedTriangles = refineInputTriangles;
             RunCore(solvePositions, solveTriangles, settings, result, watch, onProgress,
                 autoSelectProfile);
+
+            if (featureFitIterations > 0 && result.extraction?.positions != null)
+            {
+                onProgress?.Invoke("Fitting features", 0f);
+                result.featureFitStats = FeatureFit.Fit(result.extraction.positions, result.extraction.faces,
+                    positions, triangles, featureFitIterations);
+            }
 
             TransferUvs(result, positions, triangles, sourceUvs, watch, onProgress);
             LabelFaces(result);

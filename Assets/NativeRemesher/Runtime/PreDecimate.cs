@@ -70,6 +70,13 @@ namespace NativeRemesher
         /// triangle, and a heavy weight keeps every zig at full density.</summary>
         public float labelBorderWeight = 1f;
 
+        /// <summary>
+        /// Optional weight per vertex of the welded input, multiplying the face planes round it:
+        /// where it is high, flattening costs more and the simplification keeps more triangles.
+        /// Null: area weighting alone.
+        /// </summary>
+        public Func<RemeshTopology, float[]> vertexWeights;
+
         public static DecimateOptions ForTriangleCount(int triangles) =>
             new DecimateOptions { targetTriangles = triangles };
     }
@@ -510,6 +517,7 @@ namespace NativeRemesher
                 ? options.labels.ForTopology(topology, sourceTriangles)
                 : null;
             var creases = CreaseEdges(topology, options);
+            var vertexWeight = options.vertexWeights?.Invoke(topology);
 
 
             stats = new DecimateStats
@@ -538,7 +546,7 @@ namespace NativeRemesher
             if (allowParallel && triangleCount >= parallelMinTriangles && triangleCount > 2 * stageTarget)
             {
                 var stageQuadrics = BuildQuadrics(topology, positions, triangles, triangleCount,
-                    options.boundaryWeight, triLabel, options.labelBorderWeight, creases, options.creaseWeight);
+                    options.boundaryWeight, triLabel, options.labelBorderWeight, creases, options.creaseWeight, vertexWeight);
                 msQuadrics = phase.ElapsedMilliseconds; phase.Restart();
 
                 var progressLock = new object();
@@ -569,7 +577,7 @@ namespace NativeRemesher
             msIncident = phase.ElapsedMilliseconds; phase.Restart();
 
             var quadrics = BuildQuadrics(topology, positions, triangles, triangleCount,
-                options.boundaryWeight, triLabel, options.labelBorderWeight, creases, options.creaseWeight);
+                options.boundaryWeight, triLabel, options.labelBorderWeight, creases, options.creaseWeight, vertexWeight);
             msQuadrics = phase.ElapsedMilliseconds; phase.Restart();
 
             // --- seed the heap with every edge ---
@@ -1109,7 +1117,7 @@ namespace NativeRemesher
 
         static Quadric[] BuildQuadrics(RemeshTopology topology, Vector3[] positions, int[] triangles,
             int triangleCount, float boundaryWeight, int[] triLabel = null, float labelWeight = 1f,
-            HashSet<long> creases = null, float creaseWeight = 0f)
+            HashSet<long> creases = null, float creaseWeight = 0f, float[] vertexWeight = null)
         {
             var quadrics = new Quadric[positions.Length];
 
@@ -1128,7 +1136,10 @@ namespace NativeRemesher
                 var d = -Vector3.Dot(normal, a);
 
                 // Area weighting: a large face should constrain its vertices more than a sliver.
-                var plane = Quadric.FromPlane(normal.x, normal.y, normal.z, d, area * 0.5f);
+                var weight = area * 0.5f;
+                if (vertexWeight != null && vertexWeight.Length == positions.Length)
+                    weight *= (vertexWeight[ia] + vertexWeight[ib] + vertexWeight[ic]) / 3f;
+                var plane = Quadric.FromPlane(normal.x, normal.y, normal.z, d, weight);
 
                 quadrics[ia].Add(plane);
                 quadrics[ib].Add(plane);
