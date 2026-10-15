@@ -514,3 +514,21 @@ Goal: the rail's slots and screws in the head at ~6,600 faces, as the reference 
 
 Not solved: a slot or a screw a centimetre across needs cells under half a centimetre there and
 grid lines along its rim; nothing here produces both.
+
+## Round 19: normal map bake -- the detail the quads cannot carry
+
+The user's call: remesh what the quads can hold, and give the rest to a normal map.
+
+`TextureBake.BakeNormals` / `RemeshPipeline.BakeNormalMap` (window: Bake Normal Map, on): the output's
+own atlas (Unwrap), per (vertex, UV) tangents (`TextureBake.Tangents`, written into the mesh by
+ToMesh so the shader decodes in the frame the bake used), and per texel a ray along the interpolated
+normal, both ways, 1.5 mean edges, front-facing source triangles only (`SpatialGrid.Raycast`); the
+source's smooth normal at the hit in (T, N x T x w, N). Green is +V. Head at 3,000 (7,844 faces,
+100 % quads), 2048 px: 2.4 s; texels without a hit 92k -> 21k (front-facing) -> 2.5k (reach 1.5).
+
+Checked in Unity itself (batch-mode render through the Standard shader with the mesh's tangents,
+`tools/headless/RenderCheck.cs.txt`): `shots_final/r19_normalmap_unity_full.png`,
+`r19_normalmap_unity_rail.png` -- slots, screw, S-hook, rail rows, earmuff knob and buckles read as
+in the 1.5M-triangle source. The Blender previews show thin lines at chart borders only because
+Blender computes its own tangents. Weak: the cable, under a cell thick, is not in the low poly and
+comes through only in part.

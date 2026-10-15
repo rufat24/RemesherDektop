@@ -99,6 +99,10 @@ namespace NativeRemesher
         /// </summary>
         public Color32[] bakedTexture;
         public int bakedTextureSize;
+
+        /// <summary>A tangent-space normal map of the input over the same atlas (BakeNormalMap); null when not baked.</summary>
+        public Color32[] bakedNormalMap;
+        public int bakedNormalMapSize;
         public TextureBake.Stats bakeStats;
         public long refineMs;
         public OrientationField orientation;
@@ -784,6 +788,38 @@ namespace NativeRemesher
             result.bakeStats = stats;
             extraction.faceUvs = uvs;
             extraction.uvs = null;
+        }
+
+        /// <summary>
+        /// Bakes the input's surface detail into a tangent-space normal map over the output's own
+        /// atlas (unwrapping it first unless BakeTexture already did), and gives the faces the
+        /// tangents it was baked against, which BuildOutputMesh writes into the mesh. Needs no
+        /// source UVs or textures.
+        /// </summary>
+        public static void BakeNormalMap(RemeshResult result, Vector3[] positions, int[] triangles, int resolution,
+            Action<string, float> onProgress = null)
+        {
+            var extraction = result?.extraction;
+            if (extraction == null || extraction.positions == null || positions == null || triangles == null) return;
+            onProgress?.Invoke("Baking normal map", 0f);
+            var stats = result.bakeStats;
+            if (stats == null || extraction.faceUvs == null || result.bakedTexture == null || result.bakedTextureSize != resolution)
+            {
+                stats = new TextureBake.Stats();
+                extraction.faceUvs = TextureBake.Unwrap(extraction.positions, extraction.faces, resolution, stats);
+                extraction.uvs = null;
+                result.bakeStats = stats;
+            }
+            var normals = extraction.shadingNormals != null && extraction.shadingNormals.Length == extraction.positions.Length
+                ? extraction.shadingNormals
+                : extraction.normals;
+            if (normals == null || normals.Length != extraction.positions.Length)
+                normals = Extraction.NormalRecalculator.Compute(extraction.faces, extraction.positions, null);
+            extraction.faceTangents = TextureBake.Tangents(extraction.positions, extraction.faces, extraction.faceUvs, normals);
+            result.bakedNormalMap = TextureBake.BakeNormals(positions, triangles, extraction.positions, extraction.faces,
+                extraction.faceUvs, normals, extraction.faceTangents, resolution, stats,
+                p => onProgress?.Invoke("Baking normal map", p));
+            result.bakedNormalMapSize = resolution;
         }
 
         static void TransferUvs(RemeshResult result, Vector3[] positions, int[] triangles, Vector2[] sourceUvs,

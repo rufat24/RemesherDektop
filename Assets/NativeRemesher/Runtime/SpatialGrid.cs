@@ -286,6 +286,93 @@ namespace NativeRemesher
         /// search. It is one extra evaluation against the hundreds the ring walk already does, and
         /// keeping the hot loop comparing squared distances only is worth more than saving it.
         /// </remarks>
+        /// <summary>
+        /// The surface hit nearest <paramref name="origin"/> along the line through it in
+        /// <paramref name="direction"/> (unit), either way, within <paramref name="reach"/>:
+        /// <paramref name="t"/> is signed, positive along the direction. False when none is.
+        /// </summary>
+        /// <remarks>
+        /// For baking a normal map: each texel of the low-poly casts along its normal, both ways,
+        /// and reads the high-poly where the line meets it -- the nearest-point projection lands a
+        /// texel over a slot on the slot's rim rather than its floor. Cells are walked exactly
+        /// (Amanatides-Woo) along the segment, so a triangle the line crosses is never skipped.
+        /// </remarks>
+        public bool Raycast(Vector3 origin, Vector3 direction, float reach, out float t, out int triangle,
+            out float u, out float v) => Raycast(origin, direction, reach, 0f, out t, out triangle, out u, out v);
+
+        /// <summary>
+        /// As above, counting only triangles whose winding normal points along
+        /// <paramref name="direction"/> times <paramref name="facing"/> (+1 or -1; 0 takes all):
+        /// the near wall of a thin part, not its back.
+        /// </summary>
+        public bool Raycast(Vector3 origin, Vector3 direction, float reach, float facing, out float t, out int triangle,
+            out float u, out float v)
+        {
+            t = 0f; triangle = -1; u = v = 0f;
+            if (m_CellItems.Length == 0 || !(reach > 0f)) return false;
+            var start = origin - direction * reach;
+            var length = 2f * reach;
+            var best = float.MaxValue;
+            CellCoord(start, out var x, out var y, out var z);
+            int stepX = direction.x > 0 ? 1 : -1, stepY = direction.y > 0 ? 1 : -1, stepZ = direction.z > 0 ? 1 : -1;
+            float Next(float p, float o, int cellIndex, int step) =>
+                o + (cellIndex + (step > 0 ? 1 : 0)) * m_CellSize - p;
+            float tMaxX = Mathf.Abs(direction.x) > 1e-12f ? Next(start.x, m_Origin.x, x, stepX) / direction.x : float.MaxValue;
+            float tMaxY = Mathf.Abs(direction.y) > 1e-12f ? Next(start.y, m_Origin.y, y, stepY) / direction.y : float.MaxValue;
+            float tMaxZ = Mathf.Abs(direction.z) > 1e-12f ? Next(start.z, m_Origin.z, z, stepZ) / direction.z : float.MaxValue;
+            float tDeltaX = Mathf.Abs(direction.x) > 1e-12f ? m_CellSize / Mathf.Abs(direction.x) : float.MaxValue;
+            float tDeltaY = Mathf.Abs(direction.y) > 1e-12f ? m_CellSize / Mathf.Abs(direction.y) : float.MaxValue;
+            float tDeltaZ = Mathf.Abs(direction.z) > 1e-12f ? m_CellSize / Mathf.Abs(direction.z) : float.MaxValue;
+            var travelled = 0f;
+            for (var guard = 0; guard < 4096; guard++)
+            {
+                var cell = CellIndex(x, y, z);
+                for (var i = m_CellStart[cell]; i < m_CellStart[cell + 1]; i++)
+                {
+                    var tri = m_CellItems[i];
+                    var a = m_Vertices[m_Triangles[3 * tri]];
+                    var b = m_Vertices[m_Triangles[3 * tri + 1]];
+                    var c = m_Vertices[m_Triangles[3 * tri + 2]];
+                    // Moller-Trumbore, on the line (either side of start along the segment).
+                    var e1 = b - a;
+                    var e2 = c - a;
+                    if (facing != 0f && Vector3.Dot(Vector3.Cross(e1, e2), direction) * facing <= 0f) continue;
+                    var pv = Vector3.Cross(direction, e2);
+                    var det = Vector3.Dot(e1, pv);
+                    if (Mathf.Abs(det) < 1e-20f) continue;
+                    var inv = 1f / det;
+                    var tv = start - a;
+                    var bu = Vector3.Dot(tv, pv) * inv;
+                    if (bu < -1e-5f || bu > 1f + 1e-5f) continue;
+                    var qv = Vector3.Cross(tv, e1);
+                    var bv = Vector3.Dot(direction, qv) * inv;
+                    if (bv < -1e-5f || bu + bv > 1f + 1e-5f) continue;
+                    var along = Vector3.Dot(e2, qv) * inv;
+                    if (along < 0f || along > length) continue;
+                    var signed = along - reach;
+                    if (Mathf.Abs(signed) >= Mathf.Abs(best)) continue;
+                    best = signed; triangle = tri; u = bu; v = bv;
+                }
+                // Past the best hit's distance from the middle on the far side: nothing nearer remains.
+                var nextT = Mathf.Min(tMaxX, Mathf.Min(tMaxY, tMaxZ));
+                if (triangle >= 0 && travelled - reach > Mathf.Abs(best)) break;
+                if (nextT > length) break;
+                travelled = nextT;
+                if (tMaxX <= tMaxY && tMaxX <= tMaxZ) { x += stepX; tMaxX += tDeltaX; if (x < 0 || x >= m_DimX) break; }
+                else if (tMaxY <= tMaxZ) { y += stepY; tMaxY += tDeltaY; if (y < 0 || y >= m_DimY) break; }
+                else { z += stepZ; tMaxZ += tDeltaZ; if (z < 0 || z >= m_DimZ) break; }
+            }
+            if (triangle < 0) return false;
+            t = best;
+            return true;
+        }
+
+        /// <summary>The corners of triangle <paramref name="index"/>, as indices into the grid's vertices.</summary>
+        public void TriangleCorners(int index, out int a, out int b, out int c)
+        {
+            a = m_Triangles[3 * index]; b = m_Triangles[3 * index + 1]; c = m_Triangles[3 * index + 2];
+        }
+
         public Vector3 NearestPoint(Vector3 point, out float distance)
         {
             return NearestPoint(point, out distance, out _);

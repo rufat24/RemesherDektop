@@ -71,6 +71,7 @@ namespace NativeRemesher
         // nothing when the source has no UVs or no texture.
         [SerializeField] bool m_BakeTexture = true;
         [SerializeField] int m_BakeResolution = 4096;
+        [SerializeField] bool m_BakeNormalMap = true;
         [SerializeField] bool m_GlobalParametrization = true;
         // Renamed from m_QuadLayout so an open window picks up the new default (on) instead of its
         // serialised off: the layout measured better than the per-singularity rounding on the head
@@ -174,7 +175,14 @@ namespace NativeRemesher
                     "scan, whose texture atlas is cut into thousands of pieces, about half the quads " +
                     "straddle a cut and show a smeared strip. Reads the texture file at full size."),
                 m_BakeTexture);
-            if (m_BakeTexture)
+            m_BakeNormalMap = EditorGUILayout.Toggle(
+                new GUIContent("Bake Normal Map",
+                    "Bake the source's surface detail into a tangent-space normal map over the result's " +
+                    "own UV layout, with a material using it: what the quads are too coarse to carry -- " +
+                    "slots, screws, seams, folds -- comes back as shading, the way game assets are made. " +
+                    "Needs no source texture."),
+                m_BakeNormalMap);
+            if (m_BakeTexture || m_BakeNormalMap)
                 using (new EditorGUI.IndentLevelScope())
                     m_BakeResolution = EditorGUILayout.IntPopup(
                         new GUIContent("Texture Size", "Width and height of the baked texture."),
@@ -694,6 +702,7 @@ namespace NativeRemesher
             TextureBake.Image[] bakeImages = null;
             int[] bakeTriangleTexture = null;
             var bakeResolution = m_BakeResolution;
+            var bakeNormals = m_BakeNormalMap;
             if (m_BakeTexture && sourceUvs != null)
                 ReadSourceTextures(selected, triangleSubmesh, out bakeImages, out bakeTriangleTexture);
 
@@ -722,6 +731,8 @@ namespace NativeRemesher
                 if (bakeImages != null)
                     RemeshPipeline.BakeTexture(solved, positions, triangles, sourceUvs, bakeTriangleTexture,
                         bakeImages, bakeResolution, Progress);
+                if (bakeNormals)
+                    RemeshPipeline.BakeNormalMap(solved, positions, triangles, bakeResolution, Progress);
                 return solved;
             }, token);
 
@@ -850,11 +861,13 @@ namespace NativeRemesher
                 materials[i] = perMaterial && sourceMaterials != null && i < sourceMaterials.Length
                     ? sourceMaterials[i]
                     : sourceMaterial;
-            if (result.bakedTexture != null)
+            if (result.bakedTexture != null || result.bakedNormalMap != null)
             {
                 // One baked texture over every submesh: each slot keeps its source material's
-                // shader and settings, with the bake as its main texture.
-                var baked = SaveBakedTexture(result, assetPath, selected.name);
+                // shader and settings, with the bake as its main texture and the normal map as its
+                // bump map.
+                var baked = result.bakedTexture != null ? SaveBakedTexture(result, assetPath, selected.name) : null;
+                var normalMap = result.bakedNormalMap != null ? SaveNormalMap(result, assetPath, selected.name) : null;
                 var made = new Dictionary<Material, Material>();
                 for (var i = 0; i < slots; i++)
                 {
@@ -863,7 +876,11 @@ namespace NativeRemesher
                     if (key != null && made.TryGetValue(key, out var done)) { materials[i] = done; continue; }
                     var mat = key != null ? new Material(key) : new Material(Shader.Find("Standard"));
                     mat.name = selected.name + "_Quads";
-                    mat.mainTexture = baked;
+                    // The normal map's own UV layout replaced the source's, so an unbaked source
+                    // texture would land on the wrong texels: left off rather than scrambled.
+                    if (baked != null) mat.mainTexture = baked;
+                    else if (mat.HasProperty("_MainTex") || mat.HasProperty("_BaseMap")) mat.mainTexture = null;
+                    if (normalMap != null) AssignNormalMap(mat, normalMap);
                     if (!string.IsNullOrEmpty(assetPath))
                     {
                         var matPath = AssetDatabase.GenerateUniqueAssetPath(
@@ -1000,6 +1017,67 @@ namespace NativeRemesher
         /// The baked pixels as a texture: a PNG beside the mesh asset, imported at its full size,
         /// when there is one; otherwise in memory only.
         /// </summary>
+        /// <summary>
+        /// The baked normal map as a texture imported as a normal map: a PNG beside the mesh asset,
+        /// or in memory (RGBA with alpha 1, which UnpackNormal reads as well) when there is none.
+        /// </summary>
+        static Texture2D SaveNormalMap(RemeshResult result, string assetPath, string sourceName)
+        {
+            var size = result.bakedNormalMapSize;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, true, true)
+            {
+                name = sourceName + "_Quads_Normal",
+                wrapMode = TextureWrapMode.Clamp,
+            };
+            texture.SetPixels32(result.bakedNormalMap);
+            texture.Apply(true);
+            if (string.IsNullOrEmpty(assetPath)) return texture;
+            try
+            {
+                var pngPath = AssetDatabase.GenerateUniqueAssetPath(
+                    Path.ChangeExtension(assetPath, null) + "_Normal.png");
+                File.WriteAllBytes(pngPath, texture.EncodeToPNG());
+                AssetDatabase.ImportAsset(pngPath, ImportAssetOptions.ForceSynchronousImport);
+                if (AssetImporter.GetAtPath(pngPath) is TextureImporter importer)
+                {
+                    importer.textureType = TextureImporterType.NormalMap;
+                    importer.maxTextureSize = Mathf.Max(importer.maxTextureSize, size);
+                    importer.wrapMode = TextureWrapMode.Clamp;
+                    importer.SaveAndReimport();
+                }
+                var saved = AssetDatabase.LoadAssetAtPath<Texture2D>(pngPath);
+                if (saved != null)
+                {
+                    DestroyImmediate(texture);
+                    Debug.Log($"[Native Remesher] Wrote {pngPath} (normal map, {result.bakeStats?.normalMissed} texels off the source)");
+                    return saved;
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[Native Remesher] Could not save the normal map: {e.Message}. It is in memory only.");
+            }
+            return texture;
+        }
+
+        // The bump slot of the Built-in Standard shader and of URP / HDRP Lit is _BumpMap (HDRP's
+        // is _NormalMap); each needs its keyword.
+        static void AssignNormalMap(Material mat, Texture2D normalMap)
+        {
+            if (mat.HasProperty("_BumpMap"))
+            {
+                mat.SetTexture("_BumpMap", normalMap);
+                if (mat.HasProperty("_BumpScale")) mat.SetFloat("_BumpScale", 1f);
+                mat.EnableKeyword("_NORMALMAP");
+            }
+            if (mat.HasProperty("_NormalMap"))
+            {
+                mat.SetTexture("_NormalMap", normalMap);
+                mat.EnableKeyword("_NORMALMAP");
+                mat.EnableKeyword("_NORMALMAP_TANGENT_SPACE");
+            }
+        }
+
         static Texture2D SaveBakedTexture(RemeshResult result, string assetPath, string sourceName)
         {
             var size = result.bakedTextureSize;

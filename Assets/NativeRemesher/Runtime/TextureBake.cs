@@ -60,6 +60,11 @@ namespace NativeRemesher
             public float sourceLevel;
             public int bakedTexels, filledTexels;
             public long unwrapMs, bakeMs;
+            /// <summary>Normal map: texels whose ray found no source facing their way, and the ray's reach.</summary>
+            public int normalMissed;
+            public long normalMs;
+            public float normalReach;
+            public bool normalFlipped;
 
             public override string ToString() =>
                 $"bake {resolution}px: charts={charts} (grid {gridCharts}, single {singleFaceCharts}, largest {largestChart} faces) " +
@@ -790,6 +795,248 @@ namespace NativeRemesher
         }
 
         static float Cross(Vector2 a, Vector2 b) => a.x * b.y - a.y * b.x;
+
+        // ------------------------------------------------------------------ normal map
+
+        /// <summary>How far, in mean output edges, a texel looks along its normal for the source.</summary>
+        public static float normalReachEdges = 1.5f;
+
+        /// <summary>
+        /// Per face corner, the tangent (xyz) and handedness (w) the normal map is baked against:
+        /// per (vertex, UV) pair -- a Unity vertex -- the UV-gradient tangents of its faces summed,
+        /// made perpendicular to its normal. The mesh must carry exactly these (QuadExtractor.ToMesh
+        /// writes them), or the shader decodes the map in another frame.
+        /// </summary>
+        public static Vector4[][] Tangents(Vector3[] positions, IList<int[]> faces, Vector2[][] faceUvs,
+            Vector3[] normals)
+        {
+            var index = new Dictionary<(int, Vector2), int>();
+            var tan = new List<Vector3>();
+            var bit = new List<Vector3>();
+            var nrm = new List<Vector3>();
+            var corner = new int[faces.Count][];
+            for (var f = 0; f < faces.Count; f++)
+            {
+                var face = faces[f];
+                var uv = faceUvs[f];
+                if (face == null || uv == null || uv.Length != face.Length) continue;
+                corner[f] = new int[face.Length];
+                for (var k = 0; k < face.Length; k++)
+                {
+                    var key = (face[k], uv[k]);
+                    if (!index.TryGetValue(key, out var id))
+                    {
+                        id = tan.Count;
+                        index[key] = id;
+                        tan.Add(Vector3.zero);
+                        bit.Add(Vector3.zero);
+                        nrm.Add(normals[face[k]]);
+                    }
+                    corner[f][k] = id;
+                }
+                for (var i = 1; i + 1 < face.Length; i++)
+                {
+                    int a = 0, b = i, c = i + 1;
+                    Vector3 e1 = positions[face[b]] - positions[face[a]], e2 = positions[face[c]] - positions[face[a]];
+                    Vector2 d1 = uv[b] - uv[a], d2 = uv[c] - uv[a];
+                    var det = d1.x * d2.y - d2.x * d1.y;
+                    if (Mathf.Abs(det) < 1e-20f) continue;
+                    var r = 1f / det;
+                    var t = (e1 * d2.y - e2 * d1.y) * r;
+                    var bt = (e2 * d1.x - e1 * d2.x) * r;
+                    // Weighted by the triangle's area, so slivers do not steer a vertex.
+                    var w = Vector3.Cross(e1, e2).magnitude;
+                    var tl = t.magnitude;
+                    var bl = bt.magnitude;
+                    if (tl > 0f) t *= w / tl;
+                    if (bl > 0f) bt *= w / bl;
+                    foreach (var k in new[] { a, b, c })
+                    {
+                        tan[corner[f][k]] += t;
+                        bit[corner[f][k]] += bt;
+                    }
+                }
+            }
+            var finished = new Vector4[tan.Count];
+            for (var id = 0; id < tan.Count; id++)
+            {
+                var n = nrm[id];
+                var t = tan[id] - n * Vector3.Dot(n, tan[id]);
+                if (t.sqrMagnitude < 1e-24f) t = Vector3.Cross(n, Mathf.Abs(n.x) < 0.9f ? Vector3.right : Vector3.up);
+                t.Normalize();
+                var w = Vector3.Dot(Vector3.Cross(n, t), bit[id]) < 0f ? -1f : 1f;
+                finished[id] = new Vector4(t.x, t.y, t.z, w);
+            }
+            var result = new Vector4[faces.Count][];
+            for (var f = 0; f < faces.Count; f++)
+            {
+                if (corner[f] == null) continue;
+                result[f] = new Vector4[corner[f].Length];
+                for (var k = 0; k < corner[f].Length; k++) result[f][k] = finished[corner[f][k]];
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// A tangent-space normal map of the source surface over the output's atlas: every texel
+        /// casts along the output's interpolated normal, both ways, reads the source's smooth normal
+        /// where the line meets it, and stores it in the frame (tangent, normal x tangent x w,
+        /// normal) the shader rebuilds from the interpolated vertex attributes. Unity's convention:
+        /// green is +V.
+        /// </summary>
+        /// <remarks>
+        /// The detail too small for the quads -- a helmet's slots and screws, a centimetre across
+        /// on cells of two -- comes back as shading: the low poly keeps the shape it can, the map
+        /// carries the rest, which is how a game asset is made.
+        /// </remarks>
+        public static Color32[] BakeNormals(Vector3[] sourcePositions, int[] sourceTriangles,
+            Vector3[] positions, IList<int[]> faces, Vector2[][] faceUvs, Vector3[] normals,
+            Vector4[][] faceTangents, int resolution, Stats stats, Action<float> onProgress = null)
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            // Source normals, smooth across its own seams: welded by position.
+            var weld = new Dictionary<Vector3, int>(sourcePositions.Length);
+            var of = new int[sourcePositions.Length];
+            for (var i = 0; i < sourcePositions.Length; i++)
+            {
+                if (!weld.TryGetValue(sourcePositions[i], out var w)) { w = weld.Count; weld[sourcePositions[i]] = w; }
+                of[i] = w;
+            }
+            var welded = new Vector3[weld.Count];
+            for (var t = 0; t + 2 < sourceTriangles.Length; t += 3)
+            {
+                int a = sourceTriangles[t], b = sourceTriangles[t + 1], c = sourceTriangles[t + 2];
+                var fn = Vector3.Cross(sourcePositions[b] - sourcePositions[a], sourcePositions[c] - sourcePositions[a]);
+                welded[of[a]] += fn; welded[of[b]] += fn; welded[of[c]] += fn;
+            }
+            for (var i = 0; i < welded.Length; i++) welded[i] = MeshMath.SafeNormalize(welded[i], Vector3.up);
+
+            double edgeSum = 0;
+            var edgeCount = 0;
+            foreach (var face in faces)
+                if (face != null)
+                    for (var k = 0; k < face.Length; k++)
+                    {
+                        edgeSum += (positions[face[(k + 1) % face.Length]] - positions[face[k]]).magnitude;
+                        edgeCount++;
+                    }
+            var reach = normalReachEdges * (float)(edgeSum / Math.Max(1, edgeCount));
+
+            var grid = new SpatialGrid(sourcePositions, sourceTriangles);
+            // Which way the source faces against the output, by majority: a source wound the other
+            // way round would bake every texel upside down.
+            var agree = 0;
+            var probes = 0;
+            for (var f = 0; f < faces.Count && probes < 2000; f += Math.Max(1, faces.Count / 2000))
+            {
+                var face = faces[f];
+                if (face == null || face.Length < 3) continue;
+                var c = Vector3.zero;
+                var n = Vector3.zero;
+                foreach (var v in face) { c += positions[v]; n += normals[v]; }
+                c /= face.Length;
+                n = MeshMath.SafeNormalize(n, Vector3.up);
+                grid.NearestDistance(c, out var tri);
+                if (tri < 0) continue;
+                grid.TriangleCorners(tri, out var ia, out var ib, out var ic);
+                var sn = welded[of[ia]] + welded[of[ib]] + welded[of[ic]];
+                agree += Vector3.Dot(sn, n) >= 0f ? 1 : -1;
+                probes++;
+            }
+            var orientation = agree < 0 ? -1f : 1f;
+
+            var pixels = new Color32[resolution * resolution];
+            var written = new bool[resolution * resolution];
+            var missed = 0;
+            var done = 0;
+            var ss = Math.Max(1, supersample);
+
+            Vector3 SourceNormal(Vector3 p, Vector3 n)
+            {
+                if (grid.Raycast(p, n, reach, orientation, out _, out var tri, out var u, out var v))
+                {
+                    grid.TriangleCorners(tri, out var ia, out var ib, out var ic);
+                    var sn = orientation * (welded[of[ia]] * (1f - u - v) + welded[of[ib]] * u + welded[of[ic]] * v);
+                    if (Vector3.Dot(sn, n) > 0f) return sn.normalized;
+                }
+                System.Threading.Interlocked.Increment(ref missed);
+                grid.NearestDistance(p, out var near);
+                if (near < 0) return n;
+                grid.TriangleCorners(near, out var ja, out var jb, out var jc);
+                var fallback = orientation * (welded[of[ja]] + welded[of[jb]] + welded[of[jc]]).normalized;
+                return Vector3.Dot(fallback, n) > 0f ? fallback : n;
+            }
+
+            Parallel.For(0, faces.Count, BackgroundScheduler.Options, f =>
+            {
+                var face = faces[f];
+                var uv = faceUvs[f];
+                var tg = faceTangents[f];
+                if (face == null || uv == null || tg == null || face.Length < 3 || uv.Length != face.Length) return;
+                for (var i = 1; i + 1 < face.Length; i++)
+                {
+                    Vector2 u0 = uv[0] * resolution, u1 = uv[i] * resolution, u2 = uv[i + 1] * resolution;
+                    int c0 = 0, c1 = i, c2 = i + 1;
+                    var area = (u1.x - u0.x) * (u2.y - u0.y) - (u1.y - u0.y) * (u2.x - u0.x);
+                    if (Mathf.Abs(area) < 1e-12f) continue;
+                    const float k_Reach = 0.75f;
+                    int x0 = Math.Max(0, Mathf.FloorToInt(Mathf.Min(u0.x, Mathf.Min(u1.x, u2.x)) - k_Reach));
+                    int x1 = Math.Min(resolution - 1, Mathf.CeilToInt(Mathf.Max(u0.x, Mathf.Max(u1.x, u2.x)) + k_Reach));
+                    int y0 = Math.Max(0, Mathf.FloorToInt(Mathf.Min(u0.y, Mathf.Min(u1.y, u2.y)) - k_Reach));
+                    int y1 = Math.Min(resolution - 1, Mathf.CeilToInt(Mathf.Max(u0.y, Mathf.Max(u1.y, u2.y)) + k_Reach));
+                    float L01 = (u1 - u0).magnitude, L12 = (u2 - u1).magnitude, L20 = (u0 - u2).magnitude;
+                    var sign = Mathf.Sign(area);
+                    for (var y = y0; y <= y1; y++)
+                        for (var x = x0; x <= x1; x++)
+                        {
+                            var cc = new Vector2(x + 0.5f, y + 0.5f);
+                            float d0 = sign * Cross(u1 - u0, cc - u0) / L01;
+                            float d1 = sign * Cross(u2 - u1, cc - u1) / L12;
+                            float d2 = sign * Cross(u0 - u2, cc - u2) / L20;
+                            if (d0 < -k_Reach || d1 < -k_Reach || d2 < -k_Reach) continue;
+                            var sum = Vector3.zero;
+                            for (var sy = 0; sy < ss; sy++)
+                                for (var sx = 0; sx < ss; sx++)
+                                {
+                                    var s = new Vector2(x + (sx + 0.5f) / ss, y + (sy + 0.5f) / ss);
+                                    var w1 = sign * Cross(u0 - u2, s - u2) / Mathf.Abs(area);
+                                    var w2 = sign * Cross(u1 - u0, s - u0) / Mathf.Abs(area);
+                                    w1 = Mathf.Clamp01(w1); w2 = Mathf.Clamp01(w2);
+                                    if (w1 + w2 > 1f) { var k = 1f / (w1 + w2); w1 *= k; w2 *= k; }
+                                    var w0 = 1f - w1 - w2;
+                                    var p = positions[face[c0]] * w0 + positions[face[c1]] * w1 + positions[face[c2]] * w2;
+                                    // As the shader: interpolated, then normalised.
+                                    var n = MeshMath.SafeNormalize(normals[face[c0]] * w0 + normals[face[c1]] * w1
+                                                                   + normals[face[c2]] * w2, Vector3.up);
+                                    var t4 = tg[c0] * w0 + tg[c1] * w1 + tg[c2] * w2;
+                                    var t = new Vector3(t4.x, t4.y, t4.z);
+                                    t = MeshMath.SafeNormalize(t - n * Vector3.Dot(n, t), Vector3.right);
+                                    var b = Vector3.Cross(n, t) * (tg[c0].w < 0f ? -1f : 1f);
+                                    var sn = SourceNormal(p, n);
+                                    sum += new Vector3(Vector3.Dot(sn, t), Vector3.Dot(sn, b), Vector3.Dot(sn, n));
+                                }
+                            var m = MeshMath.SafeNormalize(sum, Vector3.forward);
+                            if (m.z < 0.05f) { m.z = 0.05f; m.Normalize(); }
+                            var idx = y * resolution + x;
+                            pixels[idx] = new Color32((byte)Mathf.Clamp(Mathf.RoundToInt((m.x * 0.5f + 0.5f) * 255f), 0, 255),
+                                (byte)Mathf.Clamp(Mathf.RoundToInt((m.y * 0.5f + 0.5f) * 255f), 0, 255),
+                                (byte)Mathf.Clamp(Mathf.RoundToInt((m.z * 0.5f + 0.5f) * 255f), 0, 255), 255);
+                            written[idx] = true;
+                        }
+                }
+                var dn = System.Threading.Interlocked.Increment(ref done);
+                if (onProgress != null && (dn & 1023) == 0) onProgress((float)dn / faces.Count);
+            });
+            // Gutters spread from the charts, as the colour bake's; with that off, flat.
+            if (fillGutters) FillOutward(pixels, written, resolution);
+            for (var i = 0; i < pixels.Length; i++)
+                if (!written[i] && pixels[i].a == 0) pixels[i] = new Color32(128, 128, 255, 255);
+            stats.normalMissed = missed;
+            stats.normalMs = watch.ElapsedMilliseconds;
+            stats.normalReach = reach;
+            stats.normalFlipped = orientation < 0f;
+            return pixels;
+        }
 
         // Empty texels take the mean of their written neighbours, ring by ring, until none is
         // left: the charts' colours run out into the gutters, so bilinear filtering and the mip

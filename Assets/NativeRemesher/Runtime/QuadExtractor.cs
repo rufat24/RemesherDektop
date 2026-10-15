@@ -88,6 +88,12 @@ namespace NativeRemesher
         public Vector2[][] faceUvs;
 
         /// <summary>
+        /// Per face corner, the tangent a baked normal map was made against (TextureBake.Tangents);
+        /// null when there is none. ToMesh writes them as the mesh's tangents.
+        /// </summary>
+        public Vector4[][] faceTangents;
+
+        /// <summary>
         /// Per face, the input material (submesh) it lies on, when materials were kept (see
         /// <see cref="RemeshSettings.useMaterials"/>); null otherwise. <see cref="materialSlots"/>
         /// is the number of submeshes the mesh gets then.
@@ -1404,9 +1410,10 @@ namespace NativeRemesher
             var shading = extraction.shadingNormals;
             var fallbackNormals = extraction.normals;
             Vector2[] cornerUvs = null;
+            Vector4[] tangents = null;
             if (extraction.faceUvs != null && extraction.faceUvs.Length == extraction.faces.Count)
                 SplitAtUvSeams(extraction, out positions, out faces, out cornerUvs, out shading,
-                    out fallbackNormals);
+                    out fallbackNormals, out tangents);
 
             if (positions.Length > 65534)
                 mesh.indexFormat = IndexFormat.UInt32;
@@ -1458,6 +1465,7 @@ namespace NativeRemesher
                 if (shading != null && shading.Length == positions.Length) mesh.SetNormals(shading);
                 else if (fallbackNormals != null && fallbackNormals.Length == positions.Length) mesh.SetNormals(fallbackNormals);
                 else mesh.RecalculateNormals();
+                if (tangents != null && tangents.Length == positions.Length) mesh.SetTangents(tangents);
                 return mesh;
             }
 
@@ -1528,6 +1536,8 @@ namespace NativeRemesher
                 mesh.SetNormals(fallbackNormals);
             else
                 mesh.RecalculateNormals();
+            if (tangents != null && tangents.Length == positions.Length)
+                mesh.SetTangents(tangents);
 
             return mesh;
         }
@@ -1538,8 +1548,12 @@ namespace NativeRemesher
         /// </summary>
         static void SplitAtUvSeams(QuadExtractionResult extraction, out Vector3[] positions,
             out List<int[]> faces, out Vector2[] uvs, out Vector3[] shadingNormals,
-            out Vector3[] normals)
+            out Vector3[] normals, out Vector4[] tangents)
         {
+            var srcTangents = extraction.faceTangents != null && extraction.faceTangents.Length == extraction.faces.Count
+                ? extraction.faceTangents
+                : null;
+            var outTangents = srcTangents != null ? new List<Vector4>(extraction.positions.Length) : null;
             var source = extraction.positions;
             var srcShading = extraction.shadingNormals != null &&
                              extraction.shadingNormals.Length == source.Length
@@ -1578,6 +1592,7 @@ namespace NativeRemesher
                         outUvs.Add(faceUv[k]);
                         outShading?.Add(srcShading[face[k]]);
                         outNormals?.Add(srcNormals[face[k]]);
+                        outTangents?.Add(srcTangents[f] != null && k < srcTangents[f].Length ? srcTangents[f][k] : new Vector4(1f, 0f, 0f, 1f));
                     }
                     remapped[k] = index;
                 }
@@ -1588,6 +1603,7 @@ namespace NativeRemesher
             uvs = outUvs.ToArray();
             shadingNormals = outShading?.ToArray();
             normals = outNormals?.ToArray();
+            tangents = outTangents?.ToArray();
         }
 
         // ShouldFlip lived here and is deliberately gone rather than left unused. It decided winding
