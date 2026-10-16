@@ -87,13 +87,17 @@ namespace NativeRemesher.Extraction
         /// <summary>Faces too small for their normal to carry a usable sign. Excluded from the vote.</summary>
         public int negligibleArea;
 
+        /// <summary>Patches wound against the surface and their neighbours, reversed after the walk.</summary>
+        public int patchesFlipped;
+        public int patchFacesFlipped;
+
         public override string ToString()
         {
             return $"components={components} (closed={componentsClosed} weak={componentsWeakVote} " +
                    $"minConf={weakestConfidence:F3}) flipped={componentsFlipped} " +
                    $"consistency={facesMadeConsistent} faces={facesFlipped}/{faceCount} " +
                    $"inconsistentEdges={inconsistentEdges} disagreeAfter={disagreeingAfter} " +
-                   $"negligible={negligibleArea}";
+                   $"negligible={negligibleArea} patches={patchesFlipped}({patchFacesFlipped} faces)";
         }
     }
 
@@ -119,6 +123,16 @@ namespace NativeRemesher.Extraction
         /// improves.
         /// </remarks>
         const float k_MinVoteConfidence = 0.15f;
+
+        /// <summary>
+        /// After the walk and the component flips, reverse each connected patch of faces that points
+        /// against the surface, when that leaves its border no less consistent. See
+        /// <see cref="FlipInvertedPatches"/>. False: as before.
+        /// </summary>
+        public static bool flipInvertedPatches = true;
+
+        /// <summary>A patch is reversed when its area-weighted mean cosine with the surface is below minus this.</summary>
+        public static float invertedPatchCosine = 0.3f;
 
         public static OrientStats Run(List<int[]> faces, Vector3[] positions, Vector3[] normals)
         {
@@ -335,9 +349,112 @@ namespace NativeRemesher.Extraction
                 }
             }
 
+            if (flipInvertedPatches) FlipInvertedPatches(faces, positions, normals, stats);
+
             Measure(faces, positions, normals, stats);
 
             return stats;
+        }
+
+        /// <summary>
+        /// Reverses each connected patch of faces wound against the input surface whose border
+        /// becomes no less consistent for it.
+        /// </summary>
+        /// <remarks>
+        /// The walk makes the winding consistent wherever the surface allows it; where the extracted
+        /// surface has a twist in it (a closed manifold that is not orientable), some edges stay
+        /// inconsistent whatever is done, and the walk leaves that seam wherever its flood happened
+        /// to close. Measured on the helmet head at 3,000 as Unity's runtime solved it: a 114-face
+        /// patch on top of the helmet, inside out, 46 of its 54 border edges inconsistent -- seen
+        /// through in the scene, and 50,000 texels of the normal map with no source facing them.
+        /// Reversed, 8 border edges stay inconsistent and the patch faces out. A patch is only
+        /// reversed when its border's inconsistent edges do not grow, so a real fold the winding
+        /// cannot express (which agrees with its neighbours) is left alone.
+        /// </remarks>
+        public static void FlipInvertedPatches(List<int[]> faces, Vector3[] positions, Vector3[] normals, OrientStats stats)
+        {
+            if (faces == null || positions == null || normals == null) return;
+            var n = faces.Count;
+            var cosine = new float[n];
+            var area = new float[n];
+            var against = new bool[n];
+            for (var f = 0; f < n; f++)
+            {
+                var face = faces[f];
+                if (face == null || face.Length < 3) continue;
+                var geometric = QuadExtractor.FaceNormal(positions, face);
+                area[f] = geometric.magnitude;
+                if (!(area[f] > 0f)) continue;
+                cosine[f] = MeshMath.CosAngleBetween(geometric, QuadExtractor.AverageNormal(normals, face));
+                against[f] = cosine[f] < 0f;
+            }
+
+            // Faces round each undirected edge.
+            var edgeFaces = new Dictionary<long, List<int>>(n * 2, EdgeKey.Comparer);
+            for (var f = 0; f < n; f++)
+            {
+                var face = faces[f];
+                if (face == null || face.Length < 3) continue;
+                for (var i = 0; i < face.Length; i++)
+                {
+                    var key = EdgeKey.PackUndirected(face[i], face[(i + 1) % face.Length]);
+                    if (!edgeFaces.TryGetValue(key, out var list)) edgeFaces[key] = list = new List<int>(2);
+                    list.Add(f);
+                }
+            }
+
+            var patch = new int[n];
+            for (var f = 0; f < n; f++) patch[f] = -1;
+            var members = new List<int>();
+            var queue = new Queue<int>();
+            var patches = 0;
+            for (var seed = 0; seed < n; seed++)
+            {
+                if (!against[seed] || patch[seed] >= 0) continue;
+                members.Clear();
+                patch[seed] = patches;
+                queue.Enqueue(seed);
+                while (queue.Count > 0)
+                {
+                    var f = queue.Dequeue();
+                    members.Add(f);
+                    var face = faces[f];
+                    for (var i = 0; i < face.Length; i++)
+                    {
+                        var key = EdgeKey.PackUndirected(face[i], face[(i + 1) % face.Length]);
+                        foreach (var g in edgeFaces[key])
+                            if (g != f && against[g] && patch[g] < 0) { patch[g] = patches; queue.Enqueue(g); }
+                    }
+                }
+
+                // Pointing against the surface as a whole, not by a sliver's rounding.
+                double vote = 0, total = 0;
+                foreach (var f in members) { vote += cosine[f] * area[f]; total += area[f]; }
+                var id = patches++;
+                if (!(total > 0) || vote / total > -invertedPatchCosine) continue;
+
+                // Its border: shared edges to faces outside it, consistent now or not.
+                int inconsistent = 0, consistent = 0;
+                foreach (var f in members)
+                {
+                    var face = faces[f];
+                    for (var i = 0; i < face.Length; i++)
+                    {
+                        int a = face[i], b = face[(i + 1) % face.Length];
+                        var list = edgeFaces[EdgeKey.PackUndirected(a, b)];
+                        if (list.Count != 2) continue;
+                        var g = list[0] == f ? list[1] : list[0];
+                        if (patch[g] == id) continue;
+                        if (TraversesForward(faces[g], a, b)) inconsistent++; else consistent++;
+                    }
+                }
+                // Reversed, the two swap. No border: a whole component, which the volume or the
+                // vote above has already decided.
+                if (consistent + inconsistent == 0 || consistent > inconsistent) continue;
+                foreach (var f in members) System.Array.Reverse(faces[f]);
+                stats.patchesFlipped++;
+                stats.patchFacesFlipped += members.Count;
+            }
         }
 
         /// <summary>

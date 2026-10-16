@@ -1,4 +1,4 @@
-// The three things that had to be true for the output to shade correctly, and were not checked.
+// The things that had to be true for the output to shade correctly, and were not checked.
 //
 // Every case here was reported by the user before it was measured — "check for flipped or duplicate
 // faces, check for normals direction" — and each one turned out to be a real defect in the output.
@@ -270,6 +270,61 @@ namespace NativeRemesher.Tests
             Assert.AreEqual(0, stats.componentsClosed);
             Assert.AreEqual(1, stats.componentsFlipped);
             Assert.Greater(Vector3.Dot(QuadExtractor.FaceNormal(positions, faces[0]), Vector3.up), 0f);
+        }
+        // A 6 x 6 grid of quads on y = 0 wound up (+y), with the 2 x 2 block in the middle reversed.
+        static void GridWithReversedBlock(out Vector3[] positions, out List<int[]> faces, out List<int> block)
+        {
+            const int n = 6;
+            positions = new Vector3[(n + 1) * (n + 1)];
+            for (var j = 0; j <= n; j++)
+                for (var i = 0; i <= n; i++)
+                    positions[j * (n + 1) + i] = new Vector3(i, 0f, j);
+            faces = new List<int[]>();
+            block = new List<int>();
+            for (var j = 0; j < n; j++)
+                for (var i = 0; i < n; i++)
+                {
+                    var q = j * (n + 1) + i;
+                    var face = new[] { q, q + n + 1, q + n + 2, q + 1 };
+                    if (i >= 2 && i < 4 && j >= 2 && j < 4) { System.Array.Reverse(face); block.Add(faces.Count); }
+                    faces.Add(face);
+                }
+        }
+
+        [Test]
+        public void InvertedPatchIsReversed()
+        {
+            // The patch the consistency walk left inside out (helmet head at 3,000 in Unity: 114
+            // faces, 46 of 54 border edges inconsistent): pointing against the surface, its border
+            // all inconsistent.
+            GridWithReversedBlock(out var positions, out var faces, out var block);
+            var normals = new Vector3[positions.Length];
+            for (var i = 0; i < normals.Length; i++) normals[i] = Vector3.up;
+            var stats = new OrientStats();
+            FaceOrienter.FlipInvertedPatches(faces, positions, normals, stats);
+            Assert.AreEqual(1, stats.patchesFlipped, stats.ToString());
+            Assert.AreEqual(4, stats.patchFacesFlipped, stats.ToString());
+            foreach (var f in faces)
+                Assert.Greater(Vector3.Dot(QuadExtractor.FaceNormal(positions, f), Vector3.up), 0f);
+        }
+
+        [Test]
+        public void PatchConsistentWithItsNeighboursIsLeftAlone()
+        {
+            // Wound like its neighbours, but the surface says it should face the other way (a fold
+            // the winding cannot express): reversing it would make its whole border inconsistent.
+            GridWithReversedBlock(out var positions, out var faces, out var block);
+            foreach (var f in block) System.Array.Reverse(faces[f]);
+            var normals = new Vector3[positions.Length];
+            for (var i = 0; i < normals.Length; i++) normals[i] = Vector3.up;
+            foreach (var f in block)
+                foreach (var v in faces[f]) normals[v] = Vector3.down;
+            var before = new List<int[]>();
+            foreach (var f in faces) before.Add((int[])f.Clone());
+            var stats = new OrientStats();
+            FaceOrienter.FlipInvertedPatches(faces, positions, normals, stats);
+            Assert.AreEqual(0, stats.patchesFlipped, stats.ToString());
+            for (var f = 0; f < faces.Count; f++) Assert.AreEqual(before[f], faces[f]);
         }
     }
 }
