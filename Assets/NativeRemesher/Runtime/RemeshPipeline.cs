@@ -213,6 +213,9 @@ namespace NativeRemesher
         /// <summary>What RemeshPipeline.surfaceCleanIterations did, when on.</summary>
         public SurfaceClean.Stats surfaceCleanStats;
 
+        /// <summary>What RemeshPipeline.ribbonParts found and meshed, when on.</summary>
+        public RibbonParts.Stats ribbonStats;
+
         /// <summary>What RemeshPipeline.featureFitIterations did, when on.</summary>
         public FeatureFit.Stats featureFitStats;
 
@@ -535,6 +538,9 @@ namespace NativeRemesher
 
             profile = profile.Validated();
             settings = profile.ApplyTo(settings).Validated();
+            if (ribbonParts && !t_SolvingWithoutRibbons && lockAxis == SymmetryAxis.None)
+                return SolveWithRibbons(positions, triangles, settings, profile, onProgress, sourceUvs,
+                    autoSelectProfile, triangleMaterials);
             if (settings.symmetry != SymmetryAxis.None)
                 return SolveSymmetric(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile,
                     triangleMaterials);
@@ -1401,6 +1407,119 @@ namespace NativeRemesher
         /// where painting Less Detail on more than a tenth of the surface raised the count.
         /// </summary>
         public static bool adaptiveCountIgnoresPaint = true;
+
+        /// <summary>
+        /// Thin free-standing bands of the input (straps, belts) are recognised and meshed on their
+        /// own as quad tubes, and the rest solved without them. See <see cref="RibbonParts"/>.
+        /// False: as before, every part goes through the lattice.
+        /// </summary>
+        public static bool ribbonParts = false;
+
+        [ThreadStatic] static bool t_SolvingWithoutRibbons;
+
+        // The input's ribbons found and taken out, the rest solved (with Symmetry, if asked: the
+        // ribbons are meshed whole, both sides), the ribbons' tubes added to the output.
+        static RemeshResult SolveWithRibbons(Vector3[] positions, int[] triangles, RemeshSettings settings,
+            RemeshProfile profile, Action<string, float> onProgress, Vector2[] sourceUvs, bool autoSelectProfile,
+            int[] triangleMaterials)
+        {
+            t_SolvingWithoutRibbons = true;
+            try
+            {
+                onProgress?.Invoke("Finding ribbons", 0f);
+                double area = 0;
+                for (var t = 0; t + 2 < triangles.Length; t += 3)
+                    area += Vector3.Cross(positions[triangles[t + 1]] - positions[triangles[t]],
+                        positions[triangles[t + 2]] - positions[triangles[t]]).magnitude * 0.5;
+                var cell = (float)Math.Sqrt(area / Math.Max(1, settings.targetQuadCount));
+                var stats = new RibbonParts.Stats();
+                var ribbons = RibbonParts.Find(positions, triangles, cell, out var keptPositions, out var keptTriangles,
+                    out var sourceOf, out var outward, out var surface, stats);
+                if (ribbons.Count == 0)
+                {
+                    var plain = SolveInternal(positions, triangles, settings, profile, onProgress, sourceUvs,
+                        autoSelectProfile, SymmetryAxis.None, 0f, triangleMaterials);
+                    plain.ribbonStats = stats;
+                    return plain;
+                }
+                // Roughly what the tubes will take at this size, off the count for the rest.
+                var estimate = 0f;
+                foreach (var r in ribbons)
+                    estimate += r.length / cell * (2 * Mathf.Max(1, Mathf.RoundToInt(r.medianWidth / (RibbonParts.quadWidthCells * cell))) + 2);
+                var inner = settings;
+                inner.targetQuadCount = Mathf.Max(Mathf.Max(4, settings.targetQuadCount / 4),
+                    settings.targetQuadCount - Mathf.RoundToInt(estimate));
+                int[] innerMaterials = null;
+                if (triangleMaterials != null && triangleMaterials.Length == triangles.Length / 3)
+                {
+                    innerMaterials = new int[sourceOf.Length];
+                    for (var t = 0; t < sourceOf.Length; t++) innerMaterials[t] = triangleMaterials[sourceOf[t]];
+                }
+                Vector2[] innerUvs = null;
+                if (sourceUvs != null && sourceUvs.Length == positions.Length)
+                {
+                    innerUvs = new Vector2[keptPositions.Length];
+                    Array.Copy(sourceUvs, innerUvs, sourceUvs.Length);
+                }
+                var result = SolveInternal(keptPositions, keptTriangles, inner, profile, onProgress, innerUvs,
+                    autoSelectProfile, SymmetryAxis.None, 0f, innerMaterials);
+                result.ribbonStats = stats;
+                // At the edge length the rest came out at (Adaptive Quad Count moves it far off
+                // the requested count's).
+                var meshCell = cell;
+                var ex = result.extraction;
+                if (ex?.positions != null && ex.faces.Count > 0)
+                {
+                    double sum = 0; var n = 0;
+                    foreach (var f in ex.faces)
+                        for (var i = 0; i < f.Length; i++) { sum += Vector3.Distance(ex.positions[f[i]], ex.positions[f[(i + 1) % f.Length]]); n++; }
+                    if (n > 0) meshCell = (float)(sum / n);
+                }
+                RibbonParts.Mesh(ribbons, surface, meshCell, outward, out var ribbonPositions, out var ribbonFaces);
+                stats.quads = ribbonFaces.Count;
+                AppendRibbons(result, ribbonPositions, ribbonFaces, positions, triangles, sourceUvs);
+                return result;
+            }
+            finally
+            {
+                t_SolvingWithoutRibbons = false;
+            }
+        }
+
+        static void AppendRibbons(RemeshResult result, Vector3[] ribbonPositions, List<int[]> ribbonFaces,
+            Vector3[] positions, int[] triangles, Vector2[] sourceUvs)
+        {
+            var ex = result.extraction;
+            if (ex == null || ex.positions == null || ribbonPositions.Length == 0) return;
+            var baseIndex = ex.positions.Length;
+            T[] Concat<T>(T[] a, T[] b)
+            {
+                var c = new T[a.Length + b.Length];
+                Array.Copy(a, c, a.Length);
+                Array.Copy(b, 0, c, a.Length, b.Length);
+                return c;
+            }
+            var ribbonNormals = Extraction.NormalRecalculator.Compute(ribbonFaces, ribbonPositions, null);
+            if (ex.normals != null && ex.normals.Length == baseIndex) ex.normals = Concat(ex.normals, ribbonNormals);
+            if (ex.shadingNormals != null && ex.shadingNormals.Length == baseIndex)
+                ex.shadingNormals = Concat(ex.shadingNormals, ribbonNormals);
+            if (ex.uvs != null && ex.uvs.Length == baseIndex && sourceUvs != null)
+                ex.uvs = Concat(ex.uvs, AttributeTransfer.SampleUvs(positions, triangles, sourceUvs, ribbonPositions));
+            var faceCount = ex.faces.Count;
+            if (ex.faceUvs != null && ex.faceUvs.Length == faceCount && sourceUvs != null)
+                ex.faceUvs = Concat(ex.faceUvs, AttributeTransfer.SampleFaceUvs(positions, triangles, sourceUvs,
+                    ribbonPositions, ribbonFaces, out _));
+            ex.faceTangents = null;
+            ex.positions = Concat(ex.positions, ribbonPositions);
+            foreach (var f in ribbonFaces)
+            {
+                var g = new int[f.Length];
+                for (var i = 0; i < f.Length; i++) g[i] = f[i] + baseIndex;
+                ex.faces.Add(g);
+            }
+            ex.quadCount += ribbonFaces.Count;
+            if (ex.faceMaterials != null) LabelFaces(result);
+        }
 
         /// <summary>
         /// With Symmetry, the paint is read symmetrically (DensityPaint.Mirrored): paint on the half

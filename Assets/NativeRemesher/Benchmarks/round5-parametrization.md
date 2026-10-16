@@ -607,3 +607,42 @@ behaviour kept. Measured with the console harness (head 3,000 / body 5,000 / ccn
    from the console harness (7,758 against 8,124 faces on the head), which is why it showed there.
 
 Tests (Unity, EditMode): 212, 210 passed, 2 skipped.
+
+## Round 23: straps as tubes (branch remesher-band-structure)
+
+The helmet's chin straps are free-standing bands, about 2 cells wide and 0.25 cell thick, standing
+off the cheek (plane sections of the source). The decimated mesh keeps them as tubes; the quad
+layout cuts across them, so they came out as slivers melted into the face. The reference meshes each
+as a rectangle swept along it.
+
+RibbonParts (RemeshPipeline.ribbonParts; the window's "Straps As Tubes", on by default there):
+
+- **Find.** The thickness map (an inward ray per vertex) gives the thin plates. Each plate is split
+  into runs of steady width and direction. A run counts as a ribbon when it is long, narrow and free
+  along both rims.
+- **Mesh.** Each ribbon becomes a quad tube cut ring by ring from its own sections, at the output's
+  edge length.
+- **Rest.** The rest is solved without the ribbons, and the holes are zipped shut.
+
+Console harness, Photogrammetry/GameAsset auto, layout on:
+
+| mesh | ribbons | faces | irregular | chamfer | hausdorff |
+|---|---|---|---|---|---|
+| head 3,000 off | - | 8,105 | 3.40 % | 0.00104 | 0.01294 |
+| head 3,000 on | 9 (448 quads) | 7,902 | 3.56 % | 0.00101 | 0.01531 |
+| body 5,000 on | 0 | unchanged | | | |
+| ccnb 5,000 on | 0 | unchanged | | | |
+
+Detection costs about 1.1-2.5 s per run.
+
+Unity, head at 3,000 with ribbons on: 7,986 faces. The bake missed 20,305 texels, against 1,831 with
+ribbons off. The extra misses are on 52 faces that are hidden: tube ends pushed into the part they
+attach to, and the closed-up spots inside the tubes. Rays from there only find the inside of the
+source. Renders show none of them.
+
+Tests (Unity, EditMode): 214, 212 passed, 2 skipped.
+
+Still open:
+- The buckle between the straps stays a blob, since it is a thick part smaller than a cell.
+- The front chin strap is not recognised, because it merges into the buckle's plates.
+- The back straps have small torn tips.

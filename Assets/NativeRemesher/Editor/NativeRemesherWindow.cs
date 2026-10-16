@@ -78,6 +78,7 @@ namespace NativeRemesher
         // and the body at 2k, 3.5k and 5k (Benchmarks/round5-parametrization.md, round 9).
         [SerializeField] bool m_QuadLayoutOn = true;
         [SerializeField] bool m_DetailQuads;
+        [SerializeField] bool m_RibbonParts = true;
         [SerializeField] bool m_ShowAdvanced;
 
         [SerializeField] bool m_SaveAsAsset = true;
@@ -409,6 +410,14 @@ namespace NativeRemesher
                     "an irregular flow. Seconds instead of a minute. The settings below do not apply."),
                 m_DetailQuads);
 
+            m_RibbonParts = EditorGUILayout.Toggle(
+                new GUIContent("Straps As Tubes",
+                    "Thin free-standing bands of the source -- straps, belts, flat cables -- are found and " +
+                    "meshed on their own as clean quad tubes, a few quads round and about a quad per step " +
+                    "along; the rest is remeshed without them. Off: they go through the grid with " +
+                    "everything else, which melts a band thinner than a quad into the surface behind it."),
+                m_RibbonParts);
+
             if (m_ExtractorChoice == RemeshExtractor.IntegerGrid)
             {
 
@@ -703,6 +712,7 @@ namespace NativeRemesher
             Extraction.IntegerGridMap.coherentCreases = m_DetectHardEdges;
             Extraction.IntegerGridMap.parametrization = m_GlobalParametrization;
             RemeshPipeline.detailQuads = m_DetailQuads;
+            RemeshPipeline.ribbonParts = m_RibbonParts;
             Extraction.IntegerGridMap.parametrizationLayout = m_GlobalParametrization && m_QuadLayoutOn;
             var autoProfile = m_AutoProfile;
 
