@@ -107,12 +107,14 @@ namespace NativeRemesher
         {
             SceneView.duringSceneGui += OnSceneGUI;
             Selection.selectionChanged += Repaint;
+            Undo.undoRedoPerformed += OnPaintUndoRedo;
         }
 
         void OnDisable()
         {
             SceneView.duringSceneGui -= OnSceneGUI;
             Selection.selectionChanged -= Repaint;
+            Undo.undoRedoPerformed -= OnPaintUndoRedo;
             m_Painting = false;
             ReleasePaintMesh();
             if (m_OverlayMaterial != null) DestroyImmediate(m_OverlayMaterial);

@@ -120,6 +120,20 @@ namespace NativeRemesher
             }
         }
 
+        // Undo and redo put the dabs back without going through Dab: the paint's index (built for
+        // the dab count it saw) and the overlay's colours are rebuilt, or both show the strokes
+        // that were undone until the next one is laid.
+        void OnPaintUndoRedo()
+        {
+            var surface = PaintSurface(out _);
+            var source = SourceOf(surface);
+            var comp = source != null ? source.GetComponent<RemeshPaint>() : null;
+            comp?.paint?.Invalidate();
+            if (m_Painting) RefreshOverlay(true);
+            SceneView.RepaintAll();
+            Repaint();
+        }
+
         void SetPainting(bool on)
         {
             m_Painting = on;
