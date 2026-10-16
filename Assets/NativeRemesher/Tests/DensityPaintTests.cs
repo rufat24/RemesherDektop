@@ -139,6 +139,54 @@ namespace NativeRemesher.Tests
             }
         }
 
+        // Faces per unit area with their centre's x beyond +limit and below -limit.
+        static void SideDensities(RemeshResult result, float limit, out float positive, out float negative)
+        {
+            var e = result.extraction;
+            double aPos = 0, aNeg = 0;
+            int nPos = 0, nNeg = 0;
+            foreach (var f in e.faces)
+            {
+                var c = Vector3.zero;
+                foreach (var v in f) c += e.positions[v];
+                c /= f.Length;
+                var area = 0f;
+                for (var k = 1; k + 1 < f.Length; k++)
+                    area += Vector3.Cross(e.positions[f[k]] - e.positions[f[0]], e.positions[f[k + 1]] - e.positions[f[0]]).magnitude * 0.5f;
+                if (c.x > limit) { nPos++; aPos += area; }
+                else if (c.x < -limit) { nNeg++; aNeg += area; }
+            }
+            positive = (float)(nPos / aPos);
+            negative = (float)(nNeg / aNeg);
+        }
+
+        [Test]
+        public void PaintOnTheMirroredHalfCountsWithSymmetry()
+        {
+            // Symmetry X solves the +x half; the paint is on -x only, and used to be lost.
+            Sphere(24, out var positions, out var triangles);
+            var settings = RemeshSettings.Default;
+            settings.targetQuadCount = 600;
+            settings.symmetry = SymmetryAxis.X;
+            var profile = RemeshProfile.For(RemeshProfileKind.GameAsset);
+            profile.extractor = RemeshExtractor.IntegerGrid;
+
+            var plain = RemeshPipeline.Solve(positions, triangles, settings, profile);
+            SideDensities(plain, 0.6f, out var plainPos, out var plainNeg);
+
+            var paint = new DensityPaint();
+            paint.dabs.Add(new DensityPaint.Dab { centre = Vector3.left, radius = 0.9f, strength = 1f });
+            paint.dabs.Add(new DensityPaint.Dab { centre = Vector3.left, radius = 0.9f, strength = 1f });
+            settings.densityPaint = paint;
+            var painted = RemeshPipeline.Solve(positions, triangles, settings, profile);
+            SideDensities(painted, 0.6f, out var pos, out var neg);
+
+            var note = $"plain {plain.extraction.faceCount} faces +x {plainPos:F0} -x {plainNeg:F0}; " +
+                       $"painted {painted.extraction.faceCount} faces +x {pos:F0} -x {neg:F0}";
+            Assert.That(neg / plainNeg, Is.GreaterThan(2f), note);
+            Assert.That(pos / plainPos, Is.GreaterThan(2f), "mirrored: " + note);
+        }
+
         [Test]
         public void TangentsStayUnitOnMillimetreQuads()
         {

@@ -36,6 +36,11 @@ namespace NativeRemesher
 
         public bool isEmpty => dabs == null || dabs.Count == 0;
 
+        // A plane the paint is read symmetrically about (Symmetry): the value at a point is the
+        // stronger of its own and its mirror image's. Axis -1: none.
+        [NonSerialized] int m_MirrorAxis = -1;
+        [NonSerialized] float m_MirrorPlane;
+
         // A uniform grid over the dabs, built on first query.
         Dictionary<long, List<int>> m_Cells;
         float m_CellSize;
@@ -85,6 +90,16 @@ namespace NativeRemesher
         {
             if (isEmpty) return 0f;
             EnsureBuilt();
+            var value = Clamped(p);
+            if (m_MirrorAxis < 0) return value;
+            var q = p;
+            q[m_MirrorAxis] = 2f * m_MirrorPlane - q[m_MirrorAxis];
+            var mirrored = Clamped(q);
+            return Mathf.Abs(mirrored) > Mathf.Abs(value) ? mirrored : value;
+        }
+
+        float Clamped(Vector3 p)
+        {
             var c = Cell(p);
             var sum = 0f;
             for (var dx = -1; dx <= 1; dx++)
@@ -132,6 +147,22 @@ namespace NativeRemesher
             return removed;
         }
 
-        public DensityPaint Clone() => new DensityPaint { dabs = new List<Dab>(dabs) };
+        public DensityPaint Clone() => new DensityPaint
+        {
+            dabs = new List<Dab>(dabs), m_MirrorAxis = m_MirrorAxis, m_MirrorPlane = m_MirrorPlane
+        };
+
+        /// <summary>
+        /// A copy read symmetrically about the plane where coordinate <paramref name="axis"/> (0-2)
+        /// is <paramref name="plane"/>: what is painted on either side counts on both. Symmetry
+        /// solves one half, and paint on the other was lost.
+        /// </summary>
+        public DensityPaint Mirrored(int axis, float plane)
+        {
+            var copy = Clone();
+            copy.m_MirrorAxis = axis;
+            copy.m_MirrorPlane = plane;
+            return copy;
+        }
     }
 }

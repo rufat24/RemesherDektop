@@ -821,6 +821,9 @@ namespace NativeRemesher
                 for (var t = 0; t < parentTriangle.Length; t++) halfMaterials[t] = triangleMaterials[parentTriangle[t]];
             }
             halfSettings.targetQuadCount = Mathf.Max(4, (settings.targetQuadCount + 1) / 2);
+            // Paint on the half that is cut away counts on the half that is solved.
+            if (symmetricPaint && halfSettings.densityPaint != null && !halfSettings.densityPaint.isEmpty)
+                halfSettings.densityPaint = halfSettings.densityPaint.Mirrored((int)axis - 1, plane);
             var result = SolveInternal(halfPositions, halfTriangles, halfSettings, profile, onProgress, null,
                 autoSelectProfile, axis, plane, halfMaterials);
             if (result.extraction == null || result.extraction.positions == null) return result;
@@ -1398,6 +1401,12 @@ namespace NativeRemesher
         /// where painting Less Detail on more than a tenth of the surface raised the count.
         /// </summary>
         public static bool adaptiveCountIgnoresPaint = true;
+
+        /// <summary>
+        /// With Symmetry, the paint is read symmetrically (DensityPaint.Mirrored): paint on the half
+        /// that is cut away counts. False: as before, where only the solved half's paint counted.
+        /// </summary>
+        public static bool symmetricPaint = true;
 
         /// <summary>The paint's spacing multiplier at each vertex of the current topology, cached.</summary>
         static float[] PaintFactors(RemeshResult result)
