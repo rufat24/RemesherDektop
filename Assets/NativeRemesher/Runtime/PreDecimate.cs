@@ -194,6 +194,33 @@ namespace NativeRemesher
         /// </summary>
         public static bool labelWeightByArea = true;
 
+        /// <summary>
+        /// Each collapse's point from the quadric solved about the edge's midpoint with a small
+        /// ridge (see <see cref="placementRidge"/>), instead of the plain 3x3 solve.
+        /// </summary>
+        /// <remarks>
+        /// The plain solve is either refused as singular or runs off along the directions the planes
+        /// barely constrain: measured, the head at 3,000 kept 13,393 of 7.1 million solved points
+        /// (the rest drifted a mean of 500,000 edge lengths and fell back to the edge's own segment),
+        /// ccnb at 5,000 196,745 of 4.9 million. On the segment the point cannot leave the edge, so
+        /// the corners of two or three planes are rounded off. The ridge keeps the point at the
+        /// midpoint along the flat directions and solves the constrained ones exactly -- a crease's
+        /// line, a corner's point.
+        ///
+        /// Off by default, measured 2026-10-16. The decimated surface comes out about twice as close
+        /// to the source (mean / p99 over the diagonal: head to 30k 0.0173 / 0.116 -> 0.0082 / 0.063 %,
+        /// body to 50k 0.0061 -> 0.0028 %, ccnb to 50k 0.0040 -> 0.0029 %; fallbacks 99.8 % -> under
+        /// 0.1 %; no slower). But the remesh on it is less regular: with ridge 1e-3, irregular head
+        /// at 3,000 3.41 -> 3.67 %, ccnb at 5,000 4.66 -> 5.37 %, body at 5,000 0.95 -> 1.00 % and its
+        /// parametrisation 6.1 -> 15.9 s; with 0.02, 3.66 / 5.19 / 1.04 % at the usual time -- for a
+        /// mean distance 3-15 % lower. The quads are what is judged and the normal map carries the
+        /// detail, so the plain solve stays. True: the ridged one.
+        /// </remarks>
+        public static bool ridgePlacement = false;
+
+        /// <summary>The ridge, as a fraction of the quadric's trace (its largest eigenvalue, about).</summary>
+        public static double placementRidge = 1e-3;
+
         /// <summary>The parallel stage stops at this multiple of the target triangle count.</summary>
         public static float parallelStageRatio = 4f;
 
@@ -305,6 +332,35 @@ namespace NativeRemesher
                     (float)(fy + t * dy),
                     (float)(fz + t * dz));
             }
+            /// <summary>
+            /// The minimum of the error plus a ridge pulling toward <paramref name="at"/>,
+            /// ridge * trace * |p - at|^2: exact along the directions the planes constrain (eigenvalues
+            /// well above the ridge), <paramref name="at"/> along the ones they do not. The ridged
+            /// matrix is never singular, so this always answers.
+            /// </summary>
+            public bool TryOptimalNear(Vector3 at, double ridge, out Vector3 point)
+            {
+                var trace = a2 + b2 + c2;
+                if (!(trace > 0.0)) { point = at; return false; }
+                var r = ridge * trace;
+                double m00 = a2 + r, m11 = b2 + r, m22 = c2 + r;
+                double px = at.x, py = at.y, pz = at.z;
+                // Gradient's negative at `at`: -(A at + b).
+                var gx = -(a2 * px + ab * py + ac * pz + ad);
+                var gy = -(ab * px + b2 * py + bc * pz + bd);
+                var gz = -(ac * px + bc * py + c2 * pz + cd);
+                var det = m00 * (m11 * m22 - bc * bc) - ab * (ab * m22 - bc * ac) + ac * (ab * bc - m11 * ac);
+                if (!(Math.Abs(det) > 0.0)) { point = at; return false; }
+                var inv = 1.0 / det;
+                var dx = inv * (gx * (m11 * m22 - bc * bc) - ab * (gy * m22 - bc * gz) + ac * (gy * bc - m11 * gz));
+                var dy = inv * (m00 * (gy * m22 - gz * bc) - gx * (ab * m22 - bc * ac) + ac * (ab * gz - gy * ac));
+                var dz = inv * (m00 * (m11 * gz - gy * bc) - ab * (ab * gz - gy * ac) + gx * (ab * bc - m11 * ac));
+                point = new Vector3((float)(px + dx), (float)(py + dy), (float)(pz + dz));
+                return !float.IsNaN(point.x) && !float.IsInfinity(point.x)
+                       && !float.IsNaN(point.y) && !float.IsInfinity(point.y)
+                       && !float.IsNaN(point.z) && !float.IsInfinity(point.z);
+            }
+
             public bool TryOptimalPoint(out Vector3 point)
             {
                 // Solve the 3x3 system A v = -b by Cramer's rule.
@@ -1254,7 +1310,9 @@ namespace NativeRemesher
             var mid = (pu + pv) * 0.5f;
             var edgeLength = Vector3.Distance(pu, pv);
 
-            var solved = combined.TryOptimalPoint(out var target);
+            var solved = ridgePlacement
+                ? combined.TryOptimalNear(mid, placementRidge, out var target)
+                : combined.TryOptimalPoint(out target);
 
             // Reject a solved point that has wandered far from the edge it is meant to replace.
             //
