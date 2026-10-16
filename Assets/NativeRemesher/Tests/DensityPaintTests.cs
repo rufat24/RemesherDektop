@@ -104,6 +104,42 @@ namespace NativeRemesher.Tests
         }
 
         [Test]
+        public void LessDetailOnALargeAreaLowersTheCountAndKeepsTheRest()
+        {
+            // A quarter of the sphere painted for fewer quads. Adapt Quad Count used to read the
+            // painted coarse cap as "flat" and triple the target: 826 -> 2,160 faces.
+            Sphere(32, out var positions, out var triangles);
+            var settings = RemeshSettings.Default;
+            settings.targetQuadCount = 800;
+            var profile = RemeshProfile.For(RemeshProfileKind.GameAsset);
+            profile.extractor = RemeshExtractor.IntegerGrid;
+            var adaptiveSize = Extraction.IntegerGridMap.adaptiveSize;
+            Extraction.IntegerGridMap.adaptiveSize = 0.5f;
+            try
+            {
+                var plain = RemeshPipeline.Solve(positions, triangles, settings, profile);
+                Densities(plain, out var plainCap, out var plainRest);
+
+                var paint = new DensityPaint();
+                paint.dabs.Add(new DensityPaint.Dab { centre = Vector3.up, radius = 1f, strength = -1f });
+                paint.dabs.Add(new DensityPaint.Dab { centre = Vector3.up, radius = 1f, strength = -1f });
+                settings.densityPaint = paint;
+                var painted = RemeshPipeline.Solve(positions, triangles, settings, profile);
+                Densities(painted, out var cap, out var rest);
+
+                var note = $"plain {plain.extraction.faceCount} faces cap {plainCap:F0} rest {plainRest:F0}; " +
+                           $"painted {painted.extraction.faceCount} faces cap {cap:F0} rest {rest:F0}";
+                Assert.That(painted.extraction.faceCount, Is.LessThan(plain.extraction.faceCount), note);
+                Assert.That(cap, Is.LessThan(plainCap * 0.8f), note);
+                Assert.That(rest / plainRest, Is.InRange(0.7f, 1.4f), "the unpainted part keeps its density: " + note);
+            }
+            finally
+            {
+                Extraction.IntegerGridMap.adaptiveSize = adaptiveSize;
+            }
+        }
+
+        [Test]
         public void TangentsStayUnitOnMillimetreQuads()
         {
             // A 2 mm quad: its area-weighted tangent sum is under Vector3.Normalize's 1e-5.

@@ -1358,10 +1358,16 @@ namespace NativeRemesher
         public static bool smallPartGaps = true;
         public static float smallPartDetour = 1.5f;
 
-        static ScaleField SizingField(RemeshResult result, int target, float adaptivity)
+        static ScaleField SizingField(RemeshResult result, int target, float adaptivity, bool withPaint = true)
         {
             // Painted: sized for the count the unpainted surface takes, then multiplied by the paint.
             var paintFactors = result.paintCountRatio > 0f ? PaintFactors(result) : null;
+            if (!withPaint && paintFactors != null)
+            {
+                // The unpainted field at the count the unpainted surface takes.
+                target = Mathf.Max(4, Mathf.RoundToInt(target / result.paintCountRatio));
+                paintFactors = null;
+            }
             if (paintFactors != null)
                 target = Mathf.Max(4, Mathf.RoundToInt(target / result.paintCountRatio));
             var field = SizingFieldCore(result, target, adaptivity);
@@ -1375,6 +1381,13 @@ namespace NativeRemesher
                 field = ScaleField.Painted(result.topology, field, paintFactors, result.profile.curvatureGradation);
             return field;
         }
+
+        /// <summary>
+        /// Adapt Quad Count reads the flat spacing off the field without the paint (the paint's
+        /// quads are counted separately, paintCountRatio). False: off the painted field, as before,
+        /// where painting Less Detail on more than a tenth of the surface raised the count.
+        /// </summary>
+        public static bool adaptiveCountIgnoresPaint = true;
 
         /// <summary>The paint's spacing multiplier at each vertex of the current topology, cached.</summary>
         static float[] PaintFactors(RemeshResult result)
@@ -1628,7 +1641,10 @@ namespace NativeRemesher
                                       && Extraction.IntegerGridMap.adaptiveSize >= 0f
                     ? Mathf.Clamp01(Extraction.IntegerGridMap.adaptiveSize)
                     : result.profile.curvatureAdaptivity;
-                var shape = SizingField(result, requested, countAdaptivity);
+                // The flat spacing is read off the UNPAINTED field: a large area painted for Less
+                // Detail is coarse, and read as "flat" it raised the count -- on a sphere with a
+                // quarter painted, 826 -> 2,160 faces and the unpainted rest 3x denser.
+                var shape = SizingField(result, requested, countAdaptivity, !adaptiveCountIgnoresPaint);
                 // Against the request as it was before the paint raised it: the paint's quads are
                 // already in it, and the flat spacing is the unpainted surface's.
                 var uniform = result.topology.EdgeLengthForQuadCount(result.paintCountRatio > 0f
