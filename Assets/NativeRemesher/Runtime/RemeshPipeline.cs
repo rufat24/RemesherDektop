@@ -1408,6 +1408,15 @@ namespace NativeRemesher
         /// </summary>
         public static bool symmetricPaint = true;
 
+        /// <summary>
+        /// The quad layout's face count over the target at the target's own spacing: the first
+        /// attempt starts at sqrt of it times that spacing. Measured over 2026-10 runs (head, body,
+        /// ccnb; 2,000-15,000): 0.83-0.91, mean 0.86 -- so the first attempt nearly always missed the
+        /// 10 % tolerance and the count search ran a second pass (head at 3,000: 2 s of 15; ccnb at
+        /// 5,000: 6 s of 25). 0 or 1: start at the target's spacing, as before.
+        /// </summary>
+        public static float layoutCountAtSpacing = 0.86f;
+
         /// <summary>The paint's spacing multiplier at each vertex of the current topology, cached.</summary>
         static float[] PaintFactors(RemeshResult result)
         {
@@ -2197,6 +2206,13 @@ namespace NativeRemesher
                 PositionField bestPosition = null;
                 ScaleField bestField = null;
                 HierarchicalStats bestLevels = null;
+                // The quad layout lands short of the count its spacing asks for, by a fairly steady
+                // amount, and a miss costs a second parametrisation and extraction: start where it
+                // is expected to land. See layoutCountAtSpacing.
+                if (layoutCountAtSpacing > 0f && layoutCountAtSpacing < 1f
+                    && Extraction.IntegerGridMap.parametrization && Extraction.IntegerGridMap.parametrizationLayout)
+                    scale *= Mathf.Sqrt(layoutCountAtSpacing);
+
                 var bestScale = scale;
                 var bestError = float.PositiveInfinity;
                 long positionTotal = 0, extractionTotal = 0;
