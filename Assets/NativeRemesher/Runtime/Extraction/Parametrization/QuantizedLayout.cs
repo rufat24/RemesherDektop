@@ -87,7 +87,14 @@ namespace NativeRemesher.Extraction
         public static bool suppressBorderSlivers = true;
 
         /// <summary>Fraction of the open lengths rounded per solve.</summary>
-        public static double quantizeBatch = 0.1;
+        /// <remarks>
+        /// Each round refactors the system, so this sets how many factorisations the rounding takes.
+        /// 0.1 -> 0.5 (2026-10-16, Photogrammetry/GameAsset auto, layout on): ccnb at 5,000 51 -> 12
+        /// solves, rounding 2,542 -> 687 ms a pass, run 21.5 -> 20.0 s; head at 3,000 309 -> 141 ms;
+        /// irregular 4.58 -> 4.66 %, 3.35 -> 3.41 %, body at 5,000 1.00 -> 0.95 %, chamfer unchanged,
+        /// no row left unequal.
+        /// </remarks>
+        public static double quantizeBatch = 0.5;
 
         static double[] Quantize(double[] target, List<List<(int arc, double coef)>> rows, Vector3[] points, QuantizedLayoutStats stats)
         {
