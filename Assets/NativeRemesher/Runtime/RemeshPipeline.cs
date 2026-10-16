@@ -1595,23 +1595,6 @@ namespace NativeRemesher
             if (debugOrientationHierarchyLevelIterations > 0)
                 result.profile.orientationHierarchyLevelIterations = debugOrientationHierarchyLevelIterations;
 
-            // After profile selection, not before it: the selection re-folds the chosen profile's
-            // sweep counts into `settings`, and when this lived in Run that silently put the budget
-            // back to the unrefined value on every Auto Profile run -- which is every run from the
-            // window. The headless audit never selected a profile automatically and so never saw it.
-            // Refining multiplies the vertex count, and the orientation sweep budget was
-            // calibrated against the UNrefined one -- the Photogrammetry profile's 60 is
-            // annotated as the point where a 27k-vertex field is converged, and refinement
-            // takes the same asset to 95k. Smoothing propagates a fixed number of edges per
-            // sweep, so on a mesh with k times the faces the same budget reaches sqrt(k)
-            // times less far, and the field arrives at extraction under-converged: measured
-            // on a head scan at 5000 quads, leaving it at 60 costs Hausdorff 0.0173 -> 0.0314
-            // and 467 -> 538 irregular vertices for nothing.
-            //
-            // Scaling with the face growth restores the reach the budget was chosen for.
-            // It is capped because the relationship stops paying well before then: at four
-            // times this the same asset gets WORSE, 681 irregular, the field having been
-            // smoothed past the detail the singularities need to sit on.
             // --- painted areas ---
             //
             // The field is sized for the target as if nothing were painted, then multiplied by the
@@ -1722,6 +1705,23 @@ namespace NativeRemesher
                 result.localRefineStats = localStats;
             }
 
+            // After profile selection, not before it: the selection re-folds the chosen profile's
+            // sweep counts into `settings`, and when this lived in Run that silently put the budget
+            // back to the unrefined value on every Auto Profile run -- which is every run from the
+            // window. The headless audit never selected a profile automatically and so never saw it.
+            // Refining multiplies the vertex count, and the orientation sweep budget was
+            // calibrated against the UNrefined one -- the Photogrammetry profile's 60 is
+            // annotated as the point where a 27k-vertex field is converged, and refinement
+            // takes the same asset to 95k. Smoothing propagates a fixed number of edges per
+            // sweep, so on a mesh with k times the faces the same budget reaches sqrt(k)
+            // times less far, and the field arrives at extraction under-converged: measured
+            // on a head scan at 5000 quads, leaving it at 60 costs Hausdorff 0.0173 -> 0.0314
+            // and 467 -> 538 irregular vertices for nothing.
+            //
+            // Scaling with the face growth restores the reach the budget was chosen for.
+            // It is capped because the relationship stops paying well before then: at four
+            // times this the same asset gets WORSE, 681 irregular, the field having been
+            // smoothed past the detail the singularities need to sit on.
             if (result.refineStats.splits > 0 && result.refineStats.facesBefore > 0)
             {
                 var growth = result.refineStats.facesAfter / (float)result.refineStats.facesBefore;
