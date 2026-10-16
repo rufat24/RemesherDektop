@@ -314,6 +314,12 @@ namespace NativeRemesher
         public static int surfaceCleanIterations = 2;
 
         /// <summary>
+        /// SurfaceClean reads the solve's surface and keeps the spikes that are real sharp tips (a
+        /// cone's apex was cut down by a whole edge). False: as before.
+        /// </summary>
+        public static bool surfaceCleanUsesSurface = true;
+
+        /// <summary>
         /// Build the quads from an error-driven simplification of the input instead of a lattice
         /// (DetailQuads): irregular, but rims, corners and small parts kept at a low count, and
         /// seconds rather than a minute. Off: the lattice pipeline.
@@ -725,7 +731,11 @@ namespace NativeRemesher
             {
                 onProgress?.Invoke("Cleaning surface", 0f);
                 var ex = result.extraction;
-                result.surfaceCleanStats = SurfaceClean.Apply(ex.positions, ex.faces, surfaceCleanIterations);
+                // Against the surface the lattice was solved on: real sharp tips are kept. See SurfaceClean.
+                var cleanSurface = surfaceCleanUsesSurface && result.decimatedPositions != null && result.decimatedTriangles != null
+                    ? new SpatialGrid(result.decimatedPositions, result.decimatedTriangles)
+                    : null;
+                result.surfaceCleanStats = SurfaceClean.Apply(ex.positions, ex.faces, surfaceCleanIterations, cleanSurface);
                 if (ex.shadingNormals != null && ex.shadingNormals.Length == ex.positions.Length)
                     ex.shadingNormals = Extraction.NormalRecalculator.Compute(ex.faces, ex.positions, ex.normals);
             }

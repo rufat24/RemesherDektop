@@ -20,6 +20,17 @@ namespace NativeRemesher
     /// spikes than before (54 against 19). Smoothing a fold's whole ring with it: more folds after
     /// four passes on the head (35 against 29); some faces this counts as folded are a thin cable's
     /// real sides.
+    ///
+    /// Given the surface the output was solved on, a sharp point the surface itself rises to is
+    /// kept: a cone's apex is a lone vertex out of its ring too, and was cut down by a whole edge
+    /// (sword points, claws, horns). Sharp: at least tipMinOffset edges out of its ring (a cone
+    /// opening under about 90 degrees). Real: halfway to each neighbour the surface is still at
+    /// least tipKeepFraction of the vertex's height above the ring (a cone: 0.5). Sharpness is the
+    /// test that matters on real meshes -- measured on the raw body at 5,000 and head at 3,000, most
+    /// lone spikes ARE on ring-scale source shape (strap and rim edges; the collar's pop-out: 0.56),
+    /// but at 0.3-0.57 edges; 1 of 58 and 2 of 136 are 0.7 or more.
+    /// Putting moved vertices back onto that surface (projectReachEdges) is off: it puts most of
+    /// them back where they were -- body at 5,000, spikes left 9 -> 38, folded faces 1 -> 7.
     /// </remarks>
     public static class SurfaceClean
     {
@@ -31,11 +42,13 @@ namespace NativeRemesher
             public int foldedBefore;
             public int foldedAfter;
             public int smoothed;
+            public int keptTips;
+            public int projected;
             public long ms;
 
             public override string ToString() =>
                 $"clean x{iterations}: spikes {spikesBefore} -> {spikesAfter}, folded faces {foldedBefore} -> {foldedAfter}, " +
-                $"{smoothed} vertex moves, {ms} ms";
+                $"{smoothed} vertex moves, {keptTips} real tips kept, {projected} put back on the surface, {ms} ms";
         }
 
         /// <summary>Distance out of the ring's centre, in its mean edge, past which a vertex may be a spike.</summary>
@@ -44,7 +57,29 @@ namespace NativeRemesher
         /// <summary>...and that many times its neighbours' own mean offset: alone in sticking out.</summary>
         public static float spikeIsolation = 2.5f;
 
-        public static Stats Apply(Vector3[] positions, IList<int[]> faces, int iterations)
+        /// <summary>
+        /// A spike is kept when the surface, halfway to its neighbours, is still at least this
+        /// fraction of the vertex's height above the ring (a cone: 0.5; a narrow notch: about 0).
+        /// </summary>
+        public static float tipKeepFraction = 0.25f;
+
+        /// <summary>A kept tip is at least this many edges out of its ring's centre (a 90-degree cone: 0.71).</summary>
+        public static float tipMinOffset = 0.7f;
+
+        /// <summary>
+        /// Moved vertices go back onto the surface (its nearest point) when within this many edges
+        /// of it; 0, the default, leaves them at their ring's centre (see the remarks).
+        /// </summary>
+        public static float projectReachEdges = 0f;
+
+        public static Stats Apply(Vector3[] positions, IList<int[]> faces, int iterations) =>
+            Apply(positions, faces, iterations, null);
+
+        /// <param name="surface">
+        /// The surface the output lies on: real tips are told from spikes against it, and moved
+        /// vertices are put back on it. Null: neither, as before.
+        /// </param>
+        public static Stats Apply(Vector3[] positions, IList<int[]> faces, int iterations, SpatialGrid surface)
         {
             var watch = System.Diagnostics.Stopwatch.StartNew();
             var stats = new Stats { iterations = iterations };
@@ -148,6 +183,40 @@ namespace NativeRemesher
                 return o > spikeIsolation * around;
             }
 
+            float MeanEdge(int v)
+            {
+                var e = 0f;
+                foreach (var u in neighbours[v]) e += (positions[u] - positions[v]).magnitude;
+                return e / Mathf.Max(1, neighbours[v].Count);
+            }
+
+            // Height of the surface above the ring's plane at a point, along the ring's normal.
+            float SurfaceHeight(Vector3 at, Vector3 centre, Vector3 normal, float reach)
+            {
+                var hit = surface.Raycast(at, normal, reach, 0f, out var t, out _, out _, out _)
+                    ? at + normal * t
+                    : surface.NearestPoint(at, out _);
+                return Vector3.Dot(hit - centre, normal);
+            }
+
+            // A spike the surface rises to as well, over the ring: a real tip.
+            var kept = new bool[n];
+            bool RealTip(int v)
+            {
+                if (surface == null) return false;
+                var c = Vector3.zero;
+                foreach (var u in neighbours[v]) c += positions[u];
+                c /= neighbours[v].Count;
+                var normal = vertexNormals[v];
+                var h = Vector3.Dot(positions[v] - c, normal);
+                var e = MeanEdge(v);
+                if (!(Mathf.Abs(h) >= tipMinOffset * e)) return false;
+                var sum = 0f;
+                foreach (var u in neighbours[v])
+                    sum += SurfaceHeight((positions[v] + positions[u]) * 0.5f, c, normal, e);
+                return sum / neighbours[v].Count / h >= tipKeepFraction;
+            }
+
             int Spikes()
             {
                 var count = 0;
@@ -168,7 +237,15 @@ namespace NativeRemesher
                     if (folded[f])
                         foreach (var v in faces[f]) fix[v] = true;
                 for (var v = 0; v < n; v++)
-                    if (!boundary[v] && neighbours[v].Count >= 3 && Spike(v)) fix[v] = true;
+                    if (!boundary[v] && neighbours[v].Count >= 3 && Spike(v))
+                    {
+                        if (!fix[v] && RealTip(v))
+                        {
+                            if (!kept[v]) { kept[v] = true; stats.keptTips++; }
+                            continue;
+                        }
+                        fix[v] = true;
+                    }
 
                 var count = 0;
                 for (var v = 0; v < n; v++)
@@ -184,6 +261,24 @@ namespace NativeRemesher
                 stats.smoothed += count;
                 Array.Copy(moved, positions, n);
                 Normals();
+                if (surface != null && projectReachEdges > 0f)
+                {
+                    var projected = 0;
+                    for (var v = 0; v < n; v++)
+                    {
+                        if (!fix[v] || boundary[v]) continue;
+                        var reach = projectReachEdges * MeanEdge(v);
+                        if (!(reach > 0f)) continue;
+                        // The nearest point, not along the normal: over a notch narrower than the ring
+                        // that is its rim, where the normal would drop the vertex back into it.
+                        var onSurface = surface.NearestPoint(positions[v], out var distance);
+                        if (!(distance <= reach)) continue;
+                        positions[v] = onSurface;
+                        projected++;
+                    }
+                    stats.projected += projected;
+                    if (projected > 0) Normals();
+                }
             }
 
             stats.spikesAfter = Spikes();
