@@ -575,3 +575,35 @@ Tried and dropped: each vertex onto the source averaged over its ring plus tange
 (no visible change on the arms, spikes 19 -> 54); smoothing a fold's whole ring (head 35 folds
 after four passes). The head's remaining folds are where the chin cable, thinner than a cell,
 meets the helmet rim.
+
+## Round 22: review fixes (branch remesher-fixes)
+
+A review of the paint, cleanup, count search and bake; each fix behind a flag with the old
+behaviour kept. Measured with the console harness (head 3,000 / body 5,000 / ccnb 5,000 unless said).
+
+1. **Less Detail paint raised the count** (`RemeshPipeline.adaptiveCountIgnoresPaint`): Adapt Quad
+   Count read "flat" off the painted field. Sphere, a quarter painted Less at 800: 826 -> 2,160 faces,
+   the unpainted rest 3x denser. Now 685 faces, cap 69 -> 37 per area, rest 61 -> 59.
+2. **SurfaceClean cut sharp tips** (`surfaceCleanUsesSurface`, `SurfaceClean.tipMinOffset`): a cone's
+   apex went down a whole edge. Kept now when >= 0.7 edges out of its ring and the solve surface rises
+   with it. Most real lone spikes (the collar's included) are ring-scale source shape at 0.3-0.57
+   edges, so they are still cleaned: body 56 -> 10 (9 before), head unchanged. Putting moved vertices
+   back on the surface undid the cleanup (body 9 -> 38 spikes) and is off.
+3. **Symmetry lost paint on the cut-away half** (`symmetricPaint`, `DensityPaint.Mirrored`).
+4. **Undo/redo left the paint overlay stale** (window).
+5. Count search: **the layout's first attempt starts where it lands** (`layoutCountAtSpacing` 0.86):
+   head 13.4 -> 12.2 s, ccnb 26.7 -> 21.7 s, one pass instead of two.
+6. **Layout rounding batch** 0.1 -> 0.5 (`QuantizedLayout.quantizeBatch`): ccnb rounding 2.5 -> 0.7 s a
+   pass, irregular and chamfer within noise.
+7. **Ridged collapse placement** (`PreDecimate.ridgePlacement`, OFF): the plain 3x3 solve falls back
+   on 99.8 % of collapses. Ridged, the decimated surface is twice as close (head mean 0.0173 ->
+   0.0082 % of the diagonal), but the remesh on it is less regular (head 3.41 -> 3.67 %, ccnb
+   4.66 -> 5.37 % irregular) for a 3-15 % lower chamfer. Left off.
+8. **Inside-out patches** (`FaceOrienter.flipInvertedPatches`): the head's ~60k unhit normal-map
+   texels in Unity were a 114-face patch on top of the helmet wound inside out -- the extracted
+   surface has a twist and the consistency walk left its seam round the patch (46 of 54 border edges).
+   Patches pointing against the surface are reversed when their border gets no less consistent.
+   Unity head: missed texels 54,985 -> 1,831. Unity's runtime solves a slightly different lattice
+   from the console harness (7,758 against 8,124 faces on the head), which is why it showed there.
+
+Tests (Unity, EditMode): 212, 210 passed, 2 skipped.
