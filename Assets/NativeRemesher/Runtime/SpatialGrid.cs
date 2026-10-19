@@ -367,6 +367,67 @@ namespace NativeRemesher
             return true;
         }
 
+        /// <summary>
+        /// The first surface hit going forward from <paramref name="origin"/> along
+        /// <paramref name="direction"/> (unit), within <paramref name="maxDistance"/>, counting only
+        /// triangles whose winding normal points along the direction times <paramref name="facing"/>
+        /// (0 takes all): <paramref name="t"/> is the distance to it. False when there is none.
+        /// </summary>
+        public bool FirstHit(Vector3 origin, Vector3 direction, float maxDistance, float facing, out float t, out int triangle)
+        {
+            t = 0f; triangle = -1;
+            if (m_CellItems.Length == 0 || !(maxDistance > 0f)) return false;
+            CellCoord(origin, out var x, out var y, out var z);
+            int stepX = direction.x > 0 ? 1 : -1, stepY = direction.y > 0 ? 1 : -1, stepZ = direction.z > 0 ? 1 : -1;
+            float Next(float p, float o, int cellIndex, int step) =>
+                o + (cellIndex + (step > 0 ? 1 : 0)) * m_CellSize - p;
+            float tMaxX = Mathf.Abs(direction.x) > 1e-12f ? Next(origin.x, m_Origin.x, x, stepX) / direction.x : float.MaxValue;
+            float tMaxY = Mathf.Abs(direction.y) > 1e-12f ? Next(origin.y, m_Origin.y, y, stepY) / direction.y : float.MaxValue;
+            float tMaxZ = Mathf.Abs(direction.z) > 1e-12f ? Next(origin.z, m_Origin.z, z, stepZ) / direction.z : float.MaxValue;
+            float tDeltaX = Mathf.Abs(direction.x) > 1e-12f ? m_CellSize / Mathf.Abs(direction.x) : float.MaxValue;
+            float tDeltaY = Mathf.Abs(direction.y) > 1e-12f ? m_CellSize / Mathf.Abs(direction.y) : float.MaxValue;
+            float tDeltaZ = Mathf.Abs(direction.z) > 1e-12f ? m_CellSize / Mathf.Abs(direction.z) : float.MaxValue;
+            var best = float.MaxValue;
+            for (var guard = 0; guard < 4096; guard++)
+            {
+                if (x >= 0 && x < m_DimX && y >= 0 && y < m_DimY && z >= 0 && z < m_DimZ)
+                {
+                    var cell = CellIndex(x, y, z);
+                    for (var i = m_CellStart[cell]; i < m_CellStart[cell + 1]; i++)
+                    {
+                        var tri = m_CellItems[i];
+                        var a = m_Vertices[m_Triangles[3 * tri]];
+                        var e1 = m_Vertices[m_Triangles[3 * tri + 1]] - a;
+                        var e2 = m_Vertices[m_Triangles[3 * tri + 2]] - a;
+                        if (facing != 0f && Vector3.Dot(Vector3.Cross(e1, e2), direction) * facing <= 0f) continue;
+                        var pv = Vector3.Cross(direction, e2);
+                        var det = Vector3.Dot(e1, pv);
+                        if (Mathf.Abs(det) < 1e-20f) continue;
+                        var inv = 1f / det;
+                        var tv = origin - a;
+                        var bu = Vector3.Dot(tv, pv) * inv;
+                        if (bu < -1e-5f || bu > 1f + 1e-5f) continue;
+                        var qv = Vector3.Cross(tv, e1);
+                        var bv = Vector3.Dot(direction, qv) * inv;
+                        if (bv < -1e-5f || bu + bv > 1f + 1e-5f) continue;
+                        var along = Vector3.Dot(e2, qv) * inv;
+                        if (along < 0f || along > maxDistance || along >= best) continue;
+                        best = along; triangle = tri;
+                    }
+                }
+                var nextT = Mathf.Min(tMaxX, Mathf.Min(tMaxY, tMaxZ));
+                // A hit before this cell's far side: nothing in a later cell is nearer.
+                if (triangle >= 0 && best <= nextT) break;
+                if (nextT > maxDistance) break;
+                if (tMaxX <= tMaxY && tMaxX <= tMaxZ) { x += stepX; tMaxX += tDeltaX; }
+                else if (tMaxY <= tMaxZ) { y += stepY; tMaxY += tDeltaY; }
+                else { z += stepZ; tMaxZ += tDeltaZ; }
+            }
+            if (triangle < 0) return false;
+            t = best;
+            return true;
+        }
+
         /// <summary>The corners of triangle <paramref name="index"/>, as indices into the grid's vertices.</summary>
         public void TriangleCorners(int index, out int a, out int b, out int c)
         {

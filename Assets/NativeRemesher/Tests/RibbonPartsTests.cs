@@ -74,7 +74,7 @@ namespace NativeRemesher.Tests
             Assert.Greater(faces.Count, 40);
             foreach (var f in faces) Assert.AreEqual(4, f.Length, "quads only");
             foreach (var p in tube)
-                Assert.Less(BoxDistance(p, strapMin, strapMax), 0.3f * k_Cell, $"tube vertex {p} off the strap");
+                Assert.Less(BoxDistance(p, strapMin, strapMax), 0.3f * k_Cell, $"tube vertex {p} off the strap; line {ribbons[0].centre[0]} to {ribbons[0].centre[ribbons[0].centre.Length - 1]}, trims {ribbons[0].startTrim} {ribbons[0].endTrim}, width {ribbons[0].medianWidth}, thickness {ribbons[0].medianThickness}, lying {ribbons[0].lying}");
             // Closed and wound one way: every edge used twice, once each way.
             var edges = new Dictionary<(int, int), int>();
             foreach (var f in faces)
@@ -87,6 +87,66 @@ namespace NativeRemesher.Tests
             {
                 Assert.AreEqual(1, kv.Value, "an edge used twice the same way");
                 Assert.IsTrue(edges.ContainsKey((kv.Key.Item2, kv.Key.Item1)), "an open edge: the caps should close the tube");
+            }
+        }
+
+        // A closed slab, 1 x 1 across and half deep, its top a height field with a band raised
+        // along x: 0.6 long, 0.06 wide (1.2 cells), 0.01 high, fused to the top.
+        static void AddSlabWithRaisedBand(List<Vector3> positions, List<int> triangles)
+        {
+            const int n = 200;
+            const float h = 1f / n;
+            float Height(int i, int j)
+            {
+                var x = i * h; var y = j * h;
+                return x >= 0.2f && x <= 0.8f && y >= 0.47f && y <= 0.53f ? 0.01f : 0f;
+            }
+            int Top(int i, int j) => j * (n + 1) + i;
+            int Bottom(int i, int j) => (n + 1) * (n + 1) + j * (n + 1) + i;
+            for (var j = 0; j <= n; j++)
+                for (var i = 0; i <= n; i++) positions.Add(new Vector3(i * h, j * h, Height(i, j)));
+            for (var j = 0; j <= n; j++)
+                for (var i = 0; i <= n; i++) positions.Add(new Vector3(i * h, j * h, -0.5f));
+            for (var j = 0; j < n; j++)
+                for (var i = 0; i < n; i++)
+                {
+                    triangles.AddRange(new[] { Top(i, j), Top(i + 1, j), Top(i + 1, j + 1), Top(i, j), Top(i + 1, j + 1), Top(i, j + 1) });
+                    triangles.AddRange(new[] { Bottom(i, j), Bottom(i + 1, j + 1), Bottom(i + 1, j), Bottom(i, j), Bottom(i, j + 1), Bottom(i + 1, j + 1) });
+                }
+            // The four sides, top rim to bottom rim, wound outward.
+            for (var i = 0; i < n; i++)
+            {
+                triangles.AddRange(new[] { Top(i, 0), Bottom(i, 0), Bottom(i + 1, 0), Top(i, 0), Bottom(i + 1, 0), Top(i + 1, 0) });
+                triangles.AddRange(new[] { Top(i, n), Top(i + 1, n), Bottom(i + 1, n), Top(i, n), Bottom(i + 1, n), Bottom(i, n) });
+                triangles.AddRange(new[] { Top(0, i), Top(0, i + 1), Bottom(0, i + 1), Top(0, i), Bottom(0, i + 1), Bottom(0, i) });
+                triangles.AddRange(new[] { Top(n, i), Bottom(n, i), Bottom(n, i + 1), Top(n, i), Bottom(n, i + 1), Top(n, i + 1) });
+            }
+        }
+
+        [Test]
+        public void RaisedBandFusedToASurfaceIsTakenOutAndMeshedLyingOnIt()
+        {
+            var positions = new List<Vector3>();
+            var triangles = new List<int>();
+            AddSlabWithRaisedBand(positions, triangles);
+
+            var stats = new RibbonParts.Stats();
+            var ribbons = RibbonParts.Find(positions.ToArray(), triangles.ToArray(), k_Cell, out _, out var keptTriangles,
+                out _, out var outward, out var surface, stats);
+
+            Assert.AreEqual(1, ribbons.Count, stats.ToString());
+            Assert.IsTrue(ribbons[0].lying, "fused to the surface: its tube goes down into it");
+            var reach = ribbons[0].length + ribbons[0].startTrim + ribbons[0].endTrim;
+            Assert.That(reach, Is.InRange(0.5f, 0.7f), "the band's length along its centre line");
+            Assert.Less(keptTriangles.Length, triangles.Count, "the band's faces are taken out");
+
+            RibbonParts.Mesh(ribbons, surface, k_Cell, outward, out var tube, out var faces);
+            Assert.Greater(faces.Count, 20);
+            foreach (var p in tube)
+            {
+                Assert.That(p.x, Is.InRange(0.2f - 0.3f * k_Cell, 0.8f + 0.3f * k_Cell), $"tube vertex {p} past the band's ends");
+                Assert.That(p.y, Is.InRange(0.47f - 0.3f * k_Cell, 0.53f + 0.3f * k_Cell), $"tube vertex {p} off the band's sides");
+                Assert.That(p.z, Is.InRange(-0.3f * k_Cell, 0.01f + 0.3f * k_Cell), $"tube vertex {p} off its height");
             }
         }
 

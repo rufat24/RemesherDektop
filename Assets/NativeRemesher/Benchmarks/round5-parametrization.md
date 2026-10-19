@@ -646,3 +646,35 @@ Still open:
 - The buckle between the straps stays a blob, since it is a thick part smaller than a cell.
 - The front chin strap is not recognised, because it merges into the buckle's plates.
 - The back straps have small torn tips.
+
+## Round 24: straps lying on the surface, forks, buckles (branch remesher-band-structure)
+
+Feedback on round 23: "the buckle is still a blob, and it looks ugly". Plane sections of the
+reference showed its back straps are closed rectangular tubes lying on an unbroken helmet surface --
+the same model as ours -- but in our source the back straps are fused to the shell, so the inward
+thickness ray only caught the 5 cells where one bridged a step.
+
+- Raised bands: rays sideways just under a band's top (walls near both ways and square to the ray,
+  long the other way, ground beside within 0.6 cell); its height stands for the thickness. Limited
+  to 1.75 cells wide (the helmet's back panels, ~2 cells, keep going through the lattice).
+- Runs against their own median width; no cut where a strap folds over a rim.
+- Forks: two straps leaving a buckle fill one distance bin side by side; the plate is cut at a fork
+  lasting 1.5 cells and each piece measured alone (the far chin side came back).
+- Regular box tubes from the median of the part's sections; line ends straightened.
+- Buckles: two attached ends within 3 cells -> surface fitted (quadric, robust), buckle top boxed
+  (min-area rectangle, median top, into the surface; at most 1.2 cells high and 3 across).
+- No bottoms on lying tubes and boxes (inside the surface).
+
+Head 3,000 (harness): 8 ribbons + 2 buckles. irregular 3.40 -> 3.42 %, chamfer 0.00104 -> 0.00100,
+hausdorff 0.0129 -> 0.0191 (worst points at the buckle box inside the cheek). Body 5,000 and ccnb
+5,000: nothing found, identical output. Detection 2.6-4 s.
+Unity: EditMode 215, 213 passed, 0 failed, 2 skipped. RenderCheck head 3,000: 8,072 faces, missed
+texels 39,928 (round 23: 20,305; 45,447 with closed bottoms) -- hidden faces.
+
+Tried and left off by default: both-sided ground (hausdorff 0.040, eight false buckles), splitting
+every non-band-shaped thin region (chin cup cut into jagged pieces), boxes at single attached ends
+(sliders boxed but the strap beyond them still melts).
+
+Still open: straps through sliders (the strap stops at the slider, the rest melts -- the piece
+beyond is a separate plate, rejected); the chin cup (a curled thin shell, not a band); the back
+straps' wrap under the rim; a lattice fold on the helmet front that comes and goes with the count.

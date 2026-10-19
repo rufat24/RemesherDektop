@@ -1433,8 +1433,9 @@ namespace NativeRemesher
                         positions[triangles[t + 2]] - positions[triangles[t]]).magnitude * 0.5;
                 var cell = (float)Math.Sqrt(area / Math.Max(1, settings.targetQuadCount));
                 var stats = new RibbonParts.Stats();
+                var blocks = new List<RibbonParts.Block>();
                 var ribbons = RibbonParts.Find(positions, triangles, cell, out var keptPositions, out var keptTriangles,
-                    out var sourceOf, out var outward, out var surface, stats);
+                    out var sourceOf, out var outward, out var surface, stats, blocks);
                 if (ribbons.Count == 0)
                 {
                     var plain = SolveInternal(positions, triangles, settings, profile, onProgress, sourceUvs,
@@ -1475,7 +1476,7 @@ namespace NativeRemesher
                         for (var i = 0; i < f.Length; i++) { sum += Vector3.Distance(ex.positions[f[i]], ex.positions[f[(i + 1) % f.Length]]); n++; }
                     if (n > 0) meshCell = (float)(sum / n);
                 }
-                RibbonParts.Mesh(ribbons, surface, meshCell, outward, out var ribbonPositions, out var ribbonFaces);
+                RibbonParts.Mesh(ribbons, blocks, surface, meshCell, outward, out var ribbonPositions, out var ribbonFaces);
                 stats.quads = ribbonFaces.Count;
                 AppendRibbons(result, ribbonPositions, ribbonFaces, positions, triangles, sourceUvs);
                 return result;

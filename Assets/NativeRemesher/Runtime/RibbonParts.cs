@@ -37,6 +37,30 @@ namespace NativeRemesher
     /// sides, upright and along the jaw, the two straps on the back of the helmet, the two at the
     /// nape -- 448 quads of tube; irregular 3.40 -> 3.56 %, chamfer 0.00104 -> 0.00101. The body and
     /// the ccnb scan have no free band: nothing found, output unchanged.
+    ///
+    /// Second pass (2026-10-19), after "the buckle is a blob, and it looks ugly":
+    /// - Raised bands (reliefBands): the back straps lie on the helmet, fused to it, and the inward
+    ///   ray finds no far side; only where one bridged a step was it thin, so it came out a 5-cell
+    ///   piece with torn ends. Now a band's top is found by rays going out sideways just under it
+    ///   (walls near both ways, square to the ray, long the other way) with ground beside it; its
+    ///   height stands for the thickness. Plane sections show QuadRemesher's output does the
+    ///   same: a closed rectangular tube lying on an unbroken helmet surface.
+    /// - Runs against their own median width, and no cut where a strap folds over a rim.
+    /// - Forks (splitForks): two straps leaving a buckle side by side fill one distance bin, and
+    ///   one line through them read 6 cells wide; the plate is cut at the first fork that lasts
+    ///   a cell and a half and each piece measured alone. The far side's chin straps came back.
+    /// - Tubes are regular boxes: the median of the part's own sections' extents along a centre
+    ///   line whose last cell and a half each end is straightened (readSections: the old rings).
+    /// - Buckles (buckleBlocks): where attached ends of two ribbons meet, the surface round the
+    ///   spot is fitted (a quadric, refitted without what stands above it) and the buckle's top
+    ///   (facing up, a fifth of a cell above it) boxed: the smallest rectangle over 5-degree
+    ///   steps, its top the median height, its bottom into the surface; held to 1.2 cells high
+    ///   and 3 across, or no box.
+    /// Measured on the head at 3,000: eight ribbons (both back straps whole, 13.5 cells; jaw and
+    /// upright chin straps both sides; a piece of the band under the chin) and two buckles;
+    /// irregular 3.40 -> 3.42 %, chamfer 0.00104 -> 0.00100; hausdorff 0.0129 -> 0.0191, all of
+    /// it the buckle boxes' and tube ends' parts inside the face. Body and ccnb: nothing found.
+    /// Detection 2.6-4 s on 1.5M triangles.
     /// </remarks>
     public static class RibbonParts
     {
@@ -67,6 +91,101 @@ namespace NativeRemesher
         /// <summary>How far an end that meets another part is pushed into it, in cells.</summary>
         public static float embedCells = 0.5f;
 
+        /// <summary>
+        /// Raised bands count too: a strap lying on the surface and fused to it, with no far side
+        /// for the inward ray to find. Its top is narrow just under the surface (the walls are
+        /// near, sideways), long the other way, and there is ground beside it within
+        /// maxThicknessCells below; its height over that ground stands in for the thickness.
+        /// </summary>
+        public static bool reliefBands = true;
+
+        /// <summary>
+        /// Widest raised band, across just under its top, in cells. A wider one gets three quads
+        /// or more across from the lattice and keeps its shape there (the helmet's back panels,
+        /// about two cells, do); the straps on them, about 1.3, do not.
+        /// </summary>
+        public static float maxReliefWidthCells = 1.75f;
+
+        /// <summary>
+        /// A raised band needs ground beside only one of its walls. False, both: measured worse on
+        /// the helmet head (2026-10-19: hausdorff 0.018 -> 0.040, eight buckles where two straps
+        /// ended near each other, most of them none).
+        /// </summary>
+        public static bool oneSidedGround = true;
+
+        /// <summary>The walls of a raised band face out square to the ray across it: the cosine at least.</summary>
+        public static float wallSquareness = 0.6f;
+
+        /// <summary>Narrowest ribbon, median width in cells: below it a crease, not a band.</summary>
+        public static float minWidthCells = 0.4f;
+
+        /// <summary>
+        /// A run ends where the line turns: where the tangents half a cell before and after a
+        /// point meet at a cosine below this (-1.1: never; a strap folding over a rim stays one).
+        /// </summary>
+        public static float runStraightness = -1.1f;
+
+        /// <summary>
+        /// Rings read off the part's own sections (the 2026-10-17 tubes) rather than a regular
+        /// rectangle of the ribbon's median width and thickness on its smoothed centre line.
+        /// </summary>
+        public static bool readSections = false;
+
+        /// <summary>
+        /// No bottom faces on tubes lying on the surface and on buckle boxes: they are inside it.
+        /// (Closed, they took 45,447 missed texels in the head's 2048 bake, 2026-10-19.)
+        /// </summary>
+        public static bool openBottoms = true;
+
+        /// <summary>How far the bottom of a band lying on the surface goes into it, in cells.</summary>
+        public static float lyingEmbedCells = 0.1f;
+
+        /// <summary>
+        /// Where two ribbons' attached ends meet (a buckle), the part standing off the surface there
+        /// is taken out too and meshed as a box: its footprint and height fitted to what stands
+        /// above the surface round it. Only with the overloads that take a block list.
+        /// </summary>
+        public static bool buckleBlocks = true;
+
+        /// <summary>
+        /// A single attached end gets a box too when one fits there (a slider a strap runs
+        /// through): the same fit, held to the same height and size.
+        /// </summary>
+        public static bool singleEndBlocks = false;
+
+        /// <summary>Attached ends this close, in cells, meet at one buckle.</summary>
+        public static float junctionRadiusCells = 3f;
+
+        /// <summary>Tallest buckle, surface to top (with the embedding), in cells.</summary>
+        public static float maxBlockHeightCells = 1.2f;
+
+        /// <summary>Longest buckle side, in cells.</summary>
+        public static float maxBlockSizeCells = 3f;
+
+        /// <summary>The buckle is looked for within this many cells of where the ends meet.</summary>
+        public static float blockRadiusCells = 1.5f;
+
+        /// <summary>
+        /// Thin parts are cut where they are not band-shaped before their lines are followed: round
+        /// each patch of the middle sheet, the spread of the sheet within bandRadiusCells must be
+        /// narrow one way. A buckle where straps meet, or a broad plate a strap runs into, is not,
+        /// and goes; the straps either side come apart. One line through a branched plate mixes
+        /// its branches (the far chin strap, jaw strap and chin cup were one plate, 2026-10-19).
+        /// </summary>
+        public static bool splitBranches = false;
+
+        /// <summary>Radius the sheet's local spread is measured over, in cells.</summary>
+        public static float bandRadiusCells = 2f;
+
+        /// <summary>Widest local spread (as a band's width, sqrt(12 var)) still a band, in cells.</summary>
+        public static float maxBandSpreadCells = 2.6f;
+
+        /// <summary>
+        /// A plate whose line forks (two straps leaving a buckle side by side) is cut at the fork
+        /// and each piece measured on its own; false: one line through the whole plate.
+        /// </summary>
+        public static bool splitForks = true;
+
         /// <summary>Fewest thin faces a side needs to be considered at all.</summary>
         public static int minSideFaces = 24;
 
@@ -88,13 +207,13 @@ namespace NativeRemesher
 
         public sealed class Stats
         {
-            public int thinVertices, sides, pairs, ribbons;
+            public int thinVertices, reliefVertices, unbandedVertices, sides, pairs, ribbons;
             public int rejectedShort, rejectedWide, rejectedStubby, rejectedAttached;
             public int removedTriangles, holes, fillTriangles, quads, shredTriangles;
             public long ms;
 
             public override string ToString() =>
-                $"ribbons={ribbons} of {pairs} plates ({sides} sides, {thinVertices} thin vertices) " +
+                $"ribbons={ribbons} of {pairs} plates ({sides} sides, {thinVertices} thin vertices, {reliefVertices} raised, {unbandedVertices} off bands) " +
                 $"rejected short {rejectedShort} wide {rejectedWide} stubby {rejectedStubby} attached {rejectedAttached} | " +
                 $"removed {removedTriangles} tris ({shredTriangles} in shreds), {holes} holes closed with {fillTriangles} | quads {quads} | {ms} ms";
         }
@@ -118,9 +237,27 @@ namespace NativeRemesher
             /// <summary>Midpoints between its two sides: its middle sheet. Used while finding its faces.</summary>
             public Vector3[] medial;
             public float medianThickness;
+            /// <summary>Raised from the surface and fused to it (its height stands for the thickness): the tube's bottom goes into the surface.</summary>
+            public bool lying;
             /// <summary>Its thin faces in the input topology. Used while finding its faces.</summary>
             public List<int> seedFaces;
         }
+
+        /// <summary>A buckle where ribbons meet: a box, axisX and axisY across the surface, up off it.</summary>
+        public sealed class Block
+        {
+            public Vector3 centre;
+            public Vector3 axisX, axisY, up;
+            /// <summary>Half the box's size along axisX, axisY and up.</summary>
+            public Vector3 halfSize;
+        }
+
+        /// <summary>As below, with no buckles.</summary>
+        public static List<Ribbon> Find(Vector3[] positions, int[] triangles, float cell,
+            out Vector3[] keptPositions, out int[] keptTriangles, out int[] sourceOfTriangle,
+            out float outwardSign, out SpatialGrid surface, Stats stats) =>
+            Find(positions, triangles, cell, out keptPositions, out keptTriangles, out sourceOfTriangle,
+                out outwardSign, out surface, stats, null);
 
         /// <summary>
         /// Finds the ribbons of a mesh and returns the mesh without them: the triangles left
@@ -129,9 +266,10 @@ namespace NativeRemesher
         /// triangle it is or borders; <paramref name="outwardSign"/> is -1 when the input is wound
         /// inside out, and <paramref name="surface"/> the input's search grid.
         /// </summary>
+        /// <remarks>With <paramref name="blocks"/>, the buckles where ribbons meet go into it, taken out of the mesh too.</remarks>
         public static List<Ribbon> Find(Vector3[] positions, int[] triangles, float cell,
             out Vector3[] keptPositions, out int[] keptTriangles, out int[] sourceOfTriangle,
-            out float outwardSign, out SpatialGrid surface, Stats stats)
+            out float outwardSign, out SpatialGrid surface, Stats stats, List<Block> blocks)
         {
             outwardSign = 1f;
             surface = null;
@@ -181,6 +319,9 @@ namespace NativeRemesher
                 thickness[v] = distance;
                 opposite[v] = tri;
             });
+
+            if (reliefBands) Relief(topology, N, grid, cell, outward, thickness, stats);
+            if (splitBranches || reliefBands) KeepBands(P, N, thickness, opposite, !splitBranches, maxThickness, cell, stats);
 
             var thinFace = new bool[nt];
             for (var t = 0; t < nt; t++)
@@ -271,6 +412,7 @@ namespace NativeRemesher
             }
             stats.ribbons = ribbons.Count;
             if (ribbons.Count == 0) { stats.ms = watch.ElapsedMilliseconds; return ribbons; }
+            if (blocks != null && buckleBlocks) FindBlocks(topology, N, ribbons, removed, cell, blocks, stats);
             DropShreds(topology, removed, cell, stats);
 
             Rebuild(positions, triangles, topology, removed, out keptPositions, out keptTriangles, out sourceOfTriangle, stats);
@@ -280,9 +422,471 @@ namespace NativeRemesher
         }
 
         // ------------------------------------------------------------------
+        // Buckles: where attached ends of two ribbons meet, the surface round the spot is fitted
+        // (a quadric height field over the plane across the ribbons' up, refitted without what
+        // stands above it), and what stands above it within blockRadiusCells is the buckle -- a
+        // box over its footprint's principal axes, from the top it reaches down into the surface.
+        static void FindBlocks(RemeshTopology topology, Vector3[] N, List<Ribbon> ribbons, bool[] removed,
+            float cell, List<Block> blocks, Stats stats)
+        {
+            var P = topology.positions;
+            var T = topology.triangles;
+            var nv = topology.vertexCount;
+            var nt = topology.triangleCount;
+            var ends = new List<(Vector3 p, Vector3 dir, Vector3 up, int ribbon)>();
+            for (var r = 0; r < ribbons.Count; r++)
+            {
+                var rb = ribbons[r];
+                var c = rb.centre;
+                var m = c.Length;
+                if (m < 2) continue;
+                Log(rb.freeStart ? "free start" : "attached start", c[0], rb.startTrim, 0f, 0f, cell);
+                Log(rb.freeEnd ? "free end" : "attached end", c[m - 1], rb.endTrim, 0f, 0f, cell);
+                if (!rb.freeStart)
+                {
+                    var d = MeshMath.SafeNormalize(c[0] - c[1], Vector3.up);
+                    ends.Add((c[0] + d * rb.startTrim, d, rb.up[0], r));
+                }
+                if (!rb.freeEnd)
+                {
+                    var d = MeshMath.SafeNormalize(c[m - 1] - c[m - 2], Vector3.up);
+                    ends.Add((c[m - 1] + d * rb.endTrim, d, rb.up[m - 1], r));
+                }
+            }
+            if (ends.Count < (singleEndBlocks ? 1 : 2)) return;
+            var onRibbon = new bool[nv];
+            for (var t = 0; t < nt; t++)
+                if (removed[t])
+                    for (var i = 0; i < 3; i++) onRibbon[T[3 * t + i]] = true;
+
+            var used = new bool[ends.Count];
+            var junctionRadius = junctionRadiusCells * cell;
+            for (var i = 0; i < ends.Count; i++)
+            {
+                if (used[i]) continue;
+                var group = new List<int> { i };
+                for (var j = i + 1; j < ends.Count; j++)
+                    if (!used[j] && ends[j].ribbon != ends[i].ribbon && (ends[j].p - ends[i].p).magnitude <= junctionRadius)
+                        group.Add(j);
+                if (group.Count < (singleEndBlocks ? 1 : 2)) continue;
+                foreach (var g in group) used[g] = true;
+
+                var J = Vector3.zero;
+                var U = Vector3.zero;
+                var first = ends[group[0]].up;
+                foreach (var g in group)
+                {
+                    J += ends[g].p + ends[g].dir * (0.5f * cell);
+                    U += Vector3.Dot(ends[g].up, first) >= 0f ? ends[g].up : -ends[g].up;
+                }
+                J /= group.Count;
+                U = MeshMath.SafeNormalize(U, first);
+                var block = FitBlock(P, T, N, onRibbon, removed, J, U, cell);
+                if (block == null) { Log("no buckle", J, 0f, 0f, 0f, cell); continue; }
+                Log("buckle", block.centre, 2f * block.halfSize.x, 2f * block.halfSize.y, 2f * block.halfSize.z / cell, cell);
+                blocks.Add(block);
+            }
+        }
+
+        static Block FitBlock(Vector3[] P, int[] T, Vector3[] N, bool[] onRibbon, bool[] removed, Vector3 J, Vector3 U,
+            float cell)
+        {
+            var radius = blockRadiusCells * cell;
+            var fitRadius = 2f * radius;
+            // Out of the surface: most of the surface round the spot faces the same way as up.
+            var near = new List<int>();
+            var facing = 0f;
+            for (var v = 0; v < P.Length; v++)
+            {
+                if ((P[v] - J).sqrMagnitude > fitRadius * fitRadius) continue;
+                near.Add(v);
+                if (!onRibbon[v]) facing += Vector3.Dot(N[v], U);
+            }
+            if (facing < 0f) U = -U;
+            var X = OrientationField.ArbitraryTangent(U);
+            var Y = Vector3.Cross(U, X);
+
+            // The surface: h = quadric in (x, y), in cells; refitted without what stands above it.
+            var xs = new List<Vector3>();
+            foreach (var v in near)
+            {
+                if (onRibbon[v] || Vector3.Dot(N[v], U) < 0.3f) continue;
+                var d = (P[v] - J) / cell;
+                xs.Add(new Vector3(Vector3.Dot(d, X), Vector3.Dot(d, Y), Vector3.Dot(d, U)));
+            }
+            if (xs.Count < 50) return null;
+            var coef = new double[6];
+            var keep = new bool[xs.Count];
+            for (var i = 0; i < keep.Length; i++) keep[i] = true;
+            double Base(double x, double y) => coef[0] + coef[1] * x + coef[2] * y + coef[3] * x * x + coef[4] * x * y + coef[5] * y * y;
+            for (var pass = 0; pass < 5; pass++)
+            {
+                var A = new double[6, 7];
+                var count = 0;
+                for (var i = 0; i < xs.Count; i++)
+                {
+                    if (!keep[i]) continue;
+                    count++;
+                    double x = xs[i].x, y = xs[i].y;
+                    var row = new[] { 1, x, y, x * x, x * y, y * y };
+                    for (var a = 0; a < 6; a++)
+                    {
+                        for (var b = 0; b < 6; b++) A[a, b] += row[a] * row[b];
+                        A[a, 6] += row[a] * xs[i].z;
+                    }
+                }
+                if (count < 30 || !Solve6(A, coef)) return null;
+                var limit = pass == 0 ? 0.3 : 0.08;
+                for (var i = 0; i < xs.Count; i++) keep[i] = xs[i].z - Base(xs[i].x, xs[i].y) <= limit;
+            }
+
+            // The buckle's top: facing up, above the surface by a fifth of a cell, within the radius
+            // across. Its walls and what hangs off it (a ring, the end of a band running in) are
+            // left out of the fit.
+            var r2 = (radius / cell) * (radius / cell);
+            var pts = new List<Vector3>();
+            foreach (var v in near)
+            {
+                if (onRibbon[v] || Vector3.Dot(N[v], U) < 0.7f) continue;
+                var d = (P[v] - J) / cell;
+                var x = Vector3.Dot(d, X);
+                var y = Vector3.Dot(d, Y);
+                if (x * x + y * y > r2) continue;
+                var h = Vector3.Dot(d, U);
+                if (h - Base(x, y) > 0.2) pts.Add(new Vector3(x, y, h));
+            }
+            if (pts.Count < 30) return null;
+            float Pct(List<float> l, float f) => l[Mathf.Clamp(Mathf.RoundToInt(f * (l.Count - 1)), 0, l.Count - 1)];
+            // The footprint: the smallest rectangle (between the 5th and 95th percentiles each way)
+            // over directions five degrees apart.
+            var pa = new List<float>(pts.Count);
+            var pb = new List<float>(pts.Count);
+            var bestArea = float.PositiveInfinity;
+            Vector2 ax = Vector2.right, ay = Vector2.up;
+            float a0 = 0, a1 = 0, b0 = 0, b1 = 0;
+            for (var step = 0; step < 36; step++)
+            {
+                var angle = step * Mathf.PI / 36f;
+                var dx = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+                var dy = new Vector2(-dx.y, dx.x);
+                pa.Clear(); pb.Clear();
+                foreach (var q in pts)
+                {
+                    var xy = new Vector2(q.x, q.y);
+                    pa.Add(Vector2.Dot(xy, dx));
+                    pb.Add(Vector2.Dot(xy, dy));
+                }
+                pa.Sort(); pb.Sort();
+                float u0 = Pct(pa, 0.05f), u1 = Pct(pa, 0.95f), w0 = Pct(pb, 0.05f), w1 = Pct(pb, 0.95f);
+                var area = (u1 - u0) * (w1 - w0);
+                if (area >= bestArea) continue;
+                bestArea = area;
+                ax = dx; ay = dy;
+                a0 = u0; a1 = u1; b0 = w0; b1 = w1;
+            }
+            var ph = new List<float>(pts.Count);
+            foreach (var q in pts) ph.Add(q.z);
+            ph.Sort();
+            var top = Pct(ph, 0.5f);
+            float ca = 0.5f * (a0 + a1), cb = 0.5f * (b0 + b1);
+            // Down to the surface under its lowest corner, and a little into it.
+            var bottom = float.PositiveInfinity;
+            foreach (var (u, w) in new[] { (a0, b0), (a0, b1), (a1, b0), (a1, b1), (ca, cb) })
+            {
+                var xy = ax * u + ay * w;
+                bottom = Mathf.Min(bottom, (float)Base(xy.x, xy.y));
+            }
+            bottom -= lyingEmbedCells;
+            // A buckle is small and low: a fit taller or wider than that took in a part of the shape.
+            if (!(top - bottom > 0.15f) || a1 - a0 < 0.3f || b1 - b0 < 0.3f) return null;
+            if (top - bottom > maxBlockHeightCells || Mathf.Max(a1 - a0, b1 - b0) > maxBlockSizeCells) return null;
+
+            var axisX = MeshMath.SafeNormalize(X * ax.x + Y * ax.y, X);
+            var axisY = MeshMath.SafeNormalize(X * ay.x + Y * ay.y, Y);
+            var centreXY = ax * ca + ay * cb;
+            var block = new Block
+            {
+                centre = J + (X * centreXY.x + Y * centreXY.y + U * (0.5f * (top + bottom))) * cell,
+                axisX = axisX,
+                axisY = axisY,
+                up = U,
+                halfSize = new Vector3(0.5f * (a1 - a0), 0.5f * (b1 - b0), 0.5f * (top - bottom)) * cell
+            };
+
+            // Its faces: those with their centre in the box (a little wider), above the surface.
+            var margin = 0.1f;
+            for (var t = 0; t < removed.Length; t++)
+            {
+                if (removed[t]) continue;
+                var c = (P[T[3 * t]] + P[T[3 * t + 1]] + P[T[3 * t + 2]]) / 3f;
+                var d = (c - J) / cell;
+                if (Mathf.Abs(Vector3.Dot(d, axisX) - Vector2.Dot(centreXY, ax)) > 0.5f * (a1 - a0) + margin) continue;
+                if (Mathf.Abs(Vector3.Dot(d, axisY) - Vector2.Dot(centreXY, ay)) > 0.5f * (b1 - b0) + margin) continue;
+                var x = Vector3.Dot(d, X);
+                var y = Vector3.Dot(d, Y);
+                var h = Vector3.Dot(d, U);
+                if (h - Base(x, y) < 0.04 || h > top + 0.2f) continue;
+                removed[t] = true;
+            }
+            return block;
+        }
+
+        // Gaussian elimination with partial pivoting on a 6 x 7 augmented system.
+        static bool Solve6(double[,] A, double[] x)
+        {
+            const int n = 6;
+            for (var c = 0; c < n; c++)
+            {
+                var pivot = c;
+                for (var r = c + 1; r < n; r++) if (Math.Abs(A[r, c]) > Math.Abs(A[pivot, c])) pivot = r;
+                if (Math.Abs(A[pivot, c]) < 1e-12) return false;
+                if (pivot != c)
+                    for (var k = 0; k <= n; k++) (A[c, k], A[pivot, k]) = (A[pivot, k], A[c, k]);
+                for (var r = c + 1; r < n; r++)
+                {
+                    var f = A[r, c] / A[c, c];
+                    for (var k = c; k <= n; k++) A[r, k] -= f * A[c, k];
+                }
+            }
+            for (var r = n - 1; r >= 0; r--)
+            {
+                var sum = A[r, n];
+                for (var k = r + 1; k < n; k++) sum -= A[r, k] * x[k];
+                x[r] = sum / A[r, r];
+            }
+            return true;
+        }
+
+        // ------------------------------------------------------------------
+        // Thin vertices off any band lose their thinness: the middle sheet's points, pooled in
+        // voxels of a quarter cell, have their spread within bandRadiusCells measured; where the
+        // second spread (as a width) is over maxBandSpreadCells, or not under two thirds of the
+        // first, the sheet is no band there.
+        // raisedOnly: only the raised vertices (no far side found) can lose it -- a buckle's rims
+        // otherwise join a strap to the broad plate beside it.
+        static void KeepBands(Vector3[] P, Vector3[] N, float[] thickness, int[] opposite, bool raisedOnly,
+            float maxThickness, float cell, Stats stats)
+        {
+            var nv = P.Length;
+            var voxel = 0.25f * cell;
+            var index = new Dictionary<Vector3Int, int>();
+            var sum = new List<Vector3>();
+            var count = new List<int>();
+            var voxelOf = new int[nv];
+            for (var v = 0; v < nv; v++)
+            {
+                voxelOf[v] = -1;
+                if (!(thickness[v] < maxThickness)) continue;
+                var m = P[v] - N[v] * (0.5f * thickness[v]);
+                var key = new Vector3Int(Mathf.FloorToInt(m.x / voxel), Mathf.FloorToInt(m.y / voxel), Mathf.FloorToInt(m.z / voxel));
+                if (!index.TryGetValue(key, out var id))
+                {
+                    id = sum.Count;
+                    index[key] = id;
+                    sum.Add(Vector3.zero);
+                    count.Add(0);
+                }
+                sum[id] += m;
+                count[id]++;
+                voxelOf[v] = id;
+            }
+            var nVox = sum.Count;
+            var centre = new Vector3[nVox];
+            var keys = new Vector3Int[nVox];
+            foreach (var kv in index) keys[kv.Value] = kv.Key;
+            for (var i = 0; i < nVox; i++) centre[i] = sum[i] / count[i];
+            var radius = bandRadiusCells * cell;
+            var reachVox = Mathf.CeilToInt(radius / voxel);
+            var r2 = radius * radius;
+            var maxSpread = maxBandSpreadCells * cell;
+            var band = new bool[nVox];
+            Parallel.For(0, nVox, i =>
+            {
+                var k = keys[i];
+                double w = 0, mx = 0, my = 0, mz = 0;
+                double xx = 0, xy = 0, xz = 0, yy = 0, yz = 0, zz = 0;
+                for (var dx = -reachVox; dx <= reachVox; dx++)
+                    for (var dy = -reachVox; dy <= reachVox; dy++)
+                        for (var dz = -reachVox; dz <= reachVox; dz++)
+                        {
+                            if (!index.TryGetValue(new Vector3Int(k.x + dx, k.y + dy, k.z + dz), out var j)) continue;
+                            var d = centre[j] - centre[i];
+                            if (d.sqrMagnitude > r2) continue;
+                            double c = count[j];
+                            w += c; mx += c * d.x; my += c * d.y; mz += c * d.z;
+                            xx += c * d.x * d.x; xy += c * d.x * d.y; xz += c * d.x * d.z;
+                            yy += c * d.y * d.y; yz += c * d.y * d.z; zz += c * d.z * d.z;
+                        }
+                mx /= w; my /= w; mz /= w;
+                var cov = new double[3, 3];
+                cov[0, 0] = xx / w - mx * mx; cov[0, 1] = cov[1, 0] = xy / w - mx * my; cov[0, 2] = cov[2, 0] = xz / w - mx * mz;
+                cov[1, 1] = yy / w - my * my; cov[1, 2] = cov[2, 1] = yz / w - my * mz; cov[2, 2] = zz / w - mz * mz;
+                var e = Eigenvalues3(cov);
+                // e sorted descending: the sheet spreads along e[0] and e[1]; e[2] is its bend and noise.
+                var width = Math.Sqrt(12 * Math.Max(0, e[1]));
+                band[i] = width <= maxSpread && e[1] <= (4.0 / 9.0) * e[0];
+            });
+            for (var v = 0; v < nv; v++)
+                if (voxelOf[v] >= 0 && !band[voxelOf[v]] && (!raisedOnly || opposite[v] < 0))
+                {
+                    thickness[v] = float.PositiveInfinity;
+                    stats.unbandedVertices++;
+                }
+        }
+
+        // Eigenvalues of a symmetric 3 x 3 matrix, largest first (cyclic Jacobi).
+        static double[] Eigenvalues3(double[,] m)
+        {
+            var a = (double[,])m.Clone();
+            for (var sweep = 0; sweep < 12; sweep++)
+            {
+                var off = a[0, 1] * a[0, 1] + a[0, 2] * a[0, 2] + a[1, 2] * a[1, 2];
+                if (off < 1e-30) break;
+                for (var p = 0; p < 2; p++)
+                    for (var q = p + 1; q < 3; q++)
+                    {
+                        if (Math.Abs(a[p, q]) < 1e-30) continue;
+                        var theta = 0.5 * (a[q, q] - a[p, p]) / a[p, q];
+                        var t = Math.Sign(theta) / (Math.Abs(theta) + Math.Sqrt(theta * theta + 1));
+                        if (theta == 0) t = 1;
+                        var c = 1 / Math.Sqrt(t * t + 1);
+                        var s = t * c;
+                        for (var k = 0; k < 3; k++)
+                        {
+                            double akp = a[k, p], akq = a[k, q];
+                            a[k, p] = c * akp - s * akq;
+                            a[k, q] = s * akp + c * akq;
+                        }
+                        for (var k = 0; k < 3; k++)
+                        {
+                            double apk = a[p, k], aqk = a[q, k];
+                            a[p, k] = c * apk - s * aqk;
+                            a[q, k] = s * apk + c * aqk;
+                        }
+                    }
+            }
+            var e = new[] { a[0, 0], a[1, 1], a[2, 2] };
+            Array.Sort(e);
+            Array.Reverse(e);
+            return e;
+        }
+
+        // ------------------------------------------------------------------
+        // Raised bands: vertices on the top of a narrow band standing on the surface get its height
+        // over the ground beside it as their thickness (their far side stays unknown).
+        //
+        // Just under the surface (inside the part), rays go out sideways: across a band the walls
+        // are near both ways, along it far. Measured first on one vertex per small voxel and
+        // normal direction, in four directions; then on every vertex near a band sample, across
+        // only, with the ground found by a ray down just past each wall.
+        static void Relief(RemeshTopology topology, Vector3[] N, SpatialGrid grid, float cell, float outward,
+            float[] thickness, Stats stats)
+        {
+            var P = topology.positions;
+            var T = topology.triangles;
+            var nv = topology.vertexCount;
+            var maxThickness = maxThicknessCells * cell;
+            var maxWidth = maxReliefWidthCells * cell;
+            var depth = 0.04f * cell;
+            var voxel = 0.2f * cell;
+
+            (int, int, int, int) Key(int v)
+            {
+                var p = P[v];
+                var n = N[v];
+                var ax = Mathf.Abs(n.x); var ay = Mathf.Abs(n.y); var az = Mathf.Abs(n.z);
+                var dir = ax >= ay && ax >= az ? (n.x > 0 ? 0 : 1) : ay >= az ? (n.y > 0 ? 2 : 3) : (n.z > 0 ? 4 : 5);
+                return (Mathf.FloorToInt(p.x / voxel), Mathf.FloorToInt(p.y / voxel), Mathf.FloorToInt(p.z / voxel), dir);
+            }
+            var repOf = new Dictionary<(int, int, int, int), int>();
+            var reps = new List<int>();
+            for (var v = 0; v < nv; v++)
+            {
+                if (thickness[v] < maxThickness) continue;
+                var key = Key(v);
+                if (repOf.ContainsKey(key)) continue;
+                repOf[key] = reps.Count;
+                reps.Add(v);
+            }
+
+            // Distance to the first wall going out from p along dir; infinite when the first surface
+            // met is one going in (p was not inside), none is near, or it is no wall square to dir
+            // (a ray cutting a corner of a broad part).
+            float Out(Vector3 p, Vector3 dir)
+            {
+                if (!grid.FirstHit(p, dir, maxWidth, 0f, out var t, out var tri)) return float.PositiveInfinity;
+                var n = Vector3.Cross(P[T[3 * tri + 1]] - P[T[3 * tri]], P[T[3 * tri + 2]] - P[T[3 * tri]]);
+                return Vector3.Dot(n, dir) * outward > wallSquareness * n.magnitude ? t : float.PositiveInfinity;
+            }
+            // Ground below q (in air): the first surface met going down must face up.
+            float Ground(Vector3 q, Vector3 down)
+            {
+                if (!grid.FirstHit(q, down, maxThickness, 0f, out var t, out var tri)) return float.PositiveInfinity;
+                var n = Vector3.Cross(P[T[3 * tri + 1]] - P[T[3 * tri]], P[T[3 * tri + 2]] - P[T[3 * tri]]);
+                return Vector3.Dot(n, down) * outward < 0f ? t : float.PositiveInfinity;
+            }
+
+            var axis = new Vector3[reps.Count];
+            var band = new bool[reps.Count];
+            Parallel.For(0, reps.Count, i =>
+            {
+                var v = reps[i];
+                var n = N[v];
+                var p = P[v] - n * depth;
+                var t1 = OrientationField.ArbitraryTangent(n);
+                var t2 = Vector3.Cross(n, t1);
+                var chord = new float[4];
+                var dirs = new Vector3[4];
+                for (var a = 0; a < 4; a++)
+                {
+                    var angle = a * Mathf.PI / 4f;
+                    dirs[a] = Mathf.Cos(angle) * t1 + Mathf.Sin(angle) * t2;
+                    chord[a] = Out(p, dirs[a]) + Out(p, -dirs[a]);
+                }
+                var best = 0;
+                for (var a = 1; a < 4; a++) if (chord[a] < chord[best]) best = a;
+                if (!(chord[best] <= maxWidth)) return;
+                if (!(chord[(best + 2) % 4] >= 2f * chord[best])) return;
+                axis[i] = dirs[best];
+                band[i] = true;
+            });
+
+            var height = new float[nv];
+            Parallel.For(0, nv, v =>
+            {
+                height[v] = float.PositiveInfinity;
+                if (thickness[v] < maxThickness) return;
+                if (!repOf.TryGetValue(Key(v), out var r) || !band[r]) return;
+                var n = N[v];
+                var a = MeshMath.SafeNormalize(axis[r] - n * Vector3.Dot(axis[r], n), Vector3.zero);
+                if (a == Vector3.zero) return;
+                var p = P[v] - n * depth;
+                var plus = Out(p, a);
+                var minus = Out(p, -a);
+                if (!(plus + minus <= maxWidth)) return;
+                var past = 0.08f * cell;
+                var g1 = Ground(p + a * (plus + past), -n);
+                var g2 = Ground(p - a * (minus + past), -n);
+                // Ground both sides; with oneSidedGround, one is enough (a band along an edge
+                // overhangs it on the other) -- but then a buckle's rims join everything round it.
+                if (float.IsInfinity(g1) && float.IsInfinity(g2)) return;
+                if (!oneSidedGround && (float.IsInfinity(g1) || float.IsInfinity(g2))) return;
+                var h = depth + (float.IsInfinity(g1) ? g2 : float.IsInfinity(g2) ? g1 : 0.5f * (g1 + g2));
+                if (h < 0.08f * cell || h >= maxThickness) return;
+                height[v] = h;
+            });
+            for (var v = 0; v < nv; v++)
+                if (!float.IsInfinity(height[v]))
+                {
+                    thickness[v] = height[v];
+                    stats.reliefVertices++;
+                }
+        }
+
+        // ------------------------------------------------------------------
         // The ribbons of one plate -- its centre line and cross-section, in runs -- or null.
         static List<Ribbon> Measure(RemeshTopology topology, Vector3[] N, float[] thickness, int[] opposite,
-            SpatialGrid grid, List<int> faces, float cell, float outward, Stats stats)
+            SpatialGrid grid, List<int> faces, float cell, float outward, Stats stats, int depth = 0)
         {
             var P = topology.positions;
             var T = topology.triangles;
@@ -360,6 +964,88 @@ namespace NativeRemesher
             for (var i = 0; i < n; i++)
                 if (!float.IsInfinity(along[i]))
                     members[Mathf.Min(bins - 1, (int)(along[i] / length * bins))].Add(i);
+
+            // A fork: past a buckle two straps go on side by side in distance, and one bin holds
+            // both. At the first bin whose points fall apart into two good-sized clusters, the
+            // plate is cut: what comes before, and each connected piece of what comes after, are
+            // measured on their own.
+            if (splitForks && depth < 6)
+            {
+                var clusterOf = new int[n];
+                for (var i = 0; i < n; i++) clusterOf[i] = -1;
+                var fork = -1;
+                var forked = new bool[bins];
+                for (var k = 0; k < bins; k++)
+                {
+                    var list = members[k];
+                    if (list.Count < 16) continue;
+                    var inBin = new HashSet<int>(list);
+                    var sizes = new List<int>();
+                    foreach (var seed in list)
+                    {
+                        if (clusterOf[seed] >= 0) continue;
+                        var id = sizes.Count;
+                        var size = 0;
+                        var stack = new Stack<int>();
+                        clusterOf[seed] = id;
+                        stack.Push(seed);
+                        while (stack.Count > 0)
+                        {
+                            var i = stack.Pop();
+                            size++;
+                            foreach (var j in adjacency[i])
+                                if (inBin.Contains(j) && clusterOf[j] < 0) { clusterOf[j] = id; stack.Push(j); }
+                        }
+                        sizes.Add(size);
+                    }
+                    var big = 0;
+                    foreach (var z in sizes) if (z >= Mathf.Max(8, 0.2f * list.Count)) big++;
+                    forked[k] = big >= 2;
+                }
+                // Two arms go on: three bins (a cell and a half) in a row, not a patch beside the band.
+                for (var k = 0; k + 2 < bins && fork < 0; k++)
+                    if (forked[k] && forked[k + 1] && forked[k + 2]) fork = k;
+                if (fork > 0)
+                {
+                    var cut = fork * length / bins;
+                    var part = new int[n];
+                    for (var i = 0; i < n; i++) part[i] = float.IsInfinity(along[i]) ? -1 : along[i] < cut ? 0 : -2;
+                    var parts = 1;
+                    for (var seed = 0; seed < n; seed++)
+                    {
+                        if (part[seed] != -2) continue;
+                        var stack = new Stack<int>();
+                        part[seed] = parts;
+                        stack.Push(seed);
+                        while (stack.Count > 0)
+                        {
+                            var i = stack.Pop();
+                            foreach (var j in adjacency[i])
+                                if (part[j] == -2) { part[j] = parts; stack.Push(j); }
+                        }
+                        parts++;
+                    }
+                    var vertexPart = new Dictionary<int, int>(n);
+                    for (var i = 0; i < n; i++) vertexPart[verts[i]] = part[i];
+                    var split = new List<int>[parts];
+                    for (var q = 0; q < parts; q++) split[q] = new List<int>();
+                    foreach (var t in faces)
+                    {
+                        var q0 = vertexPart[T[3 * t]];
+                        if (q0 < 0 || vertexPart[T[3 * t + 1]] != q0 || vertexPart[T[3 * t + 2]] != q0) continue;
+                        split[q0].Add(t);
+                    }
+                    Log("fork", c0(mid, members[fork]), cut, 0f, parts - 1, cell);
+                    var all = new List<Ribbon>();
+                    foreach (var piece in split)
+                    {
+                        if (piece.Count < minSideFaces) continue;
+                        var r = Measure(topology, N, thickness, opposite, grid, piece, cell, outward, stats, depth + 1);
+                        if (r != null) all.AddRange(r);
+                    }
+                    return all;
+                }
+            }
             var centre = new List<Vector3>();
             var up = new List<Vector3>();
             var tk = new List<float>();
@@ -456,7 +1142,7 @@ namespace NativeRemesher
                 }
                 for (var k = 0; k < m; k++) across[k] = Vector3.Cross(u[k], tangent[k]);
             }
-            if (medianWidth > maxWidthCells * cell) { stats.rejectedWide++; Log("wide", c[m / 2], length, medianWidth, 0f, cell); return null; }
+
 
             // --- runs: stretches of steady width and direction ---
             //
@@ -465,13 +1151,42 @@ namespace NativeRemesher
             // quarter, or the line turns sharply, the run ends; each run long enough is a ribbon on
             // its own, and the rest (the corner, the buckle) stays with the lattice. The end bins,
             // cut by round distance fronts and holding only part of the width, fall out the same way.
-            var good = new bool[m];
+            if (debugLog != null)
+            {
+                var profile = new System.Text.StringBuilder();
+                for (var k = 0; k < m; k++) profile.Append(' ').Append((width[k] / cell).ToString("F1"));
+                Log("profile" + profile, c[m / 2], length, medianWidth, 0f, cell);
+            }
+            // Each run against its own median, not the plate's: a strap through a wider buckle is
+            // two runs of the strap's width and one of the buckle's, whatever the plate's median.
+            // The widths are median-of-three filtered first, so one odd bin does not cut a run.
+            var w3 = new float[m];
             for (var k = 0; k < m; k++)
             {
-                var steady = Mathf.Abs(width[k] - medianWidth) <= runWidthTolerance * medianWidth;
-                var straight = Vector3.Dot(tangent[Mathf.Max(0, k - 1)], tangent[Mathf.Min(m - 1, k + 1)]) > 0.6f;
-                good[k] = steady && straight;
+                float a = width[Mathf.Max(0, k - 1)], b = width[k], d = width[Mathf.Min(m - 1, k + 1)];
+                w3[k] = Mathf.Max(Mathf.Min(a, b), Mathf.Min(Mathf.Max(a, b), d));
             }
+            var runOf = new int[m];
+            var runSpans = new List<(int start, int end)>();
+            for (var k0 = 0; k0 < m;)
+            {
+                var values = new List<float> { w3[k0] };
+                var k1 = k0;
+                while (k1 + 1 < m)
+                {
+                    values.Sort();
+                    var median = values[values.Count / 2];
+                    var straight = Vector3.Dot(tangent[Mathf.Max(0, k1)], tangent[Mathf.Min(m - 1, k1 + 2)]) > runStraightness;
+                    if (!straight || Mathf.Abs(w3[k1 + 1] - median) > runWidthTolerance * median) break;
+                    k1++;
+                    values.Add(w3[k1]);
+                }
+                for (var k = k0; k <= k1; k++) runOf[k] = runSpans.Count;
+                runSpans.Add((k0, k1));
+                k0 = k1 + 1;
+            }
+            var good = new bool[m];
+            for (var k = 0; k < m; k++) good[k] = runSpans[runOf[k]].end > runSpans[runOf[k]].start;
             var vertexBin = new Dictionary<int, int>();
             for (var k = 0; k < m; k++)
                 foreach (var i in members[binOfCentre[k]]) vertexBin[verts[i]] = k;
@@ -488,17 +1203,19 @@ namespace NativeRemesher
             }
 
             var found = new List<Ribbon>();
-            for (var k0 = 0; k0 < m; k0++)
+            foreach (var (start, k1) in runSpans)
             {
-                if (!good[k0]) continue;
-                var k1 = k0;
-                while (k1 + 1 < m && good[k1 + 1]) k1++;
-                var start = k0;
-                k0 = k1;
                 var count = k1 - start + 1;
                 if (count < 2) continue;
+                var runWidths = Slice(width, start, count);
+                Array.Sort(runWidths);
+                var runWidth = runWidths[count / 2];
+                var runThicknesses = Slice(thicknessAt, start, count);
+                Array.Sort(runThicknesses);
+                var runThickness = runThicknesses[count / 2];
 
                 var rc = Slice(c, start, count);
+                StraightenEnds(rc, 1.5f * cell);
                 var lineLength = 0f;
                 for (var k = 1; k < count; k++) lineLength += Vector3.Distance(rc[k - 1], rc[k]);
                 // Past each end, as far as the plate went before the next run or its own end (the
@@ -510,8 +1227,10 @@ namespace NativeRemesher
                 var startTrim = Mathf.Min(1.5f * cell, Vector3.Distance(c[before], c[start]));
                 var endTrim = Mathf.Min(1.5f * cell, Vector3.Distance(c[k1], c[after]));
                 var at = rc[count / 2];
-                if (lineLength + startTrim + endTrim < minAspect * medianWidth || lineLength < minLengthCells * cell)
-                { stats.rejectedStubby++; Log("stubby", at, lineLength, medianWidth, 0f, cell); continue; }
+                if (lineLength + startTrim + endTrim < minAspect * runWidth || lineLength < minLengthCells * cell)
+                { stats.rejectedStubby++; Log("stubby", at, lineLength, runWidth, 0f, cell); continue; }
+                if (runWidth > maxWidthCells * cell || runWidth < minWidthCells * cell)
+                { stats.rejectedWide++; Log("run width", at, lineLength, runWidth, 0f, cell); continue; }
 
                 // A free rim: from inside the plate, sideways, its own narrow side faces out within
                 // half the width. Along an edge the plate is attached by, the material goes on into
@@ -525,27 +1244,31 @@ namespace NativeRemesher
                     if (Rim(c[k], -across[k], reach)) free++;
                 }
                 if (free < minFreeRimFraction * 2 * count)
-                { stats.rejectedAttached++; Log("attached", at, lineLength, medianWidth, free / (2f * count), cell); continue; }
-                Log(round ? "cable" : "ribbon", at, lineLength, medianWidth, free / (2f * count), cell);
+                { stats.rejectedAttached++; Log("attached", at, lineLength, runWidth, free / (2f * count), cell); continue; }
+                Log(round ? "cable" : "ribbon", at, lineLength, runWidth, free / (2f * count), cell);
 
                 var rw = Slice(width, start, count);
                 var rt = Slice(thicknessAt, start, count);
                 for (var k = 0; k < count; k++)
                 {
-                    rw[k] = Mathf.Clamp(rw[k], 0.85f * medianWidth, 1.15f * medianWidth);
-                    rt[k] = Mathf.Clamp(rt[k], 0.7f * medianThickness, 1.3f * medianThickness);
+                    rw[k] = Mathf.Clamp(rw[k], 0.85f * runWidth, 1.15f * runWidth);
+                    rt[k] = Mathf.Clamp(rt[k], 0.7f * runThickness, 1.3f * runThickness);
                 }
                 // Its own midpoints and faces: the run's bins and one each side.
                 var medial = new List<Vector3>();
                 for (var k = Mathf.Max(0, start - 1); k <= Mathf.Min(m - 1, k1 + 1); k++)
                     foreach (var i in members[binOfCentre[k]]) medial.Add(mid[i]);
                 var seedFaces = new List<int>();
+                int raised = 0, all = 0;
                 foreach (var t in faces)
                 {
                     var inside = true;
                     for (var j = 0; j < 3 && inside; j++)
                         inside = vertexBin.TryGetValue(T[3 * t + j], out var kb) && kb >= start - 1 && kb <= k1 + 1;
-                    if (inside) seedFaces.Add(t);
+                    if (!inside) continue;
+                    seedFaces.Add(t);
+                    all++;
+                    if (opposite[T[3 * t]] < 0) raised++;
                 }
                 var rtan = Slice(tangent, start, count);
                 found.Add(new Ribbon
@@ -557,16 +1280,57 @@ namespace NativeRemesher
                     length = lineLength,
                     freeStart = Air(rc[0] - rtan[0] * (startTrim + 0.4f * cell)),
                     freeEnd = Air(rc[count - 1] + rtan[count - 1] * (endTrim + 0.4f * cell)),
-                    medianWidth = medianWidth,
+                    medianWidth = runWidth,
                     startTrim = startTrim,
                     endTrim = endTrim,
                     round = round,
                     medial = medial.ToArray(),
-                    medianThickness = medianThickness,
+                    medianThickness = runThickness,
+                    lying = raised > all / 2,
                     seedFaces = seedFaces
                 });
             }
             return found;
+        }
+
+        // The last stretch at each end of a line, bent by the bins there (distance fronts from a
+        // corner hold part of the width, off to one side), is drawn onto the line through it:
+        // fully at the end, not at all a reach in.
+        static void StraightenEnds(Vector3[] line, float reach)
+        {
+            var m = line.Length;
+            if (m < 4) return;
+            for (var side = 0; side < 2; side++)
+            {
+                int At(int i) => side == 0 ? i : m - 1 - i;
+                var j = 1;
+                var run = 0f;
+                while (j + 1 < m / 2 && run < reach) { run += Vector3.Distance(line[At(j)], line[At(j - 1)]); j++; }
+                if (j < 3) continue;
+                var anchor = Vector3.zero;
+                for (var i = 0; i <= j; i++) anchor += line[At(i)];
+                anchor /= j + 1;
+                var dir = MeshMath.SafeNormalize(line[At(j)] - line[At(0)], Vector3.zero);
+                if (dir == Vector3.zero) continue;
+                // The direction from the inner half, which the end's bend does not reach.
+                var inner = MeshMath.SafeNormalize(line[At(j)] - line[At(j / 2)], dir);
+                var copy = new Vector3[j + 1];
+                for (var i = 0; i <= j; i++) copy[i] = line[At(i)];
+                var pivot = copy[j];
+                for (var i = 0; i < j; i++)
+                {
+                    var onLine = pivot + inner * Vector3.Dot(copy[i] - pivot, inner);
+                    var w = 1f - (float)i / j;
+                    line[At(i)] = Vector3.Lerp(copy[i], onLine, w);
+                }
+            }
+        }
+
+        static Vector3 c0(Vector3[] points, List<int> which)
+        {
+            var sum = Vector3.zero;
+            foreach (var i in which) sum += points[i];
+            return which.Count > 0 ? sum / which.Count : sum;
         }
 
         static T[] Slice<T>(T[] a, int start, int count)
@@ -855,10 +1619,17 @@ namespace NativeRemesher
         /// are made at -- the rest of the output's, so the ribbons match it.
         /// </summary>
         public static void Mesh(List<Ribbon> ribbons, SpatialGrid surface, float cell, float outward,
+            out Vector3[] positions, out List<int[]> faces) =>
+            Mesh(ribbons, null, surface, cell, outward, out positions, out faces);
+
+        /// <summary>As above, with the buckles as boxes of about a cell per quad.</summary>
+        public static void Mesh(List<Ribbon> ribbons, List<Block> blocks, SpatialGrid surface, float cell, float outward,
             out Vector3[] positions, out List<int[]> faces)
         {
             var outPositions = new List<Vector3>();
             var outFaces = new List<int[]>();
+            if (blocks != null)
+                foreach (var block in blocks) BoxMesh(block, cell, outward, outPositions, outFaces);
             foreach (var ribbon in ribbons)
             {
                 var k = Mathf.Max(1, Mathf.RoundToInt(ribbon.medianWidth / (quadWidthCells * cell)));
@@ -879,6 +1650,40 @@ namespace NativeRemesher
                     faceAlong[f] = s * ribbon.length;
                 }
 
+                // The regular box: the median of the part's own sections' extents along it.
+                Vector2[] regular = null;
+                if (!readSections)
+                {
+                    var x0 = new List<float>(); var x1 = new List<float>();
+                    var y0 = new List<float>(); var y1 = new List<float>();
+                    for (var i = 0; i <= stations; i++)
+                    {
+                        var along = -startExtra + step * i;
+                        if (along < 0f || along > ribbon.length) continue;
+                        Station(ribbon, along, out var c, out var tangent, out var up, out var across, out var w, out _);
+                        var xy = Section(corners, faceAlong, along, 0.75f * step + 0.25f * w, c, tangent, across, up, k, w);
+                        if (xy == null) continue;
+                        float lx = float.PositiveInfinity, hx = float.NegativeInfinity, ly = float.PositiveInfinity, hy = float.NegativeInfinity;
+                        foreach (var q in xy)
+                        {
+                            lx = Mathf.Min(lx, q.x); hx = Mathf.Max(hx, q.x);
+                            ly = Mathf.Min(ly, q.y); hy = Mathf.Max(hy, q.y);
+                        }
+                        x0.Add(lx); x1.Add(hx); y0.Add(ly); y1.Add(hy);
+                    }
+                    float Median(List<float> l) { l.Sort(); return l[l.Count / 2]; }
+                    if (x0.Count >= 2)
+                    {
+                        float left = Median(x0), right = Median(x1), bottom = Median(y0), top = Median(y1);
+                        if (right - left > 0.25f * ribbon.medianWidth && top - bottom > 0f)
+                        {
+                            if (ribbon.lying) bottom -= lyingEmbedCells * cell;
+                            regular = Box(k, right - left, top, bottom);
+                            for (var j = 0; j < regular.Length; j++) regular[j].x += 0.5f * (left + right);
+                        }
+                    }
+                }
+
                 // Per station, the ring in the frame's coordinates (across, up) about the centre.
                 var ringXY = new List<Vector2[]>();
                 var frames = new List<(Vector3 c, Vector3 across, Vector3 up)>();
@@ -888,6 +1693,16 @@ namespace NativeRemesher
                     var along = -startExtra + step * i;
                     Station(ribbon, along, out var c, out var tangent, out var up, out var across, out var w, out var th);
                     frames.Add((c, across, up));
+                    if (!readSections)
+                    {
+                        // A regular rectangle: the median width and thickness; a band lying on the
+                        // surface goes on down into it.
+                        var top = 0.5f * ribbon.medianThickness;
+                        var bottom = ribbon.lying ? -top - lyingEmbedCells * cell : -top;
+                        ringXY.Add(regular ?? Box(k, ribbon.medianWidth, top, bottom));
+                        measured.Add(true);
+                        continue;
+                    }
                     var xy = Section(corners, faceAlong, along, 0.75f * step + 0.25f * w, c, tangent, across, up, k, w);
                     measured.Add(xy != null);
                     ringXY.Add(xy ?? Box(k, w, th));
@@ -914,6 +1729,9 @@ namespace NativeRemesher
                 for (var i = 0; i < stations; i++)
                     for (var j = 0; j < ringSize; j++)
                     {
+                        // A band lying on the surface has no bottom: it is inside the surface,
+                        // where nothing sees it and a normal map bake finds nothing for it.
+                        if (ribbon.lying && openBottoms && j > k && j <= 2 * k) continue;
                         var j1 = (j + 1) % ringSize;
                         outFaces.Add(new[] { rings[i] + j, rings[i] + j1, rings[i + 1] + j1, rings[i + 1] + j });
                     }
@@ -946,12 +1764,68 @@ namespace NativeRemesher
             faces = outFaces;
         }
 
+        // A closed box, its sides cut into quads of about a cell, wound outward.
+        static void BoxMesh(Block block, float cell, float outward, List<Vector3> positions, List<int[]> faces)
+        {
+            var size = 2f * block.halfSize;
+            var n = new[]
+            {
+                Mathf.Max(1, Mathf.RoundToInt(size.x / cell)),
+                Mathf.Max(1, Mathf.RoundToInt(size.y / cell)),
+                Mathf.Max(1, Mathf.RoundToInt(size.z / cell))
+            };
+            var axes = new[] { block.axisX, block.axisY, block.up };
+            var index = new Dictionary<(int, int, int), int>();
+            int Vertex(int i, int j, int k)
+            {
+                if (index.TryGetValue((i, j, k), out var id)) return id;
+                id = positions.Count;
+                var p = block.centre;
+                p += axes[0] * (size.x * ((float)i / n[0] - 0.5f));
+                p += axes[1] * (size.y * ((float)j / n[1] - 0.5f));
+                p += axes[2] * (size.z * ((float)k / n[2] - 0.5f));
+                positions.Add(p);
+                index[(i, j, k)] = id;
+                return id;
+            }
+            (int, int, int) At(int axis, int side, int u, int v)
+            {
+                var c = new int[3];
+                c[axis] = side * n[axis];
+                c[(axis + 1) % 3] = u;
+                c[(axis + 2) % 3] = v;
+                return (c[0], c[1], c[2]);
+            }
+            for (var axis = 0; axis < 3; axis++)
+                for (var side = 0; side < 2; side++)
+                {
+                    // The bottom is inside the surface it stands in.
+                    if (openBottoms && axis == 2 && side == 0) continue;
+                    int nu = n[(axis + 1) % 3], nw = n[(axis + 2) % 3];
+                    for (var u = 0; u < nu; u++)
+                        for (var w = 0; w < nw; w++)
+                        {
+                            var q = new[] { At(axis, side, u, w), At(axis, side, u + 1, w), At(axis, side, u + 1, w + 1), At(axis, side, u, w + 1) };
+                            var f = new int[4];
+                            for (var i = 0; i < 4; i++) f[i] = Vertex(q[i].Item1, q[i].Item2, q[i].Item3);
+                            // (axis+1) x (axis+2) = axis: the order above faces +axis; flip on the low side.
+                            var flip = side == 0;
+                            if (outward < 0f) flip = !flip;
+                            if (flip) Array.Reverse(f);
+                            faces.Add(f);
+                        }
+                }
+        }
+
         // A plain rectangle ring, w wide and th through: top left to right, then bottom right to left.
-        static Vector2[] Box(int k, float w, float th)
+        static Vector2[] Box(int k, float w, float th) => Box(k, w, 0.5f * th, -0.5f * th);
+
+        // The same from top to bottom.
+        static Vector2[] Box(int k, float w, float top, float bottom)
         {
             var r = new Vector2[2 * k + 2];
-            for (var j = 0; j <= k; j++) r[j] = new Vector2(-0.5f * w + w * j / k, 0.5f * th);
-            for (var j = 0; j <= k; j++) r[k + 1 + j] = new Vector2(0.5f * w - w * j / k, -0.5f * th);
+            for (var j = 0; j <= k; j++) r[j] = new Vector2(-0.5f * w + w * j / k, top);
+            for (var j = 0; j <= k; j++) r[k + 1 + j] = new Vector2(0.5f * w - w * j / k, bottom);
             return r;
         }
 
