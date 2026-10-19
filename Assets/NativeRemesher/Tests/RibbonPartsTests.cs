@@ -92,15 +92,15 @@ namespace NativeRemesher.Tests
 
         // A closed slab, 1 x 1 across and half deep, its top a height field with a band raised
         // along x: 0.6 long, 0.06 wide (1.2 cells), 0.01 high, fused to the top.
-        static void AddSlabWithRaisedBand(List<Vector3> positions, List<int> triangles)
+        static void AddSlabWithRaisedBand(List<Vector3> positions, List<int> triangles) =>
+            AddSlab(positions, triangles, (x, y) => x >= 0.2f && x <= 0.8f && y >= 0.47f && y <= 0.53f ? 0.01f : 0f);
+
+        // The same slab with any height field on top.
+        static void AddSlab(List<Vector3> positions, List<int> triangles, System.Func<float, float, float> height)
         {
             const int n = 200;
             const float h = 1f / n;
-            float Height(int i, int j)
-            {
-                var x = i * h; var y = j * h;
-                return x >= 0.2f && x <= 0.8f && y >= 0.47f && y <= 0.53f ? 0.01f : 0f;
-            }
+            float Height(int i, int j) => height(i * h, j * h);
             int Top(int i, int j) => j * (n + 1) + i;
             int Bottom(int i, int j) => (n + 1) * (n + 1) + j * (n + 1) + i;
             for (var j = 0; j <= n; j++)
@@ -148,6 +148,46 @@ namespace NativeRemesher.Tests
                 Assert.That(p.y, Is.InRange(0.47f - 0.3f * k_Cell, 0.53f + 0.3f * k_Cell), $"tube vertex {p} off the band's sides");
                 Assert.That(p.z, Is.InRange(-0.3f * k_Cell, 0.01f + 0.3f * k_Cell), $"tube vertex {p} off its height");
             }
+        }
+
+        [Test]
+        public void StrapRunsOnThroughASlider()
+        {
+            // A strap lying on a slab, a slider (taller and wider) on it, and a piece of strap out of
+            // the other side too short to pass alone: one ribbon through, the slider boxed.
+            var positions = new List<Vector3>();
+            var triangles = new List<int>();
+            AddSlab(positions, triangles, (x, y) =>
+            {
+                if (x >= 0.45f && x <= 0.53f && y >= 0.45f && y <= 0.55f) return 0.03f;
+                return x >= 0.15f && x <= 0.68f && y >= 0.47f && y <= 0.53f ? 0.01f : 0f;
+            });
+
+            var stats = new RibbonParts.Stats();
+            var blocks = new List<RibbonParts.Block>();
+            var log = new List<string>();
+            RibbonParts.debugLog = log;
+            List<RibbonParts.Ribbon> ribbons;
+            try
+            {
+                ribbons = RibbonParts.Find(positions.ToArray(), triangles.ToArray(), k_Cell, out _, out _,
+                    out _, out _, out _, stats, blocks);
+            }
+            finally
+            {
+                RibbonParts.debugLog = null;
+            }
+            var why = stats + "\n" + string.Join("\n", log);
+
+            Assert.AreEqual(1, ribbons.Count, why);
+            Assert.AreEqual(1, stats.links, why);
+            var r = ribbons[0];
+            var first = r.centre[0] - (r.centre[1] - r.centre[0]).normalized * r.startTrim;
+            var last = r.centre[r.centre.Length - 1] + (r.centre[r.centre.Length - 1] - r.centre[r.centre.Length - 2]).normalized * r.endTrim;
+            Assert.Less(Mathf.Min(first.x, last.x), 0.25f, "the strap's start");
+            Assert.Greater(Mathf.Max(first.x, last.x), 0.62f, "on through the slider to the piece beyond");
+            Assert.AreEqual(1, blocks.Count, "the slider boxed");
+            Assert.That(blocks[0].centre.x, Is.InRange(0.44f, 0.54f), "the box at the slider");
         }
 
         [Test]

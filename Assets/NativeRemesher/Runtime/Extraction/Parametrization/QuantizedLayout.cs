@@ -39,6 +39,8 @@ namespace NativeRemesher.Extraction
         public int borderVertices, borderDropped, exteriorFaces, borderHits, borderMissed, alongLaid, circling, leakingFaces, nonManifoldBorder;
         public int creaseTraces, creaseLoops, creaseExtensions, creaseClashes, crossings, layoutAttempts, duplicateEnds, creaseDropped, spirals, ringsClosed, truncated, truncatedJunctions;
         public long ms;
+        /// <summary>Arcs with a negative length or a missing end node; any, and no layout is returned.</summary>
+        public int invalidArcs;
         public string debug = "";
         public string timing = "";
 
@@ -1786,6 +1788,22 @@ namespace NativeRemesher.Extraction
                 else if (nd.face >= 0) Surface(nd.face, nd.u, nd.v, out p, out nrm);
                 else { p = Vector3.zero; nrm = Vector3.up; }
                 nodePoint[i] = NewPoint(p, nrm);
+            }
+            // An arc with a negative length or a missing end node leaves no layout to lay: none is
+            // returned (the caller goes on without one). Seen once, in Unity's runtime only, on the
+            // helmet head with its straps taken out (2026-10-19): an IndexOutOfRange here.
+            for (var i = 0; i < arcs.Count; i++)
+            {
+                var a = arcs[i];
+                if (Math.Round(ell[i]) >= 0 && a.node0 >= 0 && a.node0 < nodes.Count && a.node1 >= 0 && a.node1 < nodes.Count)
+                    continue;
+                stats.invalidArcs++;
+            }
+            if (stats.invalidArcs > 0)
+            {
+                stats.debug += $"[{stats.invalidArcs} invalid arcs: no layout] ";
+                stats.ms = watch.ElapsedMilliseconds;
+                return stats;
             }
             // Arc points 0..l: the ends are its nodes, the inner ones spread in proportion along it.
             var arcPoints = new int[arcs.Count][];

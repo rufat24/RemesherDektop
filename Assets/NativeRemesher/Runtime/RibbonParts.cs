@@ -61,6 +61,16 @@ namespace NativeRemesher
     /// irregular 3.40 -> 3.42 %, chamfer 0.00104 -> 0.00100; hausdorff 0.0129 -> 0.0191, all of
     /// it the buckle boxes' and tube ends' parts inside the face. Body and ccnb: nothing found.
     /// Detection 2.6-4 s on 1.5M triangles.
+    ///
+    /// Sliders (linkSliders, 2026-10-19): a slider is thicker than its strap, so the strap's plate
+    /// stops at it and the piece out of the other side is a plate of its own, too short to pass.
+    /// Such pieces are kept as candidates; an attached end is joined to one (or to another ribbon)
+    /// that lies ahead within 4 cells, in line, at a like width -- never where a third ribbon ends
+    /// (a buckle). One tube runs through; the slider is boxed in the strap's frame from the source
+    /// facing away from the strap (the cheek beside it faces towards it), its length where the
+    /// part stands out of the strap's section; the tube inside the box is dropped. Head: both
+    /// side straps through their top sliders on up to the helmet, both jaw straps through theirs
+    /// round the neck; irregular 3.53 %, chamfer 0.00101.
     /// </remarks>
     public static class RibbonParts
     {
@@ -186,6 +196,27 @@ namespace NativeRemesher
         /// </summary>
         public static bool splitForks = true;
 
+        /// <summary>
+        /// Straps through sliders: a slider (a small frame a strap runs through) is thicker than the
+        /// strap, so the strap's plate stops at it and the piece beyond is a plate of its own, too
+        /// short or too attached to pass alone. An attached end is joined to a strap or such a piece
+        /// that goes on in line beyond a short gap, at a like width; the tube runs through, and the
+        /// slider is boxed round it (its faces taken out).
+        /// </summary>
+        public static bool linkSliders = true;
+
+        /// <summary>Longest gap between the ends a slider joins, in cells (past 2.5, both in line within 32 degrees).</summary>
+        public static float sliderGapCells = 4f;
+
+        /// <summary>Most a continuing piece's width may differ from the strap's, as a ratio.</summary>
+        public static float sliderWidthRatio = 1.4f;
+
+        /// <summary>A piece too short to pass alone may continue a strap even when attached along it.</summary>
+        public static bool continueAttached = true;
+
+        /// <summary>Shortest piece a strap is continued by, in cells.</summary>
+        public static float minContinuationCells = 1f;
+
         /// <summary>Fewest thin faces a side needs to be considered at all.</summary>
         public static int minSideFaces = 24;
 
@@ -207,7 +238,7 @@ namespace NativeRemesher
 
         public sealed class Stats
         {
-            public int thinVertices, reliefVertices, unbandedVertices, sides, pairs, ribbons;
+            public int thinVertices, reliefVertices, unbandedVertices, sides, pairs, ribbons, links, sliders;
             public int rejectedShort, rejectedWide, rejectedStubby, rejectedAttached;
             public int removedTriangles, holes, fillTriangles, quads, shredTriangles;
             public long ms;
@@ -215,7 +246,7 @@ namespace NativeRemesher
             public override string ToString() =>
                 $"ribbons={ribbons} of {pairs} plates ({sides} sides, {thinVertices} thin vertices, {reliefVertices} raised, {unbandedVertices} off bands) " +
                 $"rejected short {rejectedShort} wide {rejectedWide} stubby {rejectedStubby} attached {rejectedAttached} | " +
-                $"removed {removedTriangles} tris ({shredTriangles} in shreds), {holes} holes closed with {fillTriangles} | quads {quads} | {ms} ms";
+                $"removed {removedTriangles} tris ({shredTriangles} in shreds), {holes} holes closed with {fillTriangles} | links {links} sliders {sliders} | quads {quads} | {ms} ms";
         }
 
         /// <summary>One recognised band: its centre line and the cross-section along it.</summary>
@@ -241,6 +272,8 @@ namespace NativeRemesher
             public bool lying;
             /// <summary>Its thin faces in the input topology. Used while finding its faces.</summary>
             public List<int> seedFaces;
+            /// <summary>Not a ribbon alone (too short, or attached): one may be continued by it through a slider.</summary>
+            public bool candidate;
         }
 
         /// <summary>A buckle where ribbons meet: a box, axisX and axisY across the surface, up off it.</summary>
@@ -250,6 +283,8 @@ namespace NativeRemesher
             public Vector3 axisX, axisY, up;
             /// <summary>Half the box's size along axisX, axisY and up.</summary>
             public Vector3 halfSize;
+            /// <summary>All six sides: a slider wraps its strap all round; a buckle's bottom is in the surface.</summary>
+            public bool closed;
         }
 
         /// <summary>As below, with no buckles.</summary>
@@ -396,22 +431,28 @@ namespace NativeRemesher
             stats.pairs = plates.Count;
 
             var removed = new bool[nt];
+            var candidates = new List<Ribbon>();
             foreach (var plate in plates.Values)
             {
                 var seeds = new List<int>();
                 foreach (var s in plate) seeds.AddRange(sideFaces[s]);
                 var found = Measure(topology, N, thickness, opposite, grid, seeds, cell, outward, stats);
                 if (found == null) continue;
-                foreach (var ribbon in found)
-                {
-                    ribbons.Add(ribbon);
-                    // Its faces: both sides, and the rims between them.
-                    Collect(topology, ribbon, ribbon.seedFaces, removed, cell);
-                    ribbon.seedFaces = null;
-                }
+                foreach (var ribbon in found) (ribbon.candidate ? candidates : ribbons).Add(ribbon);
+            }
+            var sliders = new List<Block>();
+            if (linkSliders && ribbons.Count > 0) Link(ribbons, candidates, P, N, cell, sliders, stats);
+            foreach (var ribbon in ribbons)
+            {
+                // Its faces: both sides, and the rims between them.
+                Collect(topology, ribbon, ribbon.seedFaces, removed, cell);
+                ribbon.seedFaces = null;
             }
             stats.ribbons = ribbons.Count;
             if (ribbons.Count == 0) { stats.ms = watch.ElapsedMilliseconds; return ribbons; }
+            foreach (var slider in sliders) TakeBox(P, T, slider, removed, cell);
+            stats.sliders = sliders.Count;
+            if (blocks != null && buckleBlocks) blocks.AddRange(sliders);
             if (blocks != null && buckleBlocks) FindBlocks(topology, N, ribbons, removed, cell, blocks, stats);
             DropShreds(topology, removed, cell, stats);
 
@@ -419,6 +460,237 @@ namespace NativeRemesher
             debugKept?.Invoke(keptPositions, keptTriangles);
             stats.ms = watch.ElapsedMilliseconds;
             return ribbons;
+        }
+
+        // ------------------------------------------------------------------
+        // Straps through sliders. Repeatedly, the nearest pair of an attached ribbon end and an
+        // end of another ribbon or candidate that goes on in line (gap along the end's tangent,
+        // tangents agreeing, widths alike) is joined into one ribbon; the gap's source points
+        // within the strap's reach are boxed as the slider.
+        static void Link(List<Ribbon> ribbons, List<Ribbon> candidates, Vector3[] P, Vector3[] N, float cell,
+            List<Block> sliders, Stats stats)
+        {
+            var maxGap = sliderGapCells * cell;
+            for (var round = 0; round < 64; round++)
+            {
+                Ribbon bestA = null, bestB = null;
+                bool bestAStart = false, bestBStart = false;
+                var bestGap = float.PositiveInfinity;
+                var pool = new List<Ribbon>(ribbons);
+                pool.AddRange(candidates);
+                foreach (var a in ribbons)
+                    for (var ea = 0; ea < 2; ea++)
+                    {
+                        var aStart = ea == 0;
+                        if (aStart ? a.freeStart : a.freeEnd) continue;
+                        End(a, aStart, out var pa, out var ta);
+                        foreach (var b in pool)
+                        {
+                            if (b == a) continue;
+                            var ratio = b.medianWidth / a.medianWidth;
+                            if (ratio < 1f / sliderWidthRatio || ratio > sliderWidthRatio) continue;
+                            for (var eb = 0; eb < 2; eb++)
+                            {
+                                var bStart = eb == 0;
+                                End(b, bStart, out var pb, out var tb);
+                                var d = pb - pa;
+                                var gap = d.magnitude;
+                                if (round == 0 && debugLog != null && gap < 4f * cell)
+                                    Log($"near miss dots {Vector3.Dot(ta, -tb):F2} {(gap > 0f ? Vector3.Dot(d / gap, ta) : 1f):F2} ratio {ratio:F2} candidate {b.candidate}",
+                                        pa, gap, b.medianWidth, 0f, cell);
+                                if (gap > maxGap || gap >= bestGap) continue;
+                                // b's end faces back at a's; both lines run on through the gap.
+                                // A long gap (a slider and the strap's bend out of it) in line only.
+                                var least = gap > 2.5f * cell ? 0.85f : 0.7f;
+                                if (Vector3.Dot(ta, -tb) < least) continue;
+                                // Where a third ribbon ends at the gap it is a buckle, not a slider.
+                                if (ThirdEndNear(ribbons, a, b, pa, junctionRadiusCells * cell)
+                                    || ThirdEndNear(ribbons, a, b, 0.5f * (pa + pb), junctionRadiusCells * cell)) continue;
+                                if (gap > 0.3f * cell && Vector3.Dot(d / gap, ta) < least) continue;
+                                bestA = a; bestB = b; bestAStart = aStart; bestBStart = bStart; bestGap = gap;
+                            }
+                        }
+                    }
+                if (bestA == null) return;
+                if (bestAStart) Reverse(bestA);
+                if (!bestBStart) Reverse(bestB);
+                if (debugLog != null)
+                {
+                    var bc = bestB.centre;
+                    Log($"link joins {bestA.centre[bestA.centre.Length - 1]} to {bc[0]} .. {bc[bc.Length - 1]} (piece {bestB.length / cell:F1} cells, candidate {bestB.candidate})",
+                        bestA.centre[0], bestA.length, bestB.medianWidth, 0f, cell);
+                }
+                var slider = Join(bestA, bestB, P, N, cell);
+                if (slider != null)
+                {
+                    sliders.Add(slider);
+                    Log($"slider box half {slider.halfSize.x / cell:F2} {slider.halfSize.y / cell:F2} {slider.halfSize.z / cell:F2} strap {bestA.medianWidth / cell:F2} x {bestA.medianThickness / cell:F2}",
+                        slider.centre, 0f, 0f, 0f, cell);
+                }
+                ribbons.Remove(bestB);
+                candidates.Remove(bestB);
+                stats.links++;
+                Log("slider link", bestA.centre[bestA.centre.Length / 2], bestGap, bestA.medianWidth, slider != null ? 1f : 0f, cell);
+            }
+        }
+
+        static bool ThirdEndNear(List<Ribbon> ribbons, Ribbon a, Ribbon b, Vector3 at, float radius)
+        {
+            foreach (var r in ribbons)
+            {
+                if (r == a || r == b) continue;
+                if (!r.freeStart && (r.centre[0] - at).magnitude < radius) return true;
+                if (!r.freeEnd && (r.centre[r.centre.Length - 1] - at).magnitude < radius) return true;
+            }
+            return false;
+        }
+
+        // An end of a ribbon: its centre point and the tangent going out of it.
+        static void End(Ribbon r, bool start, out Vector3 p, out Vector3 outDir)
+        {
+            var c = r.centre;
+            var m = c.Length;
+            if (start)
+            {
+                p = c[0];
+                outDir = MeshMath.SafeNormalize(c[0] - c[Mathf.Min(m - 1, 2)], Vector3.up);
+            }
+            else
+            {
+                p = c[m - 1];
+                outDir = MeshMath.SafeNormalize(c[m - 1] - c[Mathf.Max(0, m - 3)], Vector3.up);
+            }
+        }
+
+        static void Reverse(Ribbon r)
+        {
+            Array.Reverse(r.centre);
+            Array.Reverse(r.up);
+            Array.Reverse(r.width);
+            Array.Reverse(r.thickness);
+            (r.startTrim, r.endTrim) = (r.endTrim, r.startTrim);
+            (r.freeStart, r.freeEnd) = (r.freeEnd, r.freeStart);
+        }
+
+        // a's end joined to b's start: one line through the gap; the slider in the gap, or null.
+        static Block Join(Ribbon a, Ribbon b, Vector3[] P, Vector3[] N, float cell)
+        {
+            var ua = a.up[a.up.Length - 1];
+            if (Vector3.Dot(ua, b.up[0]) < 0f)
+                for (var i = 0; i < b.up.Length; i++) b.up[i] = -b.up[i];
+            Vector3 p0 = a.centre[a.centre.Length - 1], p1 = b.centre[0];
+            var gap = Vector3.Distance(p0, p1);
+            var steps = Mathf.Max(0, Mathf.FloorToInt(gap / (0.5f * cell)));
+            var centre = new List<Vector3>(a.centre);
+            var up = new List<Vector3>(a.up);
+            var width = new List<float>(a.width);
+            var thickness = new List<float>(a.thickness);
+            for (var i = 1; i <= steps; i++)
+            {
+                var f = i / (steps + 1f);
+                centre.Add(Vector3.Lerp(p0, p1, f));
+                up.Add(MeshMath.SafeNormalize(Vector3.Lerp(ua, b.up[0], f), ua));
+                width.Add(Mathf.Lerp(a.width[a.width.Length - 1], b.width[0], f));
+                thickness.Add(Mathf.Lerp(a.thickness[a.thickness.Length - 1], b.thickness[0], f));
+            }
+            centre.AddRange(b.centre); up.AddRange(b.up); width.AddRange(b.width); thickness.AddRange(b.thickness);
+
+            // The slider: the source round the gap, in the strap's frame there.
+            Block slider = null;
+            var T = MeshMath.SafeNormalize(p1 - p0, Vector3.zero);
+            if (T != Vector3.zero)
+            {
+                var U = MeshMath.SafeNormalize(ua - T * Vector3.Dot(ua, T), Vector3.up);
+                var X = Vector3.Cross(U, T);
+                var mid = 0.5f * (p0 + p1);
+                var halfW = 0.5f * a.medianWidth;
+                var halfT = 0.5f * a.medianThickness;
+                var reachAlong = 0.5f * gap + 0.25f * cell;
+                var xs = new List<float>(); var ys = new List<float>(); var ss = new List<float>();
+                var r2 = (reachAlong + halfW + cell) * (reachAlong + halfW + cell);
+                for (var v = 0; v < P.Length; v++)
+                {
+                    var d = P[v] - mid;
+                    if (d.sqrMagnitude > r2) continue;
+                    var s = Vector3.Dot(d, T);
+                    var x = Vector3.Dot(d, X);
+                    var y = Vector3.Dot(d, U);
+                    if (Mathf.Abs(s) > reachAlong || Mathf.Abs(x) > halfW + 0.75f * cell) continue;
+                    if (Mathf.Abs(y) > halfT + 0.75f * cell) continue;
+                    // The slider's outside faces away from the strap it wraps; a surface beside
+                    // it (the cheek the strap runs over) faces towards it.
+                    if (Vector3.Dot(N[v], X * x + U * y) <= 0f) continue;
+                    xs.Add(x); ys.Add(y); ss.Add(s);
+                }
+                // Its length: where the part stands out of the strap's own section (the rest of the
+                // gap is the strap, bending out of the slider).
+                var proud = new List<float>();
+                for (var i = 0; i < ss.Count; i++)
+                    if (Mathf.Abs(xs[i]) > halfW + 0.1f * cell || Mathf.Abs(ys[i]) > halfT + 0.1f * cell) proud.Add(ss[i]);
+                if (proud.Count >= 20)
+                {
+                    proud.Sort();
+                    float lo = proud[Mathf.RoundToInt(0.03f * (proud.Count - 1))], hi = proud[Mathf.RoundToInt(0.97f * (proud.Count - 1))];
+                    for (var i = ss.Count - 1; i >= 0; i--)
+                        if (ss[i] < lo || ss[i] > hi) { ss.RemoveAt(i); xs.RemoveAt(i); ys.RemoveAt(i); }
+                }
+                if (xs.Count >= 30)
+                {
+                    xs.Sort(); ys.Sort(); ss.Sort();
+                    float Pct(List<float> l, float q) => l[Mathf.Clamp(Mathf.RoundToInt(q * (l.Count - 1)), 0, l.Count - 1)];
+                    float x0 = Pct(xs, 0.03f), x1 = Pct(xs, 0.97f), s0 = Pct(ss, 0.03f), s1 = Pct(ss, 0.97f);
+                    var top = Mathf.Max(Pct(ys, 0.97f), halfT);
+                    var bottom = Mathf.Min(Pct(ys, 0.03f), -halfT);
+                    if (a.lying) bottom -= lyingEmbedCells * cell;
+                    // A slider stands out of the strap: wider or taller than it; else it was just a gap.
+                    if ((x1 - x0 > 1.1f * a.medianWidth || top > halfT + 0.1f * cell) && s1 - s0 > 0.2f * cell)
+                        slider = new Block
+                        {
+                            centre = mid + T * (0.5f * (s0 + s1)) + X * (0.5f * (x0 + x1)) + U * (0.5f * (top + bottom)),
+                            axisX = T,
+                            axisY = X,
+                            up = U,
+                            halfSize = new Vector3(0.5f * (s1 - s0), 0.5f * (x1 - x0), 0.5f * (top - bottom)),
+                            closed = true
+                        };
+                }
+            }
+
+            var length = 0f;
+            for (var i = 1; i < centre.Count; i++) length += Vector3.Distance(centre[i - 1], centre[i]);
+            var lying = a.length * (a.lying ? 1 : -1) + b.length * (b.lying ? 1 : -1) > 0f;
+            a.medianWidth = (a.medianWidth * a.length + b.medianWidth * b.length) / Mathf.Max(1e-6f, a.length + b.length);
+            a.medianThickness = (a.medianThickness * a.length + b.medianThickness * b.length) / Mathf.Max(1e-6f, a.length + b.length);
+            a.centre = centre.ToArray();
+            a.up = up.ToArray();
+            a.width = width.ToArray();
+            a.thickness = thickness.ToArray();
+            a.length = length;
+            a.lying = lying;
+            a.endTrim = b.endTrim;
+            a.freeEnd = b.freeEnd;
+            var medial = new List<Vector3>(a.medial);
+            medial.AddRange(b.medial);
+            a.medial = medial.ToArray();
+            a.seedFaces.AddRange(b.seedFaces);
+            return slider;
+        }
+
+        // Faces with their centre in the box (a little bigger) go with it.
+        static void TakeBox(Vector3[] P, int[] T, Block box, bool[] removed, float cell)
+        {
+            var margin = 0.05f * cell;
+            var h = box.halfSize + new Vector3(margin, margin, margin);
+            var r2 = h.sqrMagnitude;
+            for (var t = 0; t < removed.Length; t++)
+            {
+                if (removed[t]) continue;
+                var d = (P[T[3 * t]] + P[T[3 * t + 1]] + P[T[3 * t + 2]]) / 3f - box.centre;
+                if (d.sqrMagnitude > r2) continue;
+                if (Mathf.Abs(Vector3.Dot(d, box.axisX)) > h.x || Mathf.Abs(Vector3.Dot(d, box.axisY)) > h.y
+                    || Mathf.Abs(Vector3.Dot(d, box.up)) > h.z) continue;
+                removed[t] = true;
+            }
         }
 
         // ------------------------------------------------------------------
@@ -955,7 +1227,9 @@ namespace NativeRemesher
             var a0 = Farthest(Distances(0));
             var along = Distances(a0);
             var length = along[Farthest(along)];
-            if (length < minLengthCells * cell) { stats.rejectedShort++; Log("short", mid[a0], length, 0f, 0f, cell); return null; }
+            // Too short to be a ribbon -- unless it may continue one through a slider.
+            if (length < (linkSliders ? Mathf.Min(minLengthCells, minContinuationCells) : minLengthCells) * cell)
+            { stats.rejectedShort++; Log("short", mid[a0], length, 0f, 0f, cell); return null; }
 
             // Binned by distance along: centres, and the plate's normal with one sign throughout.
             var bins = Mathf.Clamp(Mathf.CeilToInt(length / (0.5f * cell)), 2, 4096);
@@ -1185,6 +1459,14 @@ namespace NativeRemesher
                 runSpans.Add((k0, k1));
                 k0 = k1 + 1;
             }
+            // A plate too short to be a ribbon is one piece that may continue one: one run, the
+            // partial-width bins at its ends and all.
+            if (length < minLengthCells * cell)
+            {
+                runSpans.Clear();
+                runSpans.Add((0, m - 1));
+                for (var k = 0; k < m; k++) runOf[k] = 0;
+            }
             var good = new bool[m];
             for (var k = 0; k < m; k++) good[k] = runSpans[runOf[k]].end > runSpans[runOf[k]].start;
             var vertexBin = new Dictionary<int, int>();
@@ -1227,10 +1509,16 @@ namespace NativeRemesher
                 var startTrim = Mathf.Min(1.5f * cell, Vector3.Distance(c[before], c[start]));
                 var endTrim = Mathf.Min(1.5f * cell, Vector3.Distance(c[k1], c[after]));
                 var at = rc[count / 2];
-                if (lineLength + startTrim + endTrim < minAspect * runWidth || lineLength < minLengthCells * cell)
-                { stats.rejectedStubby++; Log("stubby", at, lineLength, runWidth, 0f, cell); continue; }
                 if (runWidth > maxWidthCells * cell || runWidth < minWidthCells * cell)
                 { stats.rejectedWide++; Log("run width", at, lineLength, runWidth, 0f, cell); continue; }
+                var candidate = false;
+                if (lineLength + startTrim + endTrim < minAspect * runWidth || lineLength < minLengthCells * cell)
+                {
+                    stats.rejectedStubby++;
+                    Log("stubby", at, lineLength, runWidth, 0f, cell);
+                    if (!linkSliders || lineLength < minContinuationCells * cell) continue;
+                    candidate = true;
+                }
 
                 // A free rim: from inside the plate, sideways, its own narrow side faces out within
                 // half the width. Along an edge the plate is attached by, the material goes on into
@@ -1244,8 +1532,17 @@ namespace NativeRemesher
                     if (Rim(c[k], -across[k], reach)) free++;
                 }
                 if (free < minFreeRimFraction * 2 * count)
-                { stats.rejectedAttached++; Log("attached", at, lineLength, runWidth, free / (2f * count), cell); continue; }
-                Log(round ? "cable" : "ribbon", at, lineLength, runWidth, free / (2f * count), cell);
+                {
+                    if (!candidate)
+                    {
+                        stats.rejectedAttached++;
+                        Log("attached", at, lineLength, runWidth, free / (2f * count), cell);
+                    }
+                    // Only a short piece continues a strap: a long one attached along its length is
+                    // part of something else (the chin cup's rim, run through the buckle, 2026-10-19).
+                    if (!linkSliders || !candidate || !continueAttached) continue;
+                }
+                if (!candidate) Log(round ? "cable" : "ribbon", at, lineLength, runWidth, free / (2f * count), cell);
 
                 var rw = Slice(width, start, count);
                 var rt = Slice(thicknessAt, start, count);
@@ -1287,7 +1584,8 @@ namespace NativeRemesher
                     medial = medial.ToArray(),
                     medianThickness = runThickness,
                     lying = raised > all / 2,
-                    seedFaces = seedFaces
+                    seedFaces = seedFaces,
+                    candidate = candidate
                 });
             }
             return found;
@@ -1760,6 +2058,30 @@ namespace NativeRemesher
                 if (ribbon.freeStart && rings.Count > 1) Cap(rings[0], rings[1]);
                 if (ribbon.freeEnd && rings.Count > 1) Cap(rings[rings.Count - 1], rings[rings.Count - 2]);
             }
+            // Tube quads wholly inside a slider's box are never seen (nor baked to): dropped.
+            if (blocks != null && openBottoms)
+            {
+                bool Inside(Vector3 p)
+                {
+                    foreach (var b in blocks)
+                    {
+                        if (!b.closed) continue;
+                        var d = p - b.centre;
+                        // Strictly inside: the box's own corners are on it, not in it.
+                        var h = 0.98f * b.halfSize;
+                        if (Mathf.Abs(Vector3.Dot(d, b.axisX)) < h.x && Mathf.Abs(Vector3.Dot(d, b.axisY)) < h.y
+                            && Mathf.Abs(Vector3.Dot(d, b.up)) < h.z) return true;
+                    }
+                    return false;
+                }
+                var inside = new bool[outPositions.Count];
+                for (var i = 0; i < inside.Length; i++) inside[i] = Inside(outPositions[i]);
+                outFaces.RemoveAll(f =>
+                {
+                    foreach (var v in f) if (!inside[v]) return false;
+                    return true;
+                });
+            }
             positions = outPositions.ToArray();
             faces = outFaces;
         }
@@ -1800,7 +2122,7 @@ namespace NativeRemesher
                 for (var side = 0; side < 2; side++)
                 {
                     // The bottom is inside the surface it stands in.
-                    if (openBottoms && axis == 2 && side == 0) continue;
+                    if (openBottoms && !block.closed && axis == 2 && side == 0) continue;
                     int nu = n[(axis + 1) % 3], nw = n[(axis + 2) % 3];
                     for (var u = 0; u < nu; u++)
                         for (var w = 0; w < nw; w++)

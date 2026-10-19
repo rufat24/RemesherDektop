@@ -678,3 +678,26 @@ every non-band-shaped thin region (chin cup cut into jagged pieces), boxes at si
 Still open: straps through sliders (the strap stops at the slider, the rest melts -- the piece
 beyond is a separate plate, rejected); the chin cup (a curled thin shell, not a band); the back
 straps' wrap under the rim; a lattice fold on the helmet front that comes and goes with the count.
+
+## Round 25: straps through sliders (branch remesher-band-structure)
+
+A slider is thicker than its strap: the strap's plate stops there and the piece beyond is its own
+plate, too short to pass (or, for the strap up to the helmet, attached). Now: short pieces are kept
+as candidates (short plates too, one run each); an attached ribbon end links to a piece or ribbon
+ahead within 4 cells (past 2.5 cells both directions within 32 deg), width ratio <= 1.4, not where a
+third ribbon ends (buckle); repeated, so a strap can pass several. The slider is boxed in the
+strap's frame from source points facing away from the strap (the cheek beside it faces towards it)
+and its length taken where the part stands out of the strap's section; tube quads inside the box
+dropped. Rejected on the way: linking long attached pieces (the chin cup's rim ran through a buckle,
+hausdorff 0.048), 0.5-cell pieces without a direction check (the helmet rim cable chained, chin
+pieces linked through the buckle: hausdorff 0.029, irregular 4.34 %).
+
+Head 3,000: 4 links (side straps through the top sliders on to the helmet, jaw straps through the
+jaw sliders round the neck), 2 buckles. irregular 3.53 %, chamfer 0.00101, hausdorff 0.0182. Body and
+ccnb: nothing found, identical.
+
+Also fixed: in Unity's runtime only (it solves a slightly different lattice), the head with its
+straps taken out crashed QuantizedLayout.Build with an IndexOutOfRange building arc points (an arc
+with a negative length or a missing end node). Such a layout is now dropped (stats.invalidArcs) and
+the solve goes on without it. Unity RenderCheck head 3,000 after: 8,212 faces, 100 % quads, missed
+texels 49,767 (hidden: inside sliders, buckles and the surface). EditMode 216: 214 passed, 0 failed.
