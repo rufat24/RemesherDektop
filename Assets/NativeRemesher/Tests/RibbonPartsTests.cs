@@ -151,6 +151,38 @@ namespace NativeRemesher.Tests
         }
 
         [Test]
+        public void RaisedBandIsFoundTheSameHoweverTheModelIsTurned()
+        {
+            // The same slab and band, as built and turned about all three axes and moved: the
+            // thickness and raised-band tests must not lean on the world axes.
+            var positions = new List<Vector3>();
+            var triangles = new List<int>();
+            AddSlabWithRaisedBand(positions, triangles);
+            // About x, then y, then z (plain sines: no engine calls, so it runs outside the editor too).
+            Vector3 Turn(Vector3 p)
+            {
+                float c1 = Mathf.Cos(0.54f), s1 = Mathf.Sin(0.54f), c2 = Mathf.Cos(-0.82f), s2 = Mathf.Sin(-0.82f), c3 = Mathf.Cos(1.97f), s3 = Mathf.Sin(1.97f);
+                p = new Vector3(p.x, c1 * p.y - s1 * p.z, s1 * p.y + c1 * p.z);
+                p = new Vector3(c2 * p.x + s2 * p.z, p.y, -s2 * p.x + c2 * p.z);
+                return new Vector3(c3 * p.x - s3 * p.y, s3 * p.x + c3 * p.y, p.z);
+            }
+            var turned = new Vector3[positions.Count];
+            for (var i = 0; i < turned.Length; i++) turned[i] = Turn(positions[i]) + new Vector3(3.1f, -2f, 0.7f);
+
+            var a = new RibbonParts.Stats();
+            var b = new RibbonParts.Stats();
+            var ra = RibbonParts.Find(positions.ToArray(), triangles.ToArray(), k_Cell, out _, out _, out _, out _, out _, a);
+            var rb = RibbonParts.Find(turned, triangles.ToArray(), k_Cell, out _, out _, out _, out _, out _, b);
+
+            Assert.AreEqual(1, ra.Count, a.ToString());
+            Assert.AreEqual(ra.Count, rb.Count, "as built: " + a + "\nturned: " + b);
+            Assert.That(b.reliefVertices, Is.InRange(0.98f * a.reliefVertices, 1.02f * a.reliefVertices), "raised vertices: " + a + "\nturned: " + b);
+            Assert.That(b.thinVertices, Is.InRange(0.98f * a.thinVertices, 1.02f * a.thinVertices), "thin vertices: " + a + "\nturned: " + b);
+            Assert.AreEqual(ra[0].medianWidth, rb[0].medianWidth, 0.1f * k_Cell, "the band's width");
+            Assert.AreEqual(ra[0].length, rb[0].length, 0.5f * k_Cell, "the band's length");
+        }
+
+        [Test]
         public void StrapRunsOnThroughASlider()
         {
             // A strap lying on a slab, a slider (taller and wider) on it, and a piece of strap out of
