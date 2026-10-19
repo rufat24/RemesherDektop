@@ -993,6 +993,27 @@ namespace NativeRemesher.Extraction
         /// <summary>Make the border and the coherent creases grid lines of the parametrisation.</summary>
         public static bool parametrizationFeatures = true;
 
+        /// <summary>
+        /// Output vertices the quad layout placed on one of its grid lines (the border and the
+        /// creases above) slide only along that line during surface relaxation; where the line
+        /// turns or ends they are held.
+        /// </summary>
+        /// <remarks>
+        /// The scan profile switches relaxation's own crease test off (on a scan the bends it would
+        /// find are noise), so relaxation smoothed every vertex freely -- including the rows the
+        /// layout had laid exactly on the building edges. ccnb at 5000: of the interior creases the
+        /// layout follows, 10.5 % of their length lay more than 0.3 cell from any output edge after
+        /// the layout and 47.1 % after relaxation -- the wavy roof edges and walls. Off: the old
+        /// behaviour. See <see cref="layoutLineToleranceCells"/>.
+        /// </remarks>
+        public static bool relaxAlongLayoutLines = true;
+
+        /// <summary>How close, in cells, a layout vertex must sit to a grid line to count as on it.</summary>
+        public static float layoutLineToleranceCells = 0.3f;
+
+        /// <summary>Move the vertices found on a grid line exactly onto it before relaxation.</summary>
+        public static bool layoutLineMoveOnto = false;
+
         /// <summary>Shortest coherent crease, in cells, made a grid line of the parametrisation.</summary>
         public static float parametrizationCreaseMinCells = 3f;
 

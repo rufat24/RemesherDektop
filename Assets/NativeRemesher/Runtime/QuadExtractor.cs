@@ -70,6 +70,12 @@ namespace NativeRemesher
         public Vector3[] shadingNormals;
 
         /// <summary>
+        /// Output vertices the quad layout laid on one of its grid lines (IntegerGridMap
+        /// .relaxAlongLayoutLines), or null. Later passes that smooth leave them where they are.
+        /// </summary>
+        [NonSerialized] public bool[] onLayoutLine;
+
+        /// <summary>
         /// Per-output-vertex UV, sampled from the source surface, or null when the source had none.
         /// </summary>
         /// <remarks>
@@ -374,6 +380,12 @@ namespace NativeRemesher
 
         /// <summary>Pull output vertices onto nearby input creases once everything else is final.</summary>
         public bool snapToFeatures = true;
+
+        /// <summary>
+        /// The quad layout's grid lines as segment end points (0-1, 2-3, ...), or null. Output
+        /// vertices on them slide along them in relaxation. See IntegerGridMap.relaxAlongLayoutLines.
+        /// </summary>
+        public Vector3[] layoutLines;
 
         /// <summary>
         /// Creases (indexed by <see cref="featurePositions"/>) to slide the nearest parallel edge
@@ -865,11 +877,22 @@ namespace NativeRemesher
             Stage("orient");
             Census(census, "repair + orient", faces);
 
+            // The layout laid rows exactly on its grid lines (building edges, the border): those
+            // vertices slide along them, see IntegerGridMap.relaxAlongLayoutLines.
+            var lineTolerance = Extraction.IntegerGridMap.layoutLineToleranceCells * position.scale;
+            var lineSet = usedLayout && options.layoutLines != null && lineTolerance > 0f
+                ? new LineSet(options.layoutLines, lineTolerance)
+                : null;
+            var onLine = VerticesOnLines(positions, lineSet, lineTolerance,
+                Extraction.IntegerGridMap.layoutLineMoveOnto);
+            if (onLine == null) lineSet = null;
+            result.onLayoutLine = onLine;
             if (options.relaxSurface && options.surface != null)
                 result.relaxStats = SurfaceRelaxation.Run(faces, positions, options.surface,
                     position.scale, options.relaxIterations, options.relaxStrength,
                     options.relaxMaxProjection, SurfaceRelaxation.defaultConvergence,
-                    options.relaxFeatureAngleDegrees, options.relaxMaxDrift);
+                    options.relaxFeatureAngleDegrees, options.relaxMaxDrift, onLine: onLine, lines: lineSet,
+                    lineReach: lineTolerance);
             Stage("relax");
 
             var creaseLoopPositions = options.creaseLoopPositions ?? options.featurePositions;
@@ -897,7 +920,7 @@ namespace NativeRemesher
                         Extraction.IntegerGridMap.creaseLoopRelaxIterations, options.relaxStrength,
                         options.relaxMaxProjection, SurfaceRelaxation.defaultConvergence,
                         options.relaxFeatureAngleDegrees, Extraction.IntegerGridMap.creaseLoopRelaxMaxDrift,
-                        pinned);
+                        pinned, onLine, lineSet, lineTolerance);
                 }
             }
 
@@ -914,6 +937,25 @@ namespace NativeRemesher
             result.faces = faces;
             Recount(result);
             return result;
+        }
+
+        /// <summary>
+        /// Which of <paramref name="positions"/> lie within <paramref name="tolerance"/> of one of
+        /// <paramref name="lines"/>, optionally moved exactly onto it. Null when none do.
+        /// </summary>
+        internal static bool[] VerticesOnLines(Vector3[] positions, LineSet lines, float tolerance,
+            bool moveOnto = false)
+        {
+            if (positions == null || lines == null || !(tolerance > 0f)) return null;
+            bool[] on = null;
+            for (var v = 0; v < positions.Length; v++)
+            {
+                if (!lines.Nearest(positions[v], tolerance, out var point, out _)) continue;
+                on ??= new bool[positions.Length];
+                on[v] = true;
+                if (moveOnto) positions[v] = point;
+            }
+            return on;
         }
 
         static void EdgeCensus(List<int[]> faces, out int open, out int nonManifold)

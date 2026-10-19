@@ -800,3 +800,59 @@ photo up close).
 
 Tests: .NET runner 30 passed (two need Unity's Mesh); Unity EditMode 220: 218 passed, 0 failed,
 2 skipped.
+
+## Round 28: wavy building edges on scans -- the layout's lines kept through the smoothing passes (branch remesher-band-structure)
+
+ccnb's "wobble" (wavy roof edges, walls shading as zig-zag trenches, the baked texture's wall
+rims wavy from above) is not from the recent strap or bake commits: ccnb at 5000 through the
+pre-strap commit 3aab266 gives the same METRIC line to the digit as HEAD (the strap finder finds
+no ribbons on ccnb), and the round 14 renders show the same staircase.
+
+Measured with a new number: of the creases the parametrisation lays as grid lines (the interior
+ones -- building edges -- not the border), how much of their length lies more than 0.3 cell from
+any output edge (scratchpad wobble.py on the harness's .pfeat.obj). ccnb 5000: 10.5 % after the
+quad layout, 47.1 % in the final mesh. Two later passes moved the rows off the lines:
+
+- SurfaceRelaxation: the scan profile has featureAngleDegrees 0, so its crease test is off and
+  every vertex is smoothed freely, including the rows the layout laid on the edges (relaxation
+  off: 12.3 %).
+- SurfaceClean: a vertex on a parapet looks like a spike to it (SurfaceClean off: 7.2 %).
+
+`IntegerGridMap.relaxAlongLayoutLines` (on): output vertices within `layoutLineToleranceCells`
+(0.3) of one of the layout's lines (`ExtractionOptions.layoutLines`, the parametrisation's feature
+edges; `Extraction.LineSet`) slide only along that line in relaxation (kept on it, not merely
+moved along it), are held where it turns or ends, and are left alone by SurfaceClean
+(`QuadExtractionResult.onLayoutLine`). `layoutLineMoveOnto` (off) also moves them onto the line
+first -- measured no better. Same topology in every case (face and irregular counts identical).
+
+| 5000, window path | edge length > 0.3 cell off, before -> after | inputToOutput mean | other |
+|---|---|---|---|
+| ccnb | 47.1 % -> 9.9 % | 0.147 -> 0.131 | chamfer 0.00034 -> 0.00030, Hausdorff same, turn p90 11.6 -> 12.5 deg |
+| head | 20.5 % -> 10.6 % | 0.138 -> 0.136 | Hausdorff 0.0427 -> 0.0484: the chin cup's zipped patch, 4-5 cells off the surface in both |
+| body | 11.9 % -> 2.1 % | 0.101 -> 0.101 | Hausdorff 0.0090 -> 0.0091 |
+| main1 | 19.6 % -> 5.7 % | 0.068 -> 0.065 | Hausdorff 0.0088 -> 0.0086 |
+
+Tolerances 0.05 / 0.15 / 0.25 / 0.35 on ccnb (relaxation only): 37 / 31 / 21.5 / 19 %; with
+SurfaceClean holding them, 0.25 / 0.35: 11.0 / 8.4 %. 0.3 stays under half the smallest graded
+cell, so two parallel rows never take the same line. Unit test
+VerticesOnAGivenLineSlideAlongItAndStayOnIt.
+
+Looked at and NOT the cause, recorded so it is not chased again:
+
+- Model size. The Sketchfab helmet comes in 9 mm tall (Unity bakes the 0.01 import scale into
+  the vertices); the harness's QUAL turn reads 15.3 deg mean at that size and 6.3 at x1000, but
+  that is the harness's own single-precision metric failing -- the same meshes measured in double
+  precision (scratchpad dihed.py) have the same dihedrals at x1, x100 and x1000. The pipeline's
+  normals use MeshMath.SafeNormalize (no floor). Solving at a power-of-ten working size was built,
+  measured no different (studs part at 200 and 1000 too), and removed.
+- The helmet's artifacts ARE from this branch: "Straps As Tubes" (on in the window) takes the
+  nasal, a hanging bar and both eye-guard frames as straps (thin, free rims -- what a strap is)
+  and rebuilds them as box tubes; the curved frames come out jagged and the nasal's cut notches
+  the knotwork band. helmet_high at 3000: straps off = 3aab266 to the digit (irregular 4.95 %,
+  dihedral p90 40 deg); on: 5.57 %, p90 64 deg (the 40 open edges are the tubes' ends, by design).
+- The Porsche: the strap finder is not it (one part, at 4x budget). The budget is: split by area,
+  interior 32 %, wheels 16 %, underbody 13 %, the 19 exterior panels 34 % (body 3.4 m2 gets ~370
+  quads at 8000, cell ~10 cm; its roof-rail strips and flanges are narrower than that and
+  collapse -- at 4x it holds). Auto Profile reads every panel as a scan (probe 0.25-0.67, the
+  vertex-fraction limit SelectProfileKind's remarks predict for coarse modelled meshes); forcing
+  GameAsset is mixed (door Hausdorff .025 -> .011, body at 1280 .008 -> .220), so not a fix alone.

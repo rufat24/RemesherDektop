@@ -79,7 +79,13 @@ namespace NativeRemesher
         /// The surface the output lies on: real tips are told from spikes against it, and moved
         /// vertices are put back on it. Null: neither, as before.
         /// </param>
-        public static Stats Apply(Vector3[] positions, IList<int[]> faces, int iterations, SpatialGrid surface)
+        /// <param name="hold">
+        /// Vertices never moved, or null: the ones the quad layout laid on a building edge or a
+        /// border line (QuadExtractionResult.onLayoutLine), which sit there on purpose and look
+        /// like spikes to the test below.
+        /// </param>
+        public static Stats Apply(Vector3[] positions, IList<int[]> faces, int iterations, SpatialGrid surface,
+            bool[] hold = null)
         {
             var watch = System.Diagnostics.Stopwatch.StartNew();
             var stats = new Stats { iterations = iterations };
@@ -251,7 +257,7 @@ namespace NativeRemesher
                 for (var v = 0; v < n; v++)
                 {
                     moved[v] = positions[v];
-                    if (!fix[v] || boundary[v]) continue;
+                    if (!fix[v] || boundary[v] || hold != null && v < hold.Length && hold[v]) continue;
                     var c = Vector3.zero;
                     foreach (var u in neighbours[v]) c += positions[u];
                     moved[v] = c / neighbours[v].Count;
@@ -266,7 +272,7 @@ namespace NativeRemesher
                     var projected = 0;
                     for (var v = 0; v < n; v++)
                     {
-                        if (!fix[v] || boundary[v]) continue;
+                        if (!fix[v] || boundary[v] || hold != null && v < hold.Length && hold[v]) continue;
                         var reach = projectReachEdges * MeanEdge(v);
                         if (!(reach > 0f)) continue;
                         // The nearest point, not along the normal: over a notch narrower than the ring

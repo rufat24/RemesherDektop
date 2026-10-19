@@ -344,5 +344,71 @@ namespace NativeRemesher.Tests
             }
             return normal;
         }
+
+        /// <summary>
+        /// A roof edge: a flat roof (z = 0, x up to 3) and a wall going down from it (x = 3), with a
+        /// quad grid folded over the edge so one row of vertices lies exactly on it, spaced
+        /// unevenly. With the crease test off (a scan profile), relaxation rounds the edge off;
+        /// told the row is on a line, it keeps the row on the line and only evens it out along it.
+        /// </summary>
+        [Test]
+        public void VerticesOnAGivenLineSlideAlongItAndStayOnIt()
+        {
+            const int n = 6;
+            var side = n + 1;
+            Vector3 Fold(float u, float v) => u <= 3f ? new Vector3(u, v, 0f) : new Vector3(3f, v, 3f - u);
+            List<int[]> faces;
+            Vector3[] Build()
+            {
+                var p = new Vector3[side * side];
+                for (var y = 0; y <= n; y++)
+                    for (var x = 0; x <= n; x++)
+                    {
+                        // The row on the edge bunched towards one end, so there is spacing to even out.
+                        var v = x == 3 && y > 0 && y < n ? y - 0.35f * Mathf.Sin(y * Mathf.PI / n) : y;
+                        p[y * side + x] = Fold(x, v);
+                    }
+                return p;
+            }
+            faces = new List<int[]>();
+            for (var y = 0; y < n; y++)
+                for (var x = 0; x < n; x++)
+                    faces.Add(new[] { y * side + x, y * side + x + 1, (y + 1) * side + x + 1, (y + 1) * side + x });
+            var soup = new[]
+            {
+                new Vector3(-3f, -3f, 0f), new Vector3(3f, -3f, 0f), new Vector3(3f, 9f, 0f),
+                new Vector3(-3f, -3f, 0f), new Vector3(3f, 9f, 0f), new Vector3(-3f, 9f, 0f),
+                new Vector3(3f, -3f, 0f), new Vector3(3f, -3f, -6f), new Vector3(3f, 9f, -6f),
+                new Vector3(3f, -3f, 0f), new Vector3(3f, 9f, -6f), new Vector3(3f, 9f, 0f)
+            };
+            var surface = new SpatialGrid(soup, new[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 });
+
+            var onLine = new bool[side * side];
+            for (var y = 0; y <= n; y++) onLine[y * side + 3] = true;
+            var lines = new LineSet(new[] { new Vector3(3f, -1f, 0f), new Vector3(3f, n + 1f, 0f) }, 0.3f);
+
+            float Off(Vector3[] p)
+            {
+                var worst = 0f;
+                for (var y = 1; y < n; y++)
+                {
+                    var q = p[y * side + 3];
+                    worst = Mathf.Max(worst, new Vector2(q.x - 3f, q.z).magnitude);
+                }
+                return worst;
+            }
+
+            var free = Build();
+            SurfaceRelaxation.Run(faces, free, surface, 1f, featureAngleDegrees: 0f);
+            Assert.Greater(Off(free), 0.05f, "without the line the edge was not rounded off, so the test shows nothing");
+
+            var held = Build();
+            var before = held[3 * side + 3].y;
+            var stats = SurfaceRelaxation.Run(faces, held, surface, 1f, featureAngleDegrees: 0f,
+                onLine: onLine, lines: lines, lineReach: 0.3f);
+            Assert.Less(Off(held), 1e-4f, "a vertex on the line left it");
+            Assert.Greater(stats.slidingOnCrease, 0, "no vertex was free to slide along the line");
+            Assert.Greater(Mathf.Abs(held[3 * side + 3].y - before), 1e-3f, "the row was not evened out along the line");
+        }
     }
 }

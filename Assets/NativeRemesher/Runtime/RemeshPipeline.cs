@@ -741,7 +741,8 @@ namespace NativeRemesher
                 var cleanSurface = surfaceCleanUsesSurface && result.decimatedPositions != null && result.decimatedTriangles != null
                     ? new SpatialGrid(result.decimatedPositions, result.decimatedTriangles)
                     : null;
-                result.surfaceCleanStats = SurfaceClean.Apply(ex.positions, ex.faces, surfaceCleanIterations, cleanSurface);
+                result.surfaceCleanStats = SurfaceClean.Apply(ex.positions, ex.faces, surfaceCleanIterations, cleanSurface,
+                    ex.onLayoutLine);
                 if (ex.shadingNormals != null && ex.shadingNormals.Length == ex.positions.Length)
                     ex.shadingNormals = Extraction.NormalRecalculator.Compute(ex.faces, ex.positions, ex.normals);
             }
@@ -1270,6 +1271,16 @@ namespace NativeRemesher
             coarseOptions.featurePositions = topology.positions;
             coarseOptions.features = result.decimatedFeatures ??= FeatureGraph.Detect(topology,
                 result.profile.featureAngleDegrees);
+            if (Extraction.IntegerGridMap.relaxAlongLayoutLines && featureEdges != null && featureEdges.Count > 0)
+            {
+                var lines = new Vector3[2 * featureEdges.Count];
+                for (var i = 0; i < featureEdges.Count; i++)
+                {
+                    lines[2 * i] = topology.positions[featureEdges[i].a];
+                    lines[2 * i + 1] = topology.positions[featureEdges[i].b];
+                }
+                coarseOptions.layoutLines = lines;
+            }
         }
 
         /// <summary>

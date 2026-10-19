@@ -254,7 +254,7 @@ namespace NativeRemesher.Extraction
             float scale, int iterations = defaultIterations, float strength = defaultStrength,
             float maxProjection = defaultMaxProjection, float convergence = defaultConvergence,
             float featureAngleDegrees = defaultFeatureAngleDegrees, float maxDrift = defaultMaxDrift,
-            bool[] pinned = null)
+            bool[] pinned = null, bool[] onLine = null, LineSet lines = null, float lineReach = 0f)
         {
             if (faces == null) throw new ArgumentNullException(nameof(faces));
             if (positions == null) throw new ArgumentNullException(nameof(positions));
@@ -277,6 +277,13 @@ namespace NativeRemesher.Extraction
             // direction and only needs one degree of freedom removed.
             var onCrease = new bool[positions.Length];
             var creaseTangent = new Vector3[positions.Length];
+
+            // Vertices the caller knows to be on a line the output must keep (the quad layout's
+            // grid lines): creases whatever the angle test says, which a scan profile turns off.
+            var givenLine = onLine != null && onLine.Length >= positions.Length;
+            if (givenLine)
+                for (var v = 0; v < positions.Length; v++)
+                    if (onLine[v] && !onBoundary[v]) { onCrease[v] = true; stats.pinnedByFeature++; }
             BuildIncidence(faces, positions.Length, out var faceStart, out var faceOf);
 
             // Above 1 no dot can reach it, so every comparison against it passes and both crease
@@ -368,9 +375,10 @@ namespace NativeRemesher.Extraction
                 var a = -1;
                 var b = -1;
 
+                var lineOnly = givenLine && onLine[v];
                 for (var k = ringStart[v]; k < ringStart[v + 1]; k++)
                 {
-                    if (!onCrease[ring[k]]) continue;
+                    if (!onCrease[ring[k]] || lineOnly && !onLine[ring[k]]) continue;
                     found++;
 
                     var dk = positions[ring[k]] - positions[v];
@@ -379,7 +387,7 @@ namespace NativeRemesher.Extraction
 
                     for (var m = k + 1; m < ringStart[v + 1]; m++)
                     {
-                        if (!onCrease[ring[m]]) continue;
+                        if (!onCrease[ring[m]] || lineOnly && !onLine[ring[m]]) continue;
 
                         var dm = positions[ring[m]] - positions[v];
                         if (dm.magnitude < 1e-5f) continue;
@@ -393,7 +401,19 @@ namespace NativeRemesher.Extraction
                     }
                 }
 
-                if (a >= 0 && b >= 0)
+                // A given line is held where it turns or ends -- a wall's corner, the end of a roof
+                // edge -- and slides only where it runs straight through: no opposed pair within
+                // 30 degrees of a straight line, no slide.
+                if (lineOnly)
+                {
+                    // Along the line itself when it is known: the chord of two neighbours that sit
+                    // a little off it leads the vertex off it too.
+                    if (a >= 0 && b >= 0 && bestDot < -0.866f)
+                        creaseTangent[v] = lines != null && lines.Nearest(positions[v], lineReach, out _, out var along)
+                            ? along
+                            : positions[b] - positions[a];
+                }
+                else if (a >= 0 && b >= 0)
                     creaseTangent[v] = positions[b] - positions[a];
                 else if (found >= 1)
                 {
@@ -474,7 +494,22 @@ namespace NativeRemesher.Extraction
                         step = creaseTangent[v] * Vector3.Dot(step, creaseTangent[v]);
 
                     var candidate = sweepCurrent[v] + step;
-                    candidate = surface.NearestPoint(candidate, out var distance, out var landed);
+                    float distance;
+                    Vector3 landed;
+                    if (lines != null && givenLine && onLine[v] && creaseTangent[v] != Vector3.zero)
+                    {
+                        // Kept on the line, not merely moved along it: where the line bends, a
+                        // straight step leaves it.
+                        if (!lines.Nearest(candidate, lineReach, out candidate, out var along))
+                        {
+                            outcome[v] = 2;
+                            return;
+                        }
+                        creaseTangent[v] = along;
+                        surface.NearestPoint(candidate, out distance, out landed);
+                    }
+                    else
+                        candidate = surface.NearestPoint(candidate, out distance, out landed);
 
                     // Guard 2. `distance` is measured from the SMOOTHED point, so it answers "how
                     // far off the surface did smoothing take this vertex", which is the quantity
