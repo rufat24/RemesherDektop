@@ -856,3 +856,19 @@ Looked at and NOT the cause, recorded so it is not chased again:
   collapse -- at 4x it holds). Auto Profile reads every panel as a scan (probe 0.25-0.67, the
   vertex-fraction limit SelectProfileKind's remarks predict for coarse modelled meshes); forcing
   GameAsset is mixed (door Hausdorff .025 -> .011, body at 1280 .008 -> .220), so not a fix alone.
+
+Round 28, second part -- what was still wavy on ccnb: cars and small buildings.
+
+- Cars are smaller than a cell at 5000 (cell ~2 m on this 238 x 282 m site); in the geometry they
+  are gone or a gentle bump, and only the texture can show them. The colour bake's lines ran
+  along the bump's own tilted normals and threw the photo sideways -- bent outlines, the shed's
+  white halos. `TextureBake.colourDirectionSweeps` (25, a smoothed cage): the lines run along the
+  surface's general direction instead. PSNR against the scan (top / oblique): 0 sweeps 25.05 /
+  23.43 dB, 4: 25.46 / 23.39, 10: 25.78 / 23.33, 25: 26.24 / 23.22; in the renders the halos are
+  gone from above and at an angle. Neighbours facing away are not averaged in (thin plates; unit
+  test SmoothedBakeDirectionsKeepAThinPlatesTwoSidesApart -- a guard: the ray comes back through
+  its own texel's point, so it passes without the check too).
+- Sheds and trailers have edges of 3-6 cells, under the scan's 8-cell crease minimum, so they
+  were never layout lines. `RemeshPipeline.scanCreaseMinCellsOpen` 5 for scans with an open
+  border; numbers in its remarks (ccnb 8 -> 5: input-to-output 0.131 -> 0.119, shape the same,
+  trailers as boxes; the closed body is slightly worse at 5, so it stays at 8).

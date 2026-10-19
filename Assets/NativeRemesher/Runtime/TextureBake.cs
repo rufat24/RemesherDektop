@@ -140,6 +140,22 @@ namespace NativeRemesher
         /// <summary>How far out, in mean output edges, the colour bake's lines start.</summary>
         public static float colourReachEdges = 1.5f;
 
+        /// <summary>
+        /// Smoothing sweeps (one-ring averages) of the directions the colour bake's lines run along,
+        /// a smoothed cage: over a lump a cell or two wide (a car, a shed on an aerial scan) the
+        /// lump's own normals tilt and throw the photo sideways -- halos and bent outlines -- where
+        /// the surface's general direction looks at it as the camera did. 0: the vertex normals.
+        /// </summary>
+        /// <remarks>
+        /// ccnb at 5000, baked 4096, rendered against the scan (PSNR, top / oblique): 0 sweeps
+        /// 25.05 / 23.43 dB, 4: 25.46 / 23.39, 10: 25.78 / 23.33, 25: 26.24 / 23.22. The oblique
+        /// number falls a little because the lumps are still lumps; in the renders the shed's white
+        /// halos are gone and the cars' and roofs' outlines straight, from above and at an angle.
+        /// Neighbours facing away (more than 90 degrees from the vertex's own normal) are not
+        /// averaged in, so a thin plate's two sides keep their own directions.
+        /// </remarks>
+        public static int colourDirectionSweeps = 25;
+
         // ------------------------------------------------------------------ unwrap
 
         sealed class Chart
@@ -742,6 +758,7 @@ namespace NativeRemesher
             {
                 var list = faces as List<int[]> ?? new List<int[]>(faces);
                 normals = Extraction.NormalRecalculator.Compute(list, positions, null);
+                if (colourDirectionSweeps > 0) normals = SmoothDirections(list, normals, colourDirectionSweeps);
                 double edgeSum = 0;
                 var edgeCount = 0;
                 foreach (var face in faces)
@@ -876,6 +893,43 @@ namespace NativeRemesher
         }
 
         static float Cross(Vector2 a, Vector2 b) => a.x * b.y - a.y * b.x;
+
+        // Each sweep: every vertex's direction becomes the normalised sum over itself and its
+        // face neighbours.
+        static Vector3[] SmoothDirections(List<int[]> faces, Vector3[] normals, int sweeps)
+        {
+            var n = normals.Length;
+            var neighbours = new List<int>[n];
+            for (var i = 0; i < n; i++) neighbours[i] = new List<int>(6);
+            foreach (var face in faces)
+            {
+                if (face == null) continue;
+                for (var k = 0; k < face.Length; k++)
+                {
+                    int a = face[k], b = face[(k + 1) % face.Length];
+                    if (!neighbours[a].Contains(b)) neighbours[a].Add(b);
+                    if (!neighbours[b].Contains(a)) neighbours[b].Add(a);
+                }
+            }
+            var current = (Vector3[])normals.Clone();
+            var next = new Vector3[n];
+            for (var s = 0; s < sweeps; s++)
+            {
+                var from = current;
+                var to = next;
+                Parallel.For(0, n, BackgroundScheduler.Options, v =>
+                {
+                    // Only neighbours facing the same side: across a thin plate's rim the far
+                    // side faces the other way, and averaging the two would cancel.
+                    var sum = from[v];
+                    foreach (var w in neighbours[v])
+                        if (Vector3.Dot(from[w], normals[v]) > 0f) sum += from[w];
+                    to[v] = MeshMath.SafeNormalize(sum, from[v]);
+                });
+                (current, next) = (next, current);
+            }
+            return current;
+        }
 
         // ------------------------------------------------------------------ normal map
 

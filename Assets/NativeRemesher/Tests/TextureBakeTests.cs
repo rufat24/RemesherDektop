@@ -282,6 +282,68 @@ namespace NativeRemesher.Tests
         }
 
         [Test]
+        public void SmoothedBakeDirectionsKeepAThinPlatesTwoSidesApart()
+        {
+            // A plate 0.1 thick, 6 x 6: top red, bottom blue, rim green, baked onto itself. Smoothed
+            // bake directions averaged across the rim would cancel and tip the lines sideways; each
+            // side must still read its own colour, out to the faces at the rim.
+            const int n = 6;
+            const float h = 0.05f;
+            var top = Grid(n, out var grid);
+            var count = grid.Length;
+            var positions = new Vector3[2 * count];
+            for (var i = 0; i < count; i++)
+            {
+                positions[i] = grid[i] + new Vector3(0f, h, 0f);
+                positions[count + i] = grid[i] - new Vector3(0f, h, 0f);
+            }
+            var faces = new List<int[]>();
+            var kind = new List<int>();
+            foreach (var f in top) { faces.Add(f); kind.Add(0); }
+            foreach (var f in top) { faces.Add(new[] { f[3] + count, f[2] + count, f[1] + count, f[0] + count }); kind.Add(1); }
+            var uses = new Dictionary<(int, int), int>();
+            foreach (var f in top)
+                for (var k = 0; k < 4; k++)
+                {
+                    var e = (Mathf.Min(f[k], f[(k + 1) % 4]), Mathf.Max(f[k], f[(k + 1) % 4]));
+                    uses[e] = uses.TryGetValue(e, out var u) ? u + 1 : 1;
+                }
+            foreach (var f in top)
+                for (var k = 0; k < 4; k++)
+                {
+                    int a = f[k], b = f[(k + 1) % 4];
+                    if (uses[(Mathf.Min(a, b), Mathf.Max(a, b))] != 1) continue;
+                    faces.Add(new[] { b, a, a + count, b + count });
+                    kind.Add(2);
+                }
+            var st = new List<int>();
+            var texture = new List<int>();
+            for (var f = 0; f < faces.Count; f++)
+            {
+                var q = faces[f];
+                st.AddRange(new[] { q[0], q[1], q[2], q[0], q[2], q[3] });
+                texture.Add(kind[f]);
+                texture.Add(kind[f]);
+            }
+            TextureBake.Image Flat(Color32 c) => new TextureBake.Image(new[] { c, c, c, c }, 2, 2);
+            var images = new[] { Flat(new Color32(255, 0, 0, 255)), Flat(new Color32(0, 0, 255, 255)), Flat(new Color32(0, 255, 0, 255)) };
+
+            const int res = 256;
+            var stats = new TextureBake.Stats();
+            var uvs = TextureBake.Unwrap(positions, faces, res, stats);
+            var atlas = TextureBake.Bake(positions, st.ToArray(), new Vector2[positions.Length], texture.ToArray(),
+                images, positions, faces, uvs, res, stats);
+            Assert.Greater(TextureBake.colourDirectionSweeps, 0, "the default bake does not smooth its directions, so this shows nothing");
+            for (var f = 0; f < 2 * top.Count; f++)
+            {
+                var c = (uvs[f][0] + uvs[f][1] + uvs[f][2] + uvs[f][3]) / 4f;
+                var px = atlas[Mathf.FloorToInt(c.y * res) * res + Mathf.FloorToInt(c.x * res)];
+                if (kind[f] == 0) Assert.Greater(px.r, 200, $"top face {f} reads {px}: {stats}");
+                else Assert.Greater(px.b, 200, $"bottom face {f} reads {px}: {stats}");
+            }
+        }
+
+        [Test]
         public void PipelineBakeReplacesTheUvs()
         {
             SeamedSphere(32, 64, out var positions, out var triangles, out var uvs);

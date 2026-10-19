@@ -1338,7 +1338,25 @@ namespace NativeRemesher
         static bool IsScan(RemeshResult result) => result.profile.kind == RemeshProfileKind.Photogrammetry;
 
         static float CreaseMinCells(RemeshResult result, float general) =>
-            IsScan(result) && scanCreaseMinCells > 0f ? scanCreaseMinCells : general;
+            !IsScan(result) ? general
+            : scanCreaseMinCellsOpen > 0f && result.topology != null && result.topology.boundaryEdgeCount > 0
+                ? scanCreaseMinCellsOpen
+            : scanCreaseMinCells > 0f ? scanCreaseMinCells : general;
+
+        /// <summary>
+        /// <see cref="scanCreaseMinCells"/> for a scan with an open border -- ground and buildings,
+        /// which a closed sculpt is not. 0: the same as closed ones.
+        /// </summary>
+        /// <remarks>
+        /// With the layout's lines held through the smoothing (IntegerGridMap.relaxAlongLayoutLines)
+        /// shorter building edges are worth laying. Means over 4600/5000/5400 (irregular /
+        /// input-to-output mean / turn p90), 8 -> 5 cells: ccnb 5.12 -> 5.07 % / 0.131 -> 0.119 /
+        /// 13.1 -> 13.1 deg, sheds and trailers come out as boxes (3 cells: 5.09 % / 0.108 / 14.6
+        /// deg, crumpling); head 2.83 -> 2.66 % / 0.133 -> 0.125 / 13.2 -> 13.5; but the closed
+        /// body, whose short creases are cloth folds, 1.00 -> 1.09 % / 0.101 -> 0.098 / 7.2 -> 8.2
+        /// -- hence open meshes only.
+        /// </remarks>
+        public static float scanCreaseMinCellsOpen = 5f;
 
         static float CreaseStraightness(RemeshResult result) =>
             IsScan(result) && scanCreaseStraightness > 0f
