@@ -79,6 +79,8 @@ namespace NativeRemesher
         [SerializeField] bool m_QuadLayoutOn = true;
         [SerializeField] bool m_DetailQuads;
         [SerializeField] bool m_RibbonParts = true;
+        // Off: a model in parts keeps its parts, each remeshed on its own (see RunParts).
+        [SerializeField] bool m_CombineParts;
         [SerializeField] bool m_ShowAdvanced;
 
         [SerializeField] bool m_SaveAsAsset = true;
@@ -134,8 +136,23 @@ namespace NativeRemesher
             EditorGUILayout.Space();
 
             var mesh = GetSelectedMesh(out var selected, out var error);
+            // A model in parts: every part under the selection, not the first one found.
+            var parts = GetSelectedParts(out var partsRoot, out var partsError);
+            var multi = parts.Count > 1;
+            if (multi) error = partsError;
             if (error != null)
                 EditorGUILayout.HelpBox(error, MessageType.Info);
+            if (multi)
+            {
+                EditorGUILayout.HelpBox(PartsSummary(partsRoot, parts), MessageType.None);
+                m_CombineParts = EditorGUILayout.Toggle(
+                    new GUIContent("Combine Parts",
+                        "Join the parts into one mesh and remesh that, as one object. Off: each part is " +
+                        "remeshed on its own and the result keeps the model's hierarchy -- the quad budget " +
+                        "split over the parts by surface area, so the quads come out the same size on all " +
+                        "of them, and one shared texture and normal map for the whole model."),
+                    m_CombineParts);
+            }
 
             // The settings QuadRemesher shows, in its order; the rest is under Advanced.
             m_TargetQuadCount = Mathf.Max(4, EditorGUILayout.IntField(
@@ -261,13 +278,15 @@ namespace NativeRemesher
             }
             else
             {
-                using (new EditorGUI.DisabledScope(mesh == null))
+                using (new EditorGUI.DisabledScope(multi ? partsError != null : mesh == null))
                 {
                     // A result selected runs its source again, with whatever was painted since.
-                    var again = mesh != null && Selection.activeGameObject != null
-                                && SourceOf(Selection.activeGameObject) == selected
-                                && Selection.activeGameObject != selected;
-                    if (GUILayout.Button(new GUIContent(again ? $"Remesh '{selected.name}' Again" : "Remesh",
+                    var subject = multi ? partsRoot : selected;
+                    var again = (multi || mesh != null) && Selection.activeGameObject != null
+                                && SourceOf(Selection.activeGameObject) == subject
+                                && Selection.activeGameObject != subject;
+                    var label = again ? $"Remesh '{subject.name}' Again" : multi ? $"Remesh {parts.Count} Parts" : "Remesh";
+                    if (GUILayout.Button(new GUIContent(label,
                             again ? "Runs the source of the selected result again, with the painted fix areas, " +
                                     "and hides the old result (Undo brings it back)." : ""), GUILayout.Height(28)))
                         RunPipeline();
@@ -529,6 +548,63 @@ namespace NativeRemesher
             return skinned != null ? skinned.sharedMesh : null;
         }
 
+        /// <summary>
+        /// The parts of the selected model: every active object at or under it whose renderer is on
+        /// and has a mesh -- of a LOD group only LOD 0, and never an earlier result made here. An
+        /// imported model is usually a root over several meshes (a car's body, doors, wheels); taking
+        /// the first one found remeshed one part and dropped the rest.
+        /// </summary>
+        static List<GameObject> GetSelectedParts(out GameObject root, out string error)
+        {
+            error = null;
+            root = SourceOf(Selection.activeGameObject);
+            var parts = new List<GameObject>();
+            if (root == null) return parts;
+            var skip = new HashSet<Renderer>();
+            foreach (var group in root.GetComponentsInChildren<LODGroup>(false))
+            {
+                var lods = group.GetLODs();
+                for (var l = 1; l < lods.Length; l++)
+                    foreach (var r in lods[l].renderers) if (r != null) skip.Add(r);
+                if (lods.Length > 0)
+                    foreach (var r in lods[0].renderers) if (r != null) skip.Remove(r);
+            }
+            foreach (var t in root.GetComponentsInChildren<Transform>(false))
+            {
+                var go = t.gameObject;
+                if (IsResult(go, root) || MeshOn(go) == null) continue;
+                var renderer = go.GetComponent<Renderer>();
+                if (renderer != null && (!renderer.enabled || skip.Contains(renderer))) continue;
+                parts.Add(go);
+            }
+            var unreadable = new List<string>();
+            foreach (var go in parts) if (!MeshOn(go).isReadable) unreadable.Add(MeshOn(go).name);
+            if (unreadable.Count > 0)
+                error = $"{unreadable.Count} of the {parts.Count} parts are not readable ({string.Join(", ", unreadable.GetRange(0, Mathf.Min(3, unreadable.Count)))}" +
+                        (unreadable.Count > 3 ? ", ..." : "") + "). Select the model in the Project window, then " +
+                        "Inspector > Model > Read/Write Enabled > Apply.";
+            return parts;
+        }
+
+        /// <summary>Whether an object is, or sits under, a result made here (below the root).</summary>
+        static bool IsResult(GameObject go, GameObject root)
+        {
+            for (var t = go.transform; t != null && t != root.transform; t = t.parent)
+                if (t.GetComponent<RemeshSource>() != null) return true;
+            return false;
+        }
+
+        static string PartsSummary(GameObject root, List<GameObject> parts)
+        {
+            long triangles = 0;
+            foreach (var go in parts)
+            {
+                var m = MeshOn(go);
+                if (m != null && m.isReadable) for (var i = 0; i < m.subMeshCount; i++) triangles += m.GetIndexCount(i) / 3;
+            }
+            return $"'{root.name}' is {parts.Count} parts, {triangles:N0} triangles in all.";
+        }
+
         void BuildTopology(GameObject selected, Mesh mesh)
         {
             m_Source = selected;
@@ -618,9 +694,10 @@ namespace NativeRemesher
             }
         }
 
-        static string SaveMeshAsset(RemeshResult result, Mesh mesh, string sourceName)
+        const string k_Folder = "Assets/NativeRemesher/Output";
+
+        static string SaveMeshAsset(RemeshResult result, Mesh mesh, string sourceName, string folder = null)
         {
-            const string k_Folder = "Assets/NativeRemesher/Output";
 
             try
             {
@@ -637,7 +714,7 @@ namespace NativeRemesher
                 // GenerateUniqueAssetPath rather than overwriting: remeshing the same object twice
                 // with different settings should give two results to compare, not silently replace
                 // the first.
-                var path = AssetDatabase.GenerateUniqueAssetPath($"{k_Folder}/{safe}_Quads.asset");
+                var path = AssetDatabase.GenerateUniqueAssetPath($"{folder ?? k_Folder}/{safe}_Quads.asset");
 
                 AssetDatabase.CreateAsset(mesh, path);
                 AssetDatabase.SaveAssets();
@@ -679,15 +756,42 @@ namespace NativeRemesher
         volatile string m_JobStage = "";
         volatile float m_JobProgress;
 
-        bool isRunning => m_Job != null;
+        bool isRunning => m_Job != null || m_PartsJob != null;
+
+        // Combine Parts: the joined parts' materials, one after another (null: the source's own).
+        Material[] m_JobMaterials;
 
         /// <summary>Starts the pipeline on a worker thread.</summary>
         void RunPipeline()
         {
+            if (isRunning) return;
+            var parts = GetSelectedParts(out var partsRoot, out var partsError);
+            if (parts.Count > 1)
+            {
+                if (partsError == null) RunParts(partsRoot, parts);
+                return;
+            }
             var mesh = GetSelectedMesh(out var selected, out _);
-            if (mesh == null || isRunning)
+            if (mesh == null)
                 return;
 
+            var settings = PrepareRun(out var profile, out var autoProfile);
+
+            // Main thread, and the only place the Mesh API is touched on the way in.
+            //
+            // The four-argument overload, and the UVs are passed to Solve below. This used to call
+            // the three-argument one and drop them, so the window — the only path a user actually
+            // takes — produced output with no UV channel and therefore no texture at all, while
+            // PerfProbe passed them and measured 52,047 UVs on the same asset. The instrument was
+            // right and disagreed with the product, which is the worst way for this to fail.
+            RemeshTopology.ReadMesh(mesh, out var positions, out var triangles, out var sourceUvs,
+                out var triangleSubmesh);
+            RunSingle(selected, null, positions, triangles, sourceUvs, triangleSubmesh, settings, profile, autoProfile);
+        }
+
+        /// <summary>The window's settings onto a run's (and the statics the solve reads), on the main thread.</summary>
+        RemeshSettings PrepareRun(out RemeshProfile profile, out bool autoProfile)
+        {
             var settings = RemeshSettings.Default;
             settings.targetQuadCount = m_TargetQuadCount;
             settings.symmetry = m_Symmetry;
@@ -700,7 +804,7 @@ namespace NativeRemesher
             // Under Auto Profile this is the SEED rather than the choice: the pipeline decimates
             // with it and then picks from the decimated mesh, which is the only population the
             // selection threshold was calibrated against. See RemeshPipeline.SelectProfileKind.
-            var profile = RemeshProfile.For(m_ProfileKind);
+            profile = RemeshProfile.For(m_ProfileKind);
             profile.extractor = m_ExtractorChoice;
             // A static the integer path reads; set here, on the main thread, before the job starts.
             Extraction.IntegerGridMap.curvatureAlignment =
@@ -714,29 +818,38 @@ namespace NativeRemesher
             RemeshPipeline.detailQuads = m_DetailQuads;
             RemeshPipeline.ribbonParts = m_RibbonParts;
             Extraction.IntegerGridMap.parametrizationLayout = m_GlobalParametrization && m_QuadLayoutOn;
-            var autoProfile = m_AutoProfile;
+            autoProfile = m_AutoProfile;
+            return settings;
+        }
 
-            // Main thread, and the only place the Mesh API is touched on the way in.
-            //
-            // The four-argument overload, and the UVs are passed to Solve below. This used to call
-            // the three-argument one and drop them, so the window — the only path a user actually
-            // takes — produced output with no UV channel and therefore no texture at all, while
-            // PerfProbe passed them and measured 52,047 UVs on the same asset. The instrument was
-            // right and disagreed with the product, which is the worst way for this to fail.
-            RemeshTopology.ReadMesh(mesh, out var positions, out var triangles, out var sourceUvs,
-                out var triangleSubmesh);
-
+        /// <summary>
+        /// One mesh through the pipeline on a worker: <paramref name="selected"/>'s own, or with
+        /// <paramref name="materials"/>, a model's parts joined (Combine Parts) under its root.
+        /// </summary>
+        void RunSingle(GameObject selected, Material[] materials, Vector3[] positions, int[] triangles,
+            Vector2[] sourceUvs, int[] triangleSubmesh, RemeshSettings settings, RemeshProfile profile, bool autoProfile)
+        {
             // The textures to bake, one per submesh, read here on the main thread.
             TextureBake.Image[] bakeImages = null;
             int[] bakeTriangleTexture = null;
             var bakeResolution = m_BakeResolution;
             var bakeNormals = m_BakeNormalMap;
-            settings.densityPaint = PaintFor(selected);
+            // Paint lives on a mesh object, in its space: none for a joined model.
+            settings.densityPaint = materials == null ? PaintFor(selected) : null;
             // The result this run replaces, when it was the one selected.
             var current = Selection.activeGameObject;
             m_JobReplaces = current != null && current != selected && SourceOf(current) == selected ? current : null;
+            m_JobMaterials = materials;
             if (m_BakeTexture && sourceUvs != null)
-                ReadSourceTextures(selected, triangleSubmesh, out bakeImages, out bakeTriangleTexture);
+            {
+                if (materials == null) ReadSourceTextures(selected, triangleSubmesh, out bakeImages, out bakeTriangleTexture);
+                else
+                {
+                    var list = new List<TextureBake.Image>();
+                    bakeTriangleTexture = ReadTextures(materials, triangleSubmesh, triangles.Length / 3, list, new Dictionary<Texture, int>());
+                    bakeImages = list.Count > 0 ? list.ToArray() : null;
+                }
+            }
 
             m_JobSelected = selected;
             m_JobStage = "Starting";
@@ -773,6 +886,11 @@ namespace NativeRemesher
 
         void OnJobUpdate()
         {
+            if (m_PartsJob != null)
+            {
+                OnPartsJobUpdate();
+                return;
+            }
             if (m_Job == null)
             {
                 EditorApplication.update -= OnJobUpdate;
@@ -822,7 +940,7 @@ namespace NativeRemesher
 
             try
             {
-                FinishJob(job.Result, selected);
+                FinishJob(job.Result, selected, m_JobMaterials);
             }
             catch (System.Exception e)
             {
@@ -834,7 +952,7 @@ namespace NativeRemesher
         }
 
         /// <summary>The main-thread half: build the mesh, save it, put it in the scene.</summary>
-        void FinishJob(RemeshResult result, GameObject selected)
+        void FinishJob(RemeshResult result, GameObject selected, Material[] overrideMaterials = null)
         {
             if (selected == null)
             {
@@ -882,6 +1000,11 @@ namespace NativeRemesher
 
             var sourceRenderer = selected.GetComponent<Renderer>();
             var sourceMaterial = sourceRenderer != null ? sourceRenderer.sharedMaterial : null;
+            if (overrideMaterials != null)
+            {
+                sourceMaterial = null;
+                foreach (var m in overrideMaterials) if (m != null) { sourceMaterial = m; break; }
+            }
 
             // One material per submesh, not one material.
             //
@@ -894,7 +1017,7 @@ namespace NativeRemesher
             var slots = Mathf.Max(1, outputMesh != null ? outputMesh.subMeshCount : 1);
             var materials = new Material[slots];
             // With materials kept, submesh i is the source's material i.
-            var sourceMaterials = sourceRenderer != null ? sourceRenderer.sharedMaterials : null;
+            var sourceMaterials = overrideMaterials ?? (sourceRenderer != null ? sourceRenderer.sharedMaterials : null);
             var perMaterial = result.extraction != null && result.extraction.faceMaterials != null;
             for (var i = 0; i < slots; i++)
                 materials[i] = perMaterial && sourceMaterials != null && i < sourceMaterials.Length
@@ -1013,6 +1136,42 @@ namespace NativeRemesher
         }
 
         /// <summary>
+        /// Per triangle, its material's main texture as an index into <paramref name="images"/> (read
+        /// once each, through <paramref name="read"/>), -1 for none; null when no material has one.
+        /// </summary>
+        static int[] ReadTextures(Material[] materials, int[] triangleSubmesh, int triangleCount,
+            List<TextureBake.Image> images, Dictionary<Texture, int> read)
+        {
+            var slotImage = new int[Mathf.Max(1, materials != null ? materials.Length : 0)];
+            var any = false;
+            for (var i = 0; i < slotImage.Length; i++)
+            {
+                slotImage[i] = -1;
+                var tex = materials != null && i < materials.Length && materials[i] != null ? materials[i].mainTexture : null;
+                if (tex == null) continue;
+                if (!read.TryGetValue(tex, out var index))
+                {
+                    var image = ReadTexture(tex);
+                    index = image != null ? images.Count : -1;
+                    if (image != null) images.Add(image);
+                    read[tex] = index;
+                }
+                slotImage[i] = index;
+                any |= index >= 0;
+            }
+            if (!any) return null;
+            var triangleTexture = new int[triangleCount];
+            for (var t = 0; t < triangleCount; t++)
+            {
+                var slot = triangleSubmesh != null && t < triangleSubmesh.Length ? triangleSubmesh[t] : 0;
+                // Unity draws the extra submeshes past the last material with the last one.
+                if (slot >= slotImage.Length) slot = slotImage.Length - 1;
+                triangleTexture[t] = slot >= 0 ? slotImage[slot] : -1;
+            }
+            return triangleTexture;
+        }
+
+        /// <summary>
         /// A texture's pixels at full size: from its PNG or JPG file when it has one (the importer
         /// may have shrunk it -- ccnb.jpg is 8192 square, imported at 2048), else from the GPU copy.
         /// </summary>
@@ -1084,6 +1243,8 @@ namespace NativeRemesher
                 {
                     importer.textureType = TextureImporterType.NormalMap;
                     importer.maxTextureSize = Mathf.Max(importer.maxTextureSize, size);
+                    // High quality (BC5 on desktop): the default block compression bands the bake.
+                    importer.textureCompression = TextureImporterCompression.CompressedHQ;
                     importer.wrapMode = TextureWrapMode.Clamp;
                     importer.SaveAndReimport();
                 }
@@ -1140,6 +1301,9 @@ namespace NativeRemesher
                 if (AssetImporter.GetAtPath(pngPath) is TextureImporter importer)
                 {
                     importer.maxTextureSize = Mathf.Max(importer.maxTextureSize, size);
+                    // High quality (BC7 on desktop): the default (BC1) blocks up a photographic bake
+                    // seen close.
+                    importer.textureCompression = TextureImporterCompression.CompressedHQ;
                     importer.wrapMode = TextureWrapMode.Clamp;
                     importer.SaveAndReimport();
                 }

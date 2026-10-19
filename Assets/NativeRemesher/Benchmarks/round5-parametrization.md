@@ -701,3 +701,102 @@ straps taken out crashed QuantizedLayout.Build with an IndexOutOfRange building 
 with a negative length or a missing end node). Such a layout is now dropped (stats.invalidArcs) and
 the solve goes on without it. Unity RenderCheck head 3,000 after: 8,212 faces, 100 % quads, missed
 texels 49,767 (hidden: inside sliders, buckles and the surface). EditMode 216: 214 passed, 0 failed.
+
+## Round 26: the strap finder no longer depends on how the model is turned (branch remesher-band-structure)
+
+Check: the head turned about all three axes (and moved), and scaled x7.3, run as the head. Scaled:
+the same 8 straps. Turned: 13 straps instead of 8 -- the raised-band test leaned on the world axes.
+Its sample points were one per world voxel with normals bucketed by their largest world axis, and
+the way across a band was the best of four rays round a world-axis tangent (a band at 22 degrees
+to them read 8 % wider). Several plates sat right at a threshold (a cable found on one side of
+the helmet and not its mirror twin; a piece at 0.69 free against 0.75) and flipped.
+
+Now (invariantRelief): sample points picked by distance on the mesh, in index order, each vertex
+taking the nearest within 0.2 cells whose normal is alike; the narrowest way across searched (eight
+rays, then four halving steps). Thin and raised vertices then agree to 0.2 % however the head is
+turned, and the mirror pairs come out in pairs (both helmet-rim cables, both front-rim bands -- the
+front rim, crumpled before, is now two tubes, close to the reference).
+
+Head 3,000, four poses (as built / turned / scaled / turned and scaled):
+- before: ribbons 8 / 13 / 8 / 12, hausdorff 0.0182 / 0.0386 / 0.0181 / 0.0203.
+- after:  ribbons 10 / 9 / 10 / 9, hausdorff 0.0182 / 0.0188 / 0.0192 / 0.0165, chamfer 0.00104 /
+  0.00111 / 0.00112 / 0.00103, irregular 4.01 / 4.75 / 4.74 / 3.58 % (3.53 % before, as built).
+The 10-against-9 left: where the band under the chin and one side strap's plate join their
+neighbours through a few faces at the thickness threshold.
+Head 1,500: 4 ribbons, irregular 7.40 % (6.34), hausdorff 0.0295 (0.0301). Head 6,000: 9 ribbons,
+irregular 2.53 % (1.94), hausdorff 0.0280 (0.0173) -- a fan in the lattice on the neck, far from any
+strap; the same head scaled finds the same 9 straps and has no fan (0.0140), turned 0.0124: the
+lattice's own sensitivity, not the straps. Body 5,000 and ccnb 5,000: nothing found, identical.
+Unit test: RaisedBandIsFoundTheSameHoweverTheModelIsTurned (fails on the old test: 1,213 raised
+vertices turned against 1,252).
+
+The chin cup, tried and left off (all flags, off by default): it is no curled shell but a strap
+loop -- a low raised band across the front of the chin (0.18 cells high, its edges rounded and
+curling under) and a band under the chin standing off it, joined at both corners where the jaw
+straps come in. What stopped each part, and what was tried:
+- the raised band's detection is patchy (rays start 0.04 cells under a sculpted top; a bump stops
+  them): fillThinHoles (holes of up to a square cell inside a thin part filled) and reliefDepths
+  (also 0.1 and 0.2 cells under). Raised vertices 50k -> 113k on the head; panel edges and rims
+  everywhere start to pass.
+- the band under the chin and the front band's undercut lip make one ring, measured as one line
+  (width 3 cells): forkArmFraction 0.05 (a thin arm counts at a fork).
+- the front band read as attached (free 0.50): its frame tilted 20 degrees by the curled rims
+  (robustPlateNormal) and its centre near the ground, so the ray across passed under one rim
+  (rimHeights: rims looked for just under the faces). With these it passes -- and so does the
+  balaclava's hem round the neck (a step from the thick hem to the fabric reads as a rim); limited
+  to bands with no far side for most of their length (lyingRunFraction 0.5) the chin band (45 %
+  raised, the fabric under it is thin) fails again; at a third it passes, but that number came
+  off this one model.
+- every set that passes the chin band measured worse on the head as a whole (hausdorff 0.025-0.050,
+  irregular 4.8-10 %): more straps taken out leave holes the hole closing gets wrong. A band taken
+  out all round a closed line leaves a ring-shaped hole, each loop filled as a disc (an 18-cell fan
+  across the helmet's opening); crossing straps leave regions with up to 24 loops, the patches
+  between them filled over. stitchRings (two loops of one region stitched to each other) and
+  flattenLying (lying straps' faces kept and pressed flat by over-relaxation instead of cut out)
+  are written but not enough yet: the head's big strap network counts as free-standing.
+Next for the chin cup: hole closing that handles regions with many loops (flattening for any
+region on the surface, not by a majority of lying faces), then the chin-cup flags measured again on
+the head turned and as built.
+
+## Round 27: models in parts; the colour bake seen from outside (branch remesher-band-structure)
+
+Models in parts. The window took the first mesh under the selection: an imported model is a root
+over several meshes, and the rest were dropped (the user's Porsche: 43 parts under three empty
+parents; the Sketchfab helmet: 3 meshes). Now every part is found -- active, renderer on, of a LOD
+group only LOD 0, never an earlier result -- and each is remeshed on its own: the target split by
+surface area in the model's space (the same quad size on all parts), at least 20 quads per
+connected piece of a part (at most half its triangles), the result mirroring the hierarchy under
+one `<root>_Quads` with all files in `Output/<root>_Quads/`. One atlas for all of them
+(PartBake): the parts' results joined in the root's space, unwrapped and baked once, each part
+taking back its faces' UVs and its tangents in its own space -- one texture and one normal map at
+an even texel density. A part that throws or comes out empty is tried again at 4x, then kept as it
+was and named in the status. Combine Parts joins them into one mesh in the root's space instead.
+
+Measured through the window's own code in headless Unity (scratch driver, not in the repo):
+- Sketchfab helmet, 3,000: 3 parts, 11,253 faces (11,233 quads), 22 s; one shared 2048 normal map
+  at 81 % fill. The studs part (ten pieces, 0.16 % of the area) got 16 quads first and came out
+  empty -- hence the per-piece floor (200 quads: 216 faces).
+- Porsche, 8,000: 43 parts, 25,864 faces (25,705 quads), 85 s of solves, 146 s in all. Every part
+  out ('mirror int' threw "no usable triangles" at 20 quads, passed at 80). The car itself is poor:
+  the interior (seats, dash, doors' insides) takes its area's share of the budget, and the open
+  hard-surface panels tear and crumple at a few hundred quads each -- not the parts handling.
+- main1.obj (one mesh), 5,000: 7,557 faces, all quads, 1.43 % irregular, hausdorff 0.0088.
+
+Fixed on the way: InputRefine.Split took its twins from the welded topology but its faces from the
+input; welding drops collapsed triangles (the helmet's studs at Unity's 0.01 import scale), and
+the numbering then ran past the end. It now splits the welded arrays when any triangle was dropped.
+
+The colour bake (ccnb, "texture quality very low"). Flat ground was as sharp as the source; what
+was scrambled were small raised things -- cars, trucks, a shed -- because each texel read the
+source at its NEAREST point, which over a coarse lump is a side wall or the ground beside it as
+often as the top. Now (TextureBake.rayColour) each texel reads where the result's normal line,
+coming in from 1.5 mean edges outside, first meets a source face turned towards it -- a baker's
+cage -- and the nearest point only when it meets none. ccnb 5,000 at 4096: cars and trucks read
+as in the photo, 11,045 of 12.7M samples fell back, bake 9.5 s -> 2.0 s. Left: pale halos where a
+coarse slope runs from a roof to the ground (the normal tilts, the line sees the wall). Unit test
+BakeSeesARaisedBlockFromOutside (the nearest point reads the wall there). The baked albedo and
+normal map are also imported at high quality compression now (BC7 / BC5 on desktop; BC1 blocked a
+photo up close).
+
+Tests: .NET runner 30 passed (two need Unity's Mesh); Unity EditMode 220: 218 passed, 0 failed,
+2 skipped.

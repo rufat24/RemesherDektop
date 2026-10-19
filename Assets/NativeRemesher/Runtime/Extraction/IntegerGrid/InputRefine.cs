@@ -250,6 +250,28 @@ namespace NativeRemesher.Extraction
             var topology = RemeshTopology.Build(positions, triangles);
             var nonManifold = topology.isNonManifoldVertex;
 
+            // The twins below are the topology's, numbered over ITS triangles. Welding drops the
+            // triangles it collapses (a tiny part's slivers, once imported at 0.01: the Sketchfab
+            // helmet's studs), and the input's numbering then no longer lines up -- an index past the
+            // end, 2026-10-19. Split the welded arrays instead, each vertex taking the spacing of its
+            // first source vertex.
+            if (topology.triangles.Length != triangles.Length)
+            {
+                if (spacing != null)
+                {
+                    var welded = new float[topology.vertexCount];
+                    for (var i = 0; i < welded.Length; i++) welded[i] = -1f;
+                    for (var i = 0; i < topology.sourceToWelded.Length; i++)
+                    {
+                        var w = topology.sourceToWelded[i];
+                        if (w >= 0 && welded[w] < 0f) welded[w] = spacing[i];
+                    }
+                    spacing = welded;
+                }
+                positions = topology.positions;
+                triangles = topology.triangles;
+            }
+
             var V = new List<Vector3>(positions);
             var F = new List<int>(triangles);
             var E2E = new List<int>(topology.halfEdgeTwin);

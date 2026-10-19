@@ -18,8 +18,12 @@
 // the scale searched so they fill the atlas.
 //
 // BAKE. Every texel a face covers (its two triangles as the renderer splits them, 0-1-2 and 0-2-3)
-// is mapped back to its point on the face, that point to the nearest point of the source surface,
-// and that to the source texture through the source triangle's own UVs -- never across a seam. The
+// is mapped back to its point on the face, that point to the source surface -- where the face's
+// normal line, coming in from outside, first meets a source face turned towards it, as a baker's
+// cage does (rayColour; the nearest point only when the line meets none) -- and that to the source
+// texture through the source triangle's own UVs, never across a seam. The nearest point alone
+// scrambled small raised things on a coarse result (ccnb's cars read their side walls and the
+// ground beside them, 2026-10-19); from outside they read as the photo shows them. The
 // source is read from a mip level matching how many source texels fall on one output texel, so a
 // texel is their average rather than one of them. Texels past the charts are filled outward from
 // them, so filtering and mip-mapping at a chart's edge do not pull in the background.
@@ -59,6 +63,8 @@ namespace NativeRemesher
             /// <summary>Mip level the source was read at (0 = full size).</summary>
             public float sourceLevel;
             public int bakedTexels, filledTexels;
+            /// <summary>Colour bake: samples whose line in from outside met no source face (read at the nearest point).</summary>
+            public int colourRayMisses;
             public long unwrapMs, bakeMs;
             /// <summary>Normal map: texels whose ray found no source facing their way, and the ray's reach.</summary>
             public int normalMissed;
@@ -68,7 +74,7 @@ namespace NativeRemesher
 
             public override string ToString() =>
                 $"bake {resolution}px: charts={charts} (grid {gridCharts}, single {singleFaceCharts}, largest {largestChart} faces) " +
-                $"fill={fill:P0} texels/unit={texelsPerUnit:G3} sourceMip={sourceLevel:F2} baked={bakedTexels} gutter={filledTexels} " +
+                $"fill={fill:P0} texels/unit={texelsPerUnit:G3} sourceMip={sourceLevel:F2} baked={bakedTexels} gutter={filledTexels} rayMisses={colourRayMisses} " +
                 $"unwrap {unwrapMs} ms, bake {bakeMs} ms";
         }
 
@@ -120,6 +126,19 @@ namespace NativeRemesher
 
         /// <summary>Texels per axis sampled per output texel (1 = the centre only).</summary>
         public static int supersample = 1;
+
+        /// <summary>
+        /// The colour bake reads each texel where the result's normal line, coming in from outside
+        /// (colourReachEdges mean output edges out), first meets a source face turned towards it --
+        /// what is seen looking at the quad from outside, as a baker's cage does -- and the nearest
+        /// source point only when the line meets none. False: the nearest point always. On a coarse
+        /// result over small raised things (cars on an aerial scan), the nearest point is a side
+        /// wall or the ground beside them as often as their top, and they came out scrambled.
+        /// </summary>
+        public static bool rayColour = true;
+
+        /// <summary>How far out, in mean output edges, the colour bake's lines start.</summary>
+        public static float colourReachEdges = 1.5f;
 
         // ------------------------------------------------------------------ unwrap
 
@@ -713,15 +732,73 @@ namespace NativeRemesher
             var baked = 0;
             var ss = Math.Max(1, supersample);
 
-            Vector4 SampleAt(Vector3 p)
+            // rayColour: the result's vertex normals, the reach, and which way the source is wound
+            // against them (by majority, as the normal map's bake).
+            Vector3[] normals = null;
+            var reach = 0f;
+            var facing = 0f;
+            var rayMisses = 0;
+            if (rayColour)
             {
-                grid.NearestDistance(p, out var t);
+                var list = faces as List<int[]> ?? new List<int[]>(faces);
+                normals = Extraction.NormalRecalculator.Compute(list, positions, null);
+                double edgeSum = 0;
+                var edgeCount = 0;
+                foreach (var face in faces)
+                    if (face != null)
+                        for (var k = 0; k < face.Length; k++)
+                        {
+                            edgeSum += (positions[face[(k + 1) % face.Length]] - positions[face[k]]).magnitude;
+                            edgeCount++;
+                        }
+                reach = colourReachEdges * (float)(edgeSum / Math.Max(1, edgeCount));
+                var agree = 0;
+                for (var f = 0; f < faces.Count; f += Math.Max(1, faces.Count / 2000))
+                {
+                    var face = faces[f];
+                    if (face == null || face.Length < 3) continue;
+                    var c = Vector3.zero;
+                    var n = Vector3.zero;
+                    foreach (var v in face) { c += positions[v]; n += normals[v]; }
+                    c /= face.Length;
+                    grid.NearestDistance(c, out var tri);
+                    if (tri < 0) continue;
+                    grid.TriangleCorners(tri, out var ia, out var ib, out var ic);
+                    var sn = Vector3.Cross(sourcePositions[ib] - sourcePositions[ia], sourcePositions[ic] - sourcePositions[ia]);
+                    agree += Vector3.Dot(sn, n) >= 0f ? 1 : -1;
+                }
+                // FirstHit goes along -n; a face turned towards it has its normal along +n.
+                facing = agree < 0 ? 1f : -1f;
+            }
+
+            Vector4 SampleAt(Vector3 p, Vector3 n)
+            {
+                var t = -1;
+                Vector3 q = default;
+                if (rayColour && n != Vector3.zero)
+                {
+                    var origin = p + n * reach;
+                    if (grid.FirstHit(origin, -n, 2f * reach, facing, out var along, out var hit))
+                    {
+                        t = hit;
+                        q = origin - n * along;
+                    }
+                    else System.Threading.Interlocked.Increment(ref rayMisses);
+                }
+                if (t < 0)
+                {
+                    grid.NearestDistance(p, out t);
+                    if (t >= 0)
+                    {
+                        grid.TriangleCorners(t, out var na, out var nb, out var nc);
+                        q = SpatialGrid.ClosestPointOnTriangle(p, sourcePositions[na], sourcePositions[nb], sourcePositions[nc]);
+                    }
+                }
                 if (t < 0) return new Vector4(128, 128, 128, 255);
                 var tex = sourceTriangleTexture != null ? sourceTriangleTexture[t] : 0;
                 if (tex < 0 || tex >= mips.Length || mips[tex] == null) return new Vector4(128, 128, 128, 255);
                 int ia = sourceTriangles[3 * t], ib = sourceTriangles[3 * t + 1], ic = sourceTriangles[3 * t + 2];
                 Vector3 a = sourcePositions[ia], b = sourcePositions[ib], c = sourcePositions[ic];
-                var q = SpatialGrid.ClosestPointOnTriangle(p, a, b, c);
                 Barycentric(q, a, b, c, out var wa, out var wb, out var wc);
                 var uv = sourceUvs[ia] * wa + sourceUvs[ib] * wb + sourceUvs[ic] * wc;
                 return mips[tex].Sample(uv, level);
@@ -770,7 +847,10 @@ namespace NativeRemesher
                                     w1 = Mathf.Clamp01(w1); w2 = Mathf.Clamp01(w2);
                                     if (w1 + w2 > 1f) { var k = 1f / (w1 + w2); w1 *= k; w2 *= k; }
                                     var w0 = 1f - w1 - w2;
-                                    sum += SampleAt(p0 * w0 + p1 * w1 + p2 * w2);
+                                    var sn = normals != null
+                                        ? MeshMath.SafeNormalize(normals[face[0]] * w0 + normals[face[i]] * w1 + normals[face[i + 1]] * w2, Vector3.zero)
+                                        : Vector3.zero;
+                                    sum += SampleAt(p0 * w0 + p1 * w1 + p2 * w2, sn);
                                 }
                             sum /= ss * ss;
                             var idx = y * resolution + x;
@@ -790,6 +870,7 @@ namespace NativeRemesher
             foreach (var w in written) if (w) stats.bakedTexels++;
 
             if (fillGutters) stats.filledTexels = FillOutward(pixels, written, resolution);
+            stats.colourRayMisses = rayMisses;
             stats.bakeMs = watch.ElapsedMilliseconds;
             return pixels;
         }

@@ -220,6 +220,68 @@ namespace NativeRemesher.Tests
         }
 
         [Test]
+        public void BakeSeesARaisedBlockFromOutside()
+        {
+            // Source: ground (green) with a block on it (top red, walls blue) as a height field -- a
+            // car on an aerial scan. Low poly: the flat 6 x 6 grid at a quarter of the block's height,
+            // nearer the ground and the walls than the top. Looking at it from outside, the faces
+            // over the block see its top; the nearest source point is a wall.
+            const int n = 6;
+            var faces = Grid(n, out var grid);
+            var positions = new Vector3[grid.Length];
+            for (var i = 0; i < grid.Length; i++) positions[i] = grid[i] + new Vector3(0f, 0.15f, 0f);
+            const float lo = 2.2f, hi = 3.8f, top = 0.6f, step = 0.05f;
+            const int m = 200;
+            float Height(float x, float z) => x > lo && x < hi && z > lo && z < hi ? top : 0f;
+            var sp = new List<Vector3>();
+            for (var j = 0; j <= m; j++)
+                for (var i = 0; i <= m; i++)
+                {
+                    float x = -1f + step * i, z = -1f + step * j;
+                    sp.Add(new Vector3(x, Height(x, z), z));
+                }
+            var st = new List<int>();
+            var texture = new List<int>();
+            for (var j = 0; j < m; j++)
+                for (var i = 0; i < m; i++)
+                {
+                    var a = j * (m + 1) + i;
+                    foreach (var tri in new[] { new[] { a, a + m + 1, a + m + 2 }, new[] { a, a + m + 2, a + 1 } })
+                    {
+                        st.AddRange(tri);
+                        int up = 0;
+                        foreach (var v in tri) if (sp[v].y > 0.5f * top) up++;
+                        texture.Add(up == 3 ? 0 : up == 0 ? 1 : 2);
+                    }
+                }
+            var suv = new Vector2[sp.Count];
+            TextureBake.Image Flat(Color32 c) => new TextureBake.Image(new[] { c, c, c, c }, 2, 2);
+            var images = new[] { Flat(new Color32(255, 0, 0, 255)), Flat(new Color32(0, 255, 0, 255)), Flat(new Color32(0, 0, 255, 255)) };
+
+            const int res = 256;
+            var stats = new TextureBake.Stats();
+            var uvs = TextureBake.Unwrap(positions, faces, res, stats);
+            var atlas = TextureBake.Bake(sp.ToArray(), st.ToArray(), suv, texture.ToArray(), images, positions, faces, uvs, res, stats);
+
+            Color32 At(int f)
+            {
+                var c = (uvs[f][0] + uvs[f][1] + uvs[f][2] + uvs[f][3]) / 4f;
+                return atlas[Mathf.FloorToInt(c.y * res) * res + Mathf.FloorToInt(c.x * res)];
+            }
+            // Faces 2..3 both ways lie over the block; the corner faces over open ground.
+            foreach (var (i, j) in new[] { (2, 2), (2, 3), (3, 2), (3, 3) })
+            {
+                var c = At(j * n + i);
+                Assert.Greater(c.r, 200, $"face {i},{j} over the block reads {c}, not its top: {stats}");
+            }
+            foreach (var (i, j) in new[] { (0, 0), (5, 5), (0, 5), (5, 0) })
+            {
+                var c = At(j * n + i);
+                Assert.Greater(c.g, 200, $"face {i},{j} over the ground reads {c}: {stats}");
+            }
+        }
+
+        [Test]
         public void PipelineBakeReplacesTheUvs()
         {
             SeamedSphere(32, 64, out var positions, out var triangles, out var uvs);
