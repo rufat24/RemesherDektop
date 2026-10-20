@@ -19,6 +19,12 @@ namespace NativeRemesher
 
             /// <summary>The shared bake (its textures and stats), or null.</summary>
             public RemeshResult shared;
+
+            /// <summary>Per part, how much of it can be seen (Fewer Quads On Hidden Parts); null when not measured.</summary>
+            public float[] visibility;
+
+            /// <summary>Per part, the quads it was asked for.</summary>
+            public int[] targets;
         }
 
         Task<PartsRun> m_PartsJob;
@@ -31,7 +37,6 @@ namespace NativeRemesher
             var settings = PrepareRun(out var profile, out var autoProfile);
             var bakeTexture = m_BakeTexture;
             var bakeNormals = m_BakeNormalMap;
-            var bakeResolution = m_BakeResolution;
 
             // Main thread: every part's arrays, materials and textures, and where it sits in the root.
             var images = new List<TextureBake.Image>();
@@ -43,6 +48,7 @@ namespace NativeRemesher
             var rawUvs = new List<Vector2[]>();
             var paints = new List<DensityPaint>();
             var floors = new List<int>();
+            var occludes = new List<bool>();
             var toRoot = root.transform.worldToLocalMatrix;
             foreach (var go in parts)
             {
@@ -59,6 +65,7 @@ namespace NativeRemesher
                 areas.Add(PartBake.Area(positions, triangles, toModel));
                 floors.Add(PartBake.Floor(positions, triangles));
                 materials.Add(mats);
+                occludes.Add(!SeeThrough(mats));
                 submeshes.Add(submesh);
                 rawUvs.Add(uvs);
                 paints.Add(PaintFor(go));
@@ -102,7 +109,8 @@ namespace NativeRemesher
                 return;
             }
 
-            var targets = PartBake.SplitTarget(areas, settings.targetQuadCount, 16, floors);
+            var bakeResolution = TextureSizeFor(images);
+            var hiddenFewer = m_HiddenPartsFewer;
             var names = new List<string>();
             foreach (var go in parts) names.Add(go.name);
             var current = Selection.activeGameObject;
@@ -122,6 +130,27 @@ namespace NativeRemesher
             {
                 var run = new PartsRun { results = new List<RemeshResult>() };
                 var n = inputs.Count;
+                // The budget: by area, or by area and how much of each part can be seen.
+                var weighted = new List<double>(areas);
+                var partFloors = new List<int>(floors);
+                if (hiddenFewer)
+                {
+                    m_JobStage = "Seeing which parts are hidden";
+                    run.visibility = PartBake.Visibility(inputs, occludes, onProgress: progress =>
+                    {
+                        token.ThrowIfCancellationRequested();
+                        m_JobProgress = progress / (n + 1);
+                    });
+                    for (var p = 0; p < n; p++)
+                    {
+                        var weight = PartBake.VisibilityWeight(run.visibility[p]);
+                        weighted[p] = areas[p] * weight;
+                        // The least a part's pieces need, scaled down too, but not under 8 a piece.
+                        partFloors[p] = Mathf.Max(16, Mathf.RoundToInt(floors[p] * Mathf.Max(weight, 0.4f)));
+                    }
+                }
+                var targets = PartBake.SplitTarget(weighted, settings.targetQuadCount, 16, partFloors);
+                run.targets = targets;
                 for (var p = 0; p < n; p++)
                 {
                     var index = p;
@@ -344,9 +373,49 @@ namespace NativeRemesher
             var keptNote = unchanged.Count > 0
                 ? $"\n{unchanged.Count} part(s) could not be remeshed and were kept as they were: {string.Join(", ", unchanged)}"
                 : "";
-            m_Status = $"{parts.Count} parts: {faces:N0} faces ({quads:N0} quads) in {ms / 1000.0:F1} s{saved}{bakeNote}{keptNote}";
+            // What Auto read the parts as, and where the quads went.
+            var types = new SortedDictionary<string, int>();
+            foreach (var r in run.results)
+            {
+                if (r == null || r.modelType == ModelType.General) continue;
+                var name = TypeName(r.modelType);
+                types[name] = types.TryGetValue(name, out var c) ? c + 1 : 1;
+            }
+            var typeList = new List<string>();
+            foreach (var kv in types) typeList.Add($"{kv.Value} {kv.Key}");
+            m_TypeNote = typeList.Count > 0 ? "last run read the parts as " + string.Join(", ", typeList) : "";
+            var hiddenNote = "";
+            if (run.visibility != null)
+            {
+                var hidden = new List<string>();
+                for (var p = 0; p < parts.Count && p < run.visibility.Length; p++)
+                    if (run.visibility[p] < 0.2f) hidden.Add($"{parts[p].name} ({run.targets[p]})");
+                if (hidden.Count > 0)
+                    hiddenNote = $"\nhidden parts, given fewer quads: {string.Join(", ", hidden)}";
+            }
+            m_Status = $"{parts.Count} parts: {faces:N0} faces ({quads:N0} quads) in {ms / 1000.0:F1} s{saved}{bakeNote}{keptNote}{hiddenNote}";
             Debug.Log($"[Native Remesher] {root.name}: {m_Status.Replace('\n', ' ')}", top);
             SceneView.RepaintAll();
+        }
+
+        /// <summary>
+        /// A part seen through, which does not hide what is behind it: every material transparent
+        /// (render queue past opaque, or a URP surface set to transparent), or named glass or window
+        /// -- an imported model's glass is often an opaque material with a name that says so.
+        /// </summary>
+        static bool SeeThrough(Material[] materials)
+        {
+            if (materials == null || materials.Length == 0) return false;
+            foreach (var m in materials)
+            {
+                if (m == null) return false;
+                var name = m.name.ToLowerInvariant();
+                var transparent = m.renderQueue >= 2500
+                                  || m.HasProperty("_Surface") && m.GetFloat("_Surface") > 0.5f
+                                  || name.Contains("glass") || name.Contains("window");
+                if (!transparent) return false;
+            }
+            return true;
         }
     }
 }

@@ -70,7 +70,19 @@ namespace NativeRemesher
         // 14,884 faces), and the bake is closer to the source on screen (see TextureBake). Does
         // nothing when the source has no UVs or no texture.
         [SerializeField] bool m_BakeTexture = true;
-        [SerializeField] int m_BakeResolution = 4096;
+        // 0 is Auto: the source texture's own size (ccnb.jpg is 8192 square; the old fixed 4096, or
+        // the 2048 a window had kept, baked it at a quarter or a sixteenth of its pixels). Renamed
+        // from m_BakeResolution so an open window picks Auto up instead of its serialised size.
+        [SerializeField] int m_TextureSize;
+
+        /// <summary>
+        /// Which kind of model this is (see ShapeRecognition). Auto reads it off each mesh, and off
+        /// each part of a model in parts on its own.
+        /// </summary>
+        [SerializeField] ModelType m_ModelType = ModelType.Auto;
+
+        /// <summary>A model in parts: split the quads by how much of each part can be seen.</summary>
+        [SerializeField] bool m_HiddenPartsFewer = true;
         [SerializeField] bool m_BakeNormalMap = true;
         [SerializeField] bool m_GlobalParametrization = true;
         // Renamed from m_QuadLayout so an open window picks up the new default (on) instead of its
@@ -152,7 +164,31 @@ namespace NativeRemesher
                         "split over the parts by surface area, so the quads come out the same size on all " +
                         "of them, and one shared texture and normal map for the whole model."),
                     m_CombineParts);
+                using (new EditorGUI.DisabledScope(m_CombineParts))
+                    m_HiddenPartsFewer = EditorGUILayout.Toggle(
+                        new GUIContent("Fewer Quads On Hidden Parts",
+                            "Split the quads by how much of each part can be seen from outside, not by area " +
+                            "alone: a car's cabin, seats, door insides and underfloor tunnel give quads to its " +
+                            "body panels. Glass (transparent materials, or named glass or window) does not " +
+                            "hide what is behind it. A part nobody can see keeps 15 % of its share."),
+                        m_HiddenPartsFewer);
             }
+
+            m_ModelType = (ModelType)EditorGUILayout.IntPopup(
+                new GUIContent("Model Type",
+                    "What kind of model this is; it picks the settings that measured best for that kind.\n\n" +
+                    "Auto: read off the mesh (each part on its own).\n" +
+                    "Character: sculpted or organic -- fingers and toes get rows of quads across them.\n" +
+                    "Hard Surface: modelled in a modelling tool -- vehicles, props, machines; sharp edges " +
+                    "become edge loops.\n" +
+                    "Scan: photogrammetry or a laser scan -- noise is not taken for edges, short building " +
+                    "edges are kept."),
+                (int)m_ModelType,
+                new[] { new GUIContent("Auto"), new GUIContent("Character"), new GUIContent("Hard Surface"), new GUIContent("Scan") },
+                new[] { (int)ModelType.Auto, (int)ModelType.Character, (int)ModelType.HardSurface, (int)ModelType.Scan });
+            if (m_ModelType == ModelType.General) m_ModelType = ModelType.Auto;
+            if (!string.IsNullOrEmpty(m_TypeNote))
+                EditorGUILayout.LabelField(" ", m_TypeNote, EditorStyles.wordWrappedMiniLabel);
 
             // The settings QuadRemesher shows, in its order; the rest is under Advanced.
             m_TargetQuadCount = Mathf.Max(4, EditorGUILayout.IntField(
@@ -207,10 +243,13 @@ namespace NativeRemesher
                 m_BakeNormalMap);
             if (m_BakeTexture || m_BakeNormalMap)
                 using (new EditorGUI.IndentLevelScope())
-                    m_BakeResolution = EditorGUILayout.IntPopup(
-                        new GUIContent("Texture Size", "Width and height of the baked texture."),
-                        m_BakeResolution, new[] { new GUIContent("1024"), new GUIContent("2048"), new GUIContent("4096"), new GUIContent("8192") },
-                        new[] { 1024, 2048, 4096, 8192 });
+                    m_TextureSize = EditorGUILayout.IntPopup(
+                        new GUIContent("Texture Size",
+                            "Width and height of the baked texture. Auto: the source texture's own size " +
+                            "(the largest, with several), so an 8K scan bakes at 8K; 4096 when only a " +
+                            "normal map is baked."),
+                        m_TextureSize, new[] { new GUIContent("Auto"), new GUIContent("1024"), new GUIContent("2048"), new GUIContent("4096"), new GUIContent("8192") },
+                        new[] { 0, 1024, 2048, 4096, 8192 });
             using (new EditorGUI.DisabledScope(!m_GlobalParametrization || m_ExtractorChoice != RemeshExtractor.IntegerGrid))
                 m_QuadLayoutOn = EditorGUILayout.Toggle(
                     new GUIContent("Quad Layout",
@@ -796,6 +835,7 @@ namespace NativeRemesher
             settings.targetQuadCount = m_TargetQuadCount;
             settings.symmetry = m_Symmetry;
             settings.useMaterials = m_UseMaterials;
+            settings.modelType = m_ModelType;
 
             // The profile owns the sweep counts, so the window's single iteration field is not
             // applied here: it drives the step-by-step orientation button above, where seeing the
@@ -832,7 +872,6 @@ namespace NativeRemesher
             // The textures to bake, one per submesh, read here on the main thread.
             TextureBake.Image[] bakeImages = null;
             int[] bakeTriangleTexture = null;
-            var bakeResolution = m_BakeResolution;
             var bakeNormals = m_BakeNormalMap;
             // Paint lives on a mesh object, in its space: none for a joined model.
             settings.densityPaint = materials == null ? PaintFor(selected) : null;
@@ -851,6 +890,7 @@ namespace NativeRemesher
                 }
             }
 
+            var bakeResolution = TextureSizeFor(bakeImages);
             m_JobSelected = selected;
             m_JobStage = "Starting";
             m_JobProgress = 0f;
@@ -1076,8 +1116,13 @@ namespace NativeRemesher
                 ? $"\nbaked {result.bakedTextureSize}px texture, {result.bakeStats.charts} charts, " +
                   $"{result.bakeStats.fill:P0} of it used, in {result.bakeStats.unwrapMs + result.bakeStats.bakeMs} ms"
                 : "";
-            m_Status = $"{profileNote}: {result.extraction} in {result.totalMs} ms" +
-                       $"{decimated}{saved}{paintNote}{bakeNote}";
+            m_TypeNote = TypeNote(result);
+            var typeNote = result.modelType != ModelType.General ? $"{TypeName(result.modelType)}, " : "";
+            var layoutNote = result.layoutCoverage > 0f
+                ? $"\nthe quad layout covered {result.layoutCoverage:P0} of the surface; solved without it: {result.coverage:P0}"
+                : "";
+            m_Status = $"{typeNote}{profileNote}: {result.extraction} in {result.totalMs} ms" +
+                       $"{decimated}{saved}{paintNote}{bakeNote}{layoutNote}";
             Debug.Log($"[Native Remesher] {profileNote}: {result.extraction} " +
                       $"(decimate {result.decimateMs}ms, topo {result.topologyMs}ms, " +
                       $"orient {result.orientationMs}ms, pos {result.positionMs}ms, " +
@@ -1169,6 +1214,41 @@ namespace NativeRemesher
                 triangleTexture[t] = slot >= 0 ? slotImage[slot] : -1;
             }
             return triangleTexture;
+        }
+
+        /// <summary>What the last run read the model as, for the line under Model Type.</summary>
+        string m_TypeNote = "";
+
+        static string TypeName(ModelType type) => type switch
+        {
+            ModelType.HardSurface => "Hard Surface",
+            ModelType.Character => "Character",
+            ModelType.Scan => "Scan",
+            ModelType.Auto => "Auto",
+            _ => "General",
+        };
+
+        static string TypeNote(RemeshResult result)
+        {
+            if (result == null || result.modelType == ModelType.General) return "";
+            return result.shapeSignals.measured
+                ? $"last run read it as {TypeName(result.modelType)} ({result.shapeSignals})"
+                : $"last run: {TypeName(result.modelType)}";
+        }
+
+        /// <summary>
+        /// The Texture Size, or under Auto the largest source texture's own size, rounded up to a
+        /// power of two between 1024 and 8192; 4096 when there is no texture (a normal map only).
+        /// </summary>
+        int TextureSizeFor(IReadOnlyList<TextureBake.Image> images)
+        {
+            if (m_TextureSize > 0) return m_TextureSize;
+            var largest = 0;
+            if (images != null)
+                foreach (var image in images)
+                    if (image != null) largest = Mathf.Max(largest, Mathf.Max(image.width, image.height));
+            if (largest <= 0) return 4096;
+            return Mathf.Clamp(Mathf.NextPowerOfTwo(largest), 1024, 8192);
         }
 
         /// <summary>

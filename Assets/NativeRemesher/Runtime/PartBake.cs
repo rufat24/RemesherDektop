@@ -47,6 +47,110 @@ namespace NativeRemesher
         }
 
         /// <summary>
+        /// How much of each part can be seen from outside the model: for points spread over the
+        /// part, the share of the directions it faces from which nothing opaque is in the way,
+        /// averaged. 1 for a part on the outside, about 0 for one shut inside another.
+        /// </summary>
+        /// <param name="occludes">Per part, whether it blocks the view; false for glass.</param>
+        /// <remarks>
+        /// For the budget (<see cref="VisibilityWeight"/>): split by area, the Porsche spent 61 % of
+        /// its quads on the cabin, the wheels and the underbody, and its 19 exterior panels got 34 %
+        /// -- the body 320 quads, too few for its C-pillars and wheel arches, which came out
+        /// crumpled at that count and whole at four times it.
+        /// </remarks>
+        public static float[] Visibility(IList<Part> parts, IList<bool> occludes, int samplesPerPart = 400,
+            int directions = 64, Action<float> onProgress = null)
+        {
+            var count = parts.Count;
+            var visibility = new float[count];
+            // The opaque parts, joined in the model's space.
+            var vertices = new List<Vector3>();
+            var tris = new List<int>();
+            var min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+            var max = -min;
+            for (var p = 0; p < count; p++)
+            {
+                var part = parts[p];
+                foreach (var q in part.positions)
+                {
+                    var w = part.toModel.MultiplyPoint3x4(q);
+                    min = Vector3.Min(min, w);
+                    max = Vector3.Max(max, w);
+                }
+                if (occludes != null && p < occludes.Count && !occludes[p]) continue;
+                var offset = vertices.Count;
+                foreach (var q in part.positions) vertices.Add(part.toModel.MultiplyPoint3x4(q));
+                foreach (var i in part.triangles) tris.Add(i + offset);
+            }
+            if (tris.Count == 0)
+            {
+                for (var p = 0; p < count; p++) visibility[p] = 1f;
+                return visibility;
+            }
+            var grid = new SpatialGrid(vertices.ToArray(), tris.ToArray());
+            var diagonal = (max - min).magnitude;
+            var eps = 1e-4f * diagonal;
+
+            // Spread evenly over the sphere (Fibonacci).
+            var dirs = new Vector3[directions];
+            var golden = Mathf.PI * (3f - Mathf.Sqrt(5f));
+            for (var k = 0; k < directions; k++)
+            {
+                var y = 1f - 2f * (k + 0.5f) / directions;
+                var r = Mathf.Sqrt(Mathf.Max(0f, 1f - y * y));
+                dirs[k] = new Vector3(Mathf.Cos(golden * k) * r, y, Mathf.Sin(golden * k) * r);
+            }
+
+            for (var p = 0; p < count; p++)
+            {
+                var part = parts[p];
+                var normals = new List<Vector3>();
+                var samples = SpatialGrid.SampleSurface(part.positions, part.triangles, samplesPerPart, 7 + p, normals);
+                if (samples.Count == 0) { visibility[p] = 1f; continue; }
+                // Normals go by the inverse transpose (Matrix4x4.transpose is an engine call).
+                var inverse = InverseAffine(part.toModel);
+                var normalMatrix = Matrix4x4.identity;
+                for (var r = 0; r < 3; r++)
+                for (var c = 0; c < 3; c++)
+                    normalMatrix[r, c] = inverse[c, r];
+                var seen = new float[samples.Count];
+                System.Threading.Tasks.Parallel.For(0, samples.Count, BackgroundScheduler.Options, s =>
+                {
+                    var at = part.toModel.MultiplyPoint3x4(samples[s]);
+                    var n = s < normals.Count ? normalMatrix.MultiplyVector(normals[s]).normalized : Vector3.zero;
+                    // Either side of a sheet: a panel modelled single-sided is seen from both.
+                    var bestSide = 0f;
+                    for (var side = -1; side <= 1; side += 2)
+                    {
+                        var facing = n * side;
+                        int open = 0, total = 0;
+                        foreach (var d in dirs)
+                        {
+                            if (n != Vector3.zero && Vector3.Dot(d, facing) <= 0.05f) continue;
+                            total++;
+                            if (!grid.FirstHit(at + (facing + d) * eps, d, 2f * diagonal, 0f, out _, out _)) open++;
+                        }
+                        if (total > 0) bestSide = Mathf.Max(bestSide, open / (float)total);
+                        if (n == Vector3.zero) break;
+                    }
+                    seen[s] = bestSide;
+                });
+                double sum = 0;
+                foreach (var v in seen) sum += v;
+                visibility[p] = (float)(sum / seen.Length);
+                onProgress?.Invoke((p + 1f) / count);
+            }
+            return visibility;
+        }
+
+        /// <summary>
+        /// A part's weight in the budget split for its visibility: <paramref name="hidden"/> for a
+        /// part nobody can see, rising to 1 for one fully on the outside.
+        /// </summary>
+        public static float VisibilityWeight(float visibility, float hidden = 0.15f) =>
+            hidden + (1f - hidden) * Mathf.Clamp01(visibility);
+
+        /// <summary>
         /// The inverse of an affine transform (no projection), in managed code: Matrix4x4.inverse is
         /// an engine call, and this runs outside the editor too.
         /// </summary>

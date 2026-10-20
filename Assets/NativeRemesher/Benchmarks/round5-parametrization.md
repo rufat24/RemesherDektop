@@ -872,3 +872,106 @@ Round 28, second part -- what was still wavy on ccnb: cars and small buildings.
   were never layout lines. `RemeshPipeline.scanCreaseMinCellsOpen` 5 for scans with an open
   border; numbers in its remarks (ccnb 8 -> 5: input-to-output 0.131 -> 0.119, shape the same,
   trailers as boxes; the closed body is slightly worse at 5, so it stays at 8).
+
+## Round 29: Model Type with shape recognition, fingers, the car (branch remesher-band-structure)
+
+The window's settings were one set for every model, and Auto Profile could tell only a scan from a
+modelled mesh (it read the Porsche's panels as scans). Now a **Model Type** -- Auto, Character,
+Hard Surface, Scan -- with Auto read off each mesh, and off each part of a model in parts.
+Everything that measured better for every model stays on for every type; a type only adds what
+measured differently by kind (RemeshPipeline.ApplyModelType, StrapsFor, ThicknessCapFor).
+
+| Type | Profile | Strap finder | Thickness cap |
+|---|---|---|---|
+| Character | as chosen (Auto Profile: head, body Photogrammetry; main1 GameAsset) | the window's toggle | on |
+| Hard Surface | HardSurface (creases at 20 deg) | off | off |
+| Scan | Photogrammetry (no creases; open-scan creases from 5 cells) | off | off |
+| General (API default, no type) | as before | as before | off |
+
+**Recognition** (`ShapeRecognition`), on the input, welded by position. Signals on every model
+in the project plus organic quad meshes made for the test (main1 and the body voxel-remeshed in
+Blender, with and without a subdivision -- a ZRemesher-style export after Unity's import):
+
+| | quad pairs | of them longer than 3:1 | open border |
+|---|---|---|---|
+| Porsche, 43 parts | 0.43-1.0 | 0.22-0.97 | 0-39 |
+| organic quad meshes (3) | 0.32-0.58 | 0.000-0.001 | 0 |
+| sculpts: head, body, main1, helmet parts | 0.04-0.11 | 0.03-0.13 | 0 (one open shell 9.5) |
+| ccnb | 0.05 | 0.06 | 4.5 |
+
+Hard Surface = quad pairs >= 0.25 and elongated >= 0.12 (quads alone would take a ZRemesher
+character for a car); Scan = open border >= 2; else Character. All 56 meshes come out as their kind
+(the Sketchfab helmet's open shell as Scan, which changes nothing for it). 0.4-0.6 s on 1M
+triangles.
+
+**Fingers and toes** (Character): `RemeshPipeline.thicknessSizing` -- no cell wider than a part's
+thickness over 4, rods only, graded back out at 1.5x per cell. main1 at 5000:
+
+| | faces | Hausdorff | input-to-output mean / p99 cells | irregular |
+|---|---|---|---|---|
+| before | 7,557 | 0.0086 | 0.065 / 0.51 | 1.43 % |
+| cap | 9,939 | 0.0057 | 0.043 / 0.21 | 1.12 % |
+
+The fingers come out whole (before: torn and broken); the toes gain only a little -- pressed
+together, they are not rods. Body: 10,530 -> 10,979 faces, Hausdorff 0.0091 -> 0.0079. Not used
+where the model is mostly thin (`thicknessMaxGrowth` 1.5): the helmet head would take 1.58x, the
+Sketchfab helmet 5.77x; squeezed into 1.5x the rest coarsened (helmet irregular 5.4 -> 9.4 %),
+so both come out exactly as before. Tried on the way:
+
+- 3 cells across, every part, per-edge grading: body 10.5k -> 21k faces. The caps alone added 258
+  quads; per-edge grading spread them by how finely the solve mesh was cut, and the count ratio,
+  taken before local refinement, came out 2.4x where the run showed 1.35x. Per-cell grading fixed
+  it.
+- A floor of 0.4 of the field: protects the body, costs main1 (Hausdorff 0.0108).
+- Plates: a panel or coat modelled with two sides 0.5-1 cell apart read as thin. `rodsOnly`
+  (from the middle of the part, walls on both sides within 0.75 of its thickness along some
+  direction square to it) keeps them out.
+- On every model regardless of type: head +61 %, ccnb +36 %, Sketchfab helmet x3.4.
+- Ridge/groove gap sizing (`ridgeGapSizing`, off): for the body's glove, whose fingers are pressed
+  together. The hand's spacing did not move while coat folds took the quads (10.5k -> 16.1k).
+- Patch Curves and curvature alignment on the glove: no grooves either. The glove remains a mitten
+  at 5000; its grooves are about 0.75 cell from the crests, under what the lattice can hold.
+
+**The layout dropping regions** (every type): `layoutCoverageFallback`. The quad layout meshes
+patch by patch, and a patch it cannot make rectangular gets no quads. Coverage = share of evenly
+spread input samples within 2 cells of the output; under 98 % the run is solved again without the
+layout and the one covering more is kept. Porsche roof at 140 quads: coverage 0.72 -> 0.96,
+input-to-output mean 31 -> 0.76 cells. (Output area over input area was tried first and does not
+measure this: the hood read 1.73.) Clean parts read 0.998-1.000 and are untouched.
+
+**Car parts, Hard Surface against the profile Auto Profile picked** (Photogrammetry), at their
+area share of 8000 (irregular / input-to-output mean cells):
+
+| part | Photogrammetry | Hard Surface |
+|---|---|---|
+| hood 120 | 6.0 % / 0.163 | 5.0 % / 0.143 |
+| Fenders 245 | 3.5 % / 0.199 | 2.8 % / 0.170 |
+| front_bumper 280 | 7.5 % / 0.458 | 4.6 % / 0.301 |
+| rear_bumper 180 | 26.1 % / 0.339 | 4.1 % / 0.303 |
+| roof 140 | 2.0 % / 31.0 (lost) | 6.2 % / 0.757 |
+| door 170 | 2.8 % / 0.109 | 3.6 % / 0.116 |
+| body 1280 | 2.4 % / 0.103 | 2.3 % / 1.629 (C-pillar strip lost) |
+| body 320 | 6.4 % / 2.34 | 10.4 % / 1.91 (crumpled either way) |
+
+**Fewer Quads On Hidden Parts** (window, models in parts, on): each part's share is its area times
+0.15 + 0.85 x its visibility (`PartBake.Visibility`: points over the part, the share of the
+directions it faces from which nothing opaque is in the way; glass -- transparent materials, or
+named glass or window -- does not block). Porsche at 8000: cabin 0.10, seats 0.06, door insides
+0.06, tunnel 0.02; body 0.72, doors 0.91, roof 0.85. Body 371 -> 571 quads, doors 198 -> 368, roof
+238 -> 418, cabin 1063 -> 500; per-piece floors scale with it (not under 8 a piece). 1.8 s.
+
+**Texture Size Auto** (window, default): the source texture's own size, rounded up to a power of
+two, 1024-8192 -- ccnb.jpg is 8192 square and had been baked at the window's 2048 (or 4096).
+
+**The Porsche through the window's own path** (headless PartsCheck, 8000, all parts): area split,
+no type: 25,733 faces, solve 212 s; Auto type with Fewer Quads On Hidden Parts: 23,945 faces,
+143 s, all 43 parts read as Hard Surface, 17 parts under 0.2 visible given fewer quads (cabin 343,
+seats 272, tunnel 52). The roof, the windscreen frame and the side windows now come out where
+they were lost; the panels are still crumpled in places at this count -- the car is better, not
+good. The window seals ("rubber": strips thinner than a cell) give nothing as Hard Surface and are
+kept as they were (the window says so); under the old profile they came out as garbage
+(input-to-output 12-75 cells), so that is the better of the two.
+
+Tests 227: 225 pass, 2 skipped (Headless/tests22.xml), including ShapeRecognitionTests (hard
+surface / even quad sphere / open jittered sheet / rod against plate / part shut inside another,
+and the same behind glass).

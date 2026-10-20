@@ -45,6 +45,15 @@ namespace NativeRemesher
         /// </summary>
         public DensityPaint densityPaint;
 
+        /// <summary>
+        /// Which kind of model the settings are chosen for (the window's Model Type). General, the
+        /// default, is the pipeline as it was before the type existed; Auto reads it off the mesh.
+        /// </summary>
+        public ModelType modelType;
+
+        /// <summary>What Auto read off the mesh; filled in by the pipeline.</summary>
+        [NonSerialized] public ShapeSignals shapeSignals;
+
         public static RemeshSettings Default => new RemeshSettings
         {
             targetQuadCount = 2000,
@@ -69,7 +78,9 @@ namespace NativeRemesher
                 faceCountTolerance = Mathf.Clamp(faceCountTolerance, 0.01f, 0.5f),
                 symmetry = symmetry,
                 useMaterials = useMaterials,
-                densityPaint = densityPaint
+                densityPaint = densityPaint,
+                modelType = modelType,
+                shapeSignals = shapeSignals
             };
         }
     }
@@ -127,6 +138,21 @@ namespace NativeRemesher
         /// <summary>The profile this ran under.</summary>
         public RemeshProfile profile;
 
+        /// <summary>The model type this run was solved as (Auto resolved to what it read).</summary>
+        public ModelType modelType;
+
+        /// <summary>What Auto read off the mesh; not measured when the type was chosen by hand.</summary>
+        public ShapeSignals shapeSignals;
+
+        /// <summary>Share of the input within two cells of the output (RemeshPipeline.layoutCoverageFallback); 0 when not measured.</summary>
+        public float coverage;
+
+        /// <summary>
+        /// The quad layout's coverage when it was given up for a solve without it
+        /// (RemeshPipeline.layoutCoverageFallback); 0 when it was not.
+        /// </summary>
+        public float layoutCoverage;
+
         /// <summary>Pre-decimation results, or null when that stage did not run.</summary>
         public DecimateStats decimateStats;
 
@@ -147,6 +173,22 @@ namespace NativeRemesher
 
         internal float[] paintFactors;
         internal RemeshTopology paintFactorsFor;
+
+        /// <summary>
+        /// Quads the thickness cap (RemeshPipeline.thicknessSizing) adds over the field without it:
+        /// the target is raised by it, so fingers gain quads instead of taking them from the rest.
+        /// Zero when it did not run.
+        /// </summary>
+        public float thinCountRatio;
+
+        internal float[] thickness;
+        internal RemeshTopology thicknessFor;
+
+        /// <summary>
+        /// The count the thickness cap would have multiplied the target by, when that was past
+        /// RemeshPipeline.thicknessMaxGrowth and it was not used; zero when it was used or not tried.
+        /// </summary>
+        public float thicknessSkipped;
 
         /// <summary>Lattice spacing actually used, after face-count correction.</summary>
         public float scale;
@@ -513,8 +555,7 @@ namespace NativeRemesher
         public static RemeshResult Solve(Vector3[] positions, int[] triangles,
             RemeshSettings settings, RemeshProfile profile, Action<string, float> onProgress = null,
             Vector2[] sourceUvs = null, bool autoSelectProfile = false)
-            => SolveInternal(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile,
-                SymmetryAxis.None, 0f, null);
+            => SolveCovered(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile, null);
 
         /// <summary>
         /// As above, with each triangle's material (submesh), which
@@ -523,8 +564,91 @@ namespace NativeRemesher
         public static RemeshResult Solve(Vector3[] positions, int[] triangles,
             RemeshSettings settings, RemeshProfile profile, Action<string, float> onProgress,
             Vector2[] sourceUvs, bool autoSelectProfile, int[] triangleMaterials)
-            => SolveInternal(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile,
-                SymmetryAxis.None, 0f, triangleMaterials);
+            => SolveCovered(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile,
+                triangleMaterials);
+
+        /// <summary>
+        /// When the quad layout leaves more of the surface uncovered than
+        /// <see cref="layoutMinCoverage"/> allows, solve again without it and keep whichever covers
+        /// more. Off: the layout's result whatever it covers, as before.
+        /// </summary>
+        /// <remarks>
+        /// The layout meshes patch by patch, and a patch it cannot make rectangular gets no quads;
+        /// the hole filler closes small gaps, not those. On the Porsche's roof at 140 quads (any
+        /// profile) the output covered the rear frame and little else: input-to-output 31 cells on
+        /// average. Without the layout the same part comes out whole (0.42 cells).
+        /// </remarks>
+        public static bool layoutCoverageFallback = true;
+
+        /// <summary>Share of the input covered (see Coverage) under which the layout's result is not trusted.</summary>
+        public static float layoutMinCoverage = 0.98f;
+
+        static RemeshResult SolveCovered(Vector3[] positions, int[] triangles, RemeshSettings settings,
+            RemeshProfile profile, Action<string, float> onProgress, Vector2[] sourceUvs, bool autoSelectProfile,
+            int[] triangleMaterials)
+        {
+            if (settings.modelType == ModelType.Auto)
+            {
+                onProgress?.Invoke("Recognising the model", 0f);
+                settings.modelType = ShapeRecognition.Classify(positions, triangles, out settings.shapeSignals);
+            }
+            var result = SolveInternal(positions, triangles, settings, profile, onProgress, sourceUvs,
+                autoSelectProfile, SymmetryAxis.None, 0f, triangleMaterials);
+            if (!layoutCoverageFallback || !Extraction.IntegerGridMap.parametrization
+                || !Extraction.IntegerGridMap.parametrizationLayout || result?.extraction == null) return result;
+            result.coverage = Coverage(positions, triangles, result.extraction);
+            if (result.coverage >= layoutMinCoverage) return result;
+
+            onProgress?.Invoke("Quad layout left holes: solving without it", 0f);
+            RemeshResult second;
+            Extraction.IntegerGridMap.parametrizationLayout = false;
+            try
+            {
+                second = SolveInternal(positions, triangles, settings, profile, onProgress, sourceUvs,
+                    autoSelectProfile, SymmetryAxis.None, 0f, triangleMaterials);
+            }
+            finally { Extraction.IntegerGridMap.parametrizationLayout = true; }
+            if (second?.extraction == null) return result;
+            second.coverage = Coverage(positions, triangles, second.extraction);
+            second.layoutCoverage = result.coverage;
+            return second.coverage > result.coverage ? second : result;
+        }
+
+        /// <summary>
+        /// Share of the input's surface within <see cref="coverageReachCells"/> cells of the output,
+        /// from evenly spread samples.
+        /// </summary>
+        static float Coverage(Vector3[] positions, int[] triangles, QuadExtractionResult extraction)
+        {
+            if (extraction?.faces == null || extraction.faces.Count == 0) return 0f;
+            var tris = new List<int>(extraction.faces.Count * 6);
+            foreach (var f in extraction.faces)
+                for (var k = 1; k + 1 < f.Length; k++) { tris.Add(f[0]); tris.Add(f[k]); tris.Add(f[k + 1]); }
+            var cell = (float)Math.Sqrt(FaceArea(extraction) / extraction.faces.Count);
+            if (!(cell > 0f)) return 0f;
+            var grid = new SpatialGrid(extraction.positions, tris.ToArray());
+            var samples = SpatialGrid.SampleSurface(positions, triangles, coverageSamples, 1);
+            if (samples.Count == 0) return 1f;
+            var reach = coverageReachCells * cell;
+            var near = 0;
+            foreach (var p in samples)
+                if (grid.NearestDistance(p, out _) <= reach) near++;
+            return near / (float)samples.Count;
+        }
+
+        /// <summary>How far, in cells, an input point may be from the output and still count as covered.</summary>
+        public static float coverageReachCells = 2f;
+        public static int coverageSamples = 20000;
+
+        static double FaceArea(QuadExtractionResult extraction)
+        {
+            double area = 0;
+            var p = extraction.positions;
+            foreach (var f in extraction.faces)
+                for (var k = 1; k + 1 < f.Length; k++)
+                    area += 0.5 * Vector3.Cross(p[f[k]] - p[f[0]], p[f[k + 1]] - p[f[0]]).magnitude;
+            return area;
+        }
 
         // lockAxis/lockPlane: a symmetry half's cut. The decimated border vertices beside the plane
         // are put back on it, so the cut's grid line lies in the plane and the mirror meets it.
@@ -536,16 +660,25 @@ namespace NativeRemesher
             if (positions == null)
                 throw new ArgumentNullException(nameof(positions));
 
+            if (settings.modelType == ModelType.Auto)
+            {
+                onProgress?.Invoke("Recognising the model", 0f);
+                settings.modelType = ShapeRecognition.Classify(positions, triangles, out settings.shapeSignals);
+            }
+            ApplyModelType(settings.modelType, ref profile, ref autoSelectProfile);
             profile = profile.Validated();
             settings = profile.ApplyTo(settings).Validated();
-            if (ribbonParts && !t_SolvingWithoutRibbons && lockAxis == SymmetryAxis.None)
+            if (ribbonParts && StrapsFor(settings.modelType) && !t_SolvingWithoutRibbons && lockAxis == SymmetryAxis.None)
                 return SolveWithRibbons(positions, triangles, settings, profile, onProgress, sourceUvs,
                     autoSelectProfile, triangleMaterials);
             if (settings.symmetry != SymmetryAxis.None)
                 return SolveSymmetric(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile,
                     triangleMaterials);
 
-            var result = new RemeshResult { profile = profile };
+            var result = new RemeshResult
+            {
+                profile = profile, modelType = settings.modelType, shapeSignals = settings.shapeSignals
+            };
             if (settings.densityPaint != null && !settings.densityPaint.isEmpty)
                 result.densityPaint = settings.densityPaint;
             if (settings.useMaterials && triangleMaterials != null && triangleMaterials.Length == triangles.Length / 3)
@@ -1406,7 +1539,122 @@ namespace NativeRemesher
         public static bool smallPartGaps = true;
         public static float smallPartDetour = 1.5f;
 
-        static ScaleField SizingField(RemeshResult result, int target, float adaptivity, bool withPaint = true)
+        /// <summary>
+        /// For a Character (ModelType), no cell wider than a part's thickness over
+        /// <see cref="thicknessCellsAcross"/> (ScaleField.CappedByThickness, rods only): fingers and
+        /// toes get cells across them. Off: as before.
+        /// </summary>
+        /// <remarks>
+        /// main1 at 5000: the fingers came out torn and broken -- each about one cell thick, where
+        /// the curvature law (its ratio powered by 0.25 at Adaptive Size 50) gave them 0.8 of the
+        /// median cell. With the cap: faces 7,557 -> 9,939, Hausdorff 0.0086 -> 0.0057,
+        /// input-to-output p99 0.51 -> 0.21 cells, irregular 1.43 -> 1.12 %, fingers whole. The
+        /// body: 10,530 -> 10,979 faces, Hausdorff 0.0091 -> 0.0079. On models that are mostly thin
+        /// (the helmet head 1.6x, the Sketchfab helmet 5.8x) it is not used: see
+        /// <see cref="thicknessMaxGrowth"/>. Everything tried on the way is in
+        /// Benchmarks/round5-parametrization.md, round 29.
+        /// </remarks>
+        public static bool thicknessSizing = true;
+
+        /// <summary>Cells across a part's thickness under <see cref="thicknessSizing"/>.</summary>
+        public static float thicknessCellsAcross = 4f;
+
+        /// <summary>Parts thinner than this many local cells are sheets, not fingers, and not refined.</summary>
+        public static float thicknessThinnestCells = 0.5f;
+
+        /// <summary>The cap never takes a cell under this fraction of the field's own there.</summary>
+        public static float thicknessFloor = 0f;
+
+        /// <summary>
+        /// Cells no wider than the gap between a crest and the groove beside it over
+        /// <see cref="ridgeGapCellsPerGap"/> (ScaleField.CappedByRidgeGaps): meant for fingers
+        /// pressed together (the body's glove), toes, welts. Off: as before.
+        /// </summary>
+        /// <remarks>
+        /// MEASURED, AND IT DID NOT WORK, so it is off. On the body at 5000 the glove's spacing did
+        /// not move (0.00875 either way) while the coat's folds took the quads: 10,530 -> 16,129
+        /// faces at strength 0.8; averaged over a quarter cell instead of half, the hand gained a
+        /// little (0.0080) and the folds as much again. Half a cell spans a finger's crest, groove
+        /// and the next crest, so they cancel; a fold is as sharp as a groove.
+        /// </remarks>
+        public static bool ridgeGapSizing = false;
+        public static float ridgeGapStrength = 0.8f;
+        public static float ridgeGapReachCells = 2f;
+        public static float ridgeGapMinSlopeDegrees = 30f;
+        public static float ridgeGapCellsPerGap = 1.5f;
+        public static float ridgeGapFloor = 0.4f;
+
+        /// <summary>Last run's vertices capped by the ridge gaps (diagnostic).</summary>
+        public static int lastRidgeGapCapped;
+
+        static ScaleField DetailCaps(RemeshResult result, ScaleField field)
+        {
+            if (thicknessSizing && ThicknessCapFor(result.modelType) && !(result.thicknessSkipped > 0f))
+                field = ScaleField.CappedByThickness(result.topology, field, ThicknessFor(result, field),
+                    thicknessCellsAcross, thicknessThinnestCells, result.profile.curvatureGradation, thicknessFloor);
+            if (ridgeGapSizing)
+            {
+                field = ScaleField.CappedByRidgeGaps(result.topology, field, ridgeGapStrength, ridgeGapReachCells,
+                    ridgeGapMinSlopeDegrees, ridgeGapCellsPerGap, ridgeGapFloor, result.profile.curvatureGradation,
+                    out var capped);
+                lastRidgeGapCapped = capped;
+            }
+            return field;
+        }
+
+        /// <summary>
+        /// Most the thickness cap may raise the quad count by. Past it the model is mostly thin and
+        /// the cap is not used (RemeshResult.thicknessSkipped).
+        /// </summary>
+        public static float thicknessMaxGrowth = 1.5f;
+
+        /// <summary>
+        /// What a model type changes, on top of the pipeline's shared defaults (which every type
+        /// gets: the line-holding relaxation, the smoothed bake, input refinement, the layout).
+        /// </summary>
+        /// <remarks>
+        /// Character keeps the profile the caller chose (or Auto Profile's pick, which measured best
+        /// on the head and the body) and adds the thickness cap and the strap finder. Hard Surface
+        /// and Scan choose their profile: creases at 20 degrees for a modelled part -- the car's
+        /// panels were read as a scan by the crease probe -- and none for a scan.
+        /// </remarks>
+        static void ApplyModelType(ModelType type, ref RemeshProfile profile, ref bool autoSelectProfile)
+        {
+            RemeshProfileKind kind;
+            switch (type)
+            {
+                case ModelType.HardSurface: kind = RemeshProfileKind.HardSurface; break;
+                case ModelType.Scan: kind = RemeshProfileKind.Photogrammetry; break;
+                default: return;
+            }
+            if (profile.kind == kind && !autoSelectProfile) return;
+            var chosen = RemeshProfile.For(kind);
+            chosen.extractor = profile.extractor;
+            profile = chosen;
+            autoSelectProfile = false;
+        }
+
+        /// <summary>The strap finder (RibbonParts) runs for this type: not on a car or a scan.</summary>
+        static bool StrapsFor(ModelType type) => type != ModelType.HardSurface && type != ModelType.Scan;
+
+        /// <summary>The thickness cap runs for this type: characters (fingers, toes).</summary>
+        static bool ThicknessCapFor(ModelType type) => type == ModelType.Character;
+
+        static float[] ThicknessFor(RemeshResult result, ScaleField field)
+        {
+            if (result.thickness != null && result.thicknessFor == result.topology
+                && result.thickness.Length == field.spacing.Length) return result.thickness;
+            // Looked for out to twice the reach this field needs, so a later field sized for a
+            // somewhat coarser count reads the same thicknesses.
+            var reach = new float[field.spacing.Length];
+            for (var i = 0; i < reach.Length; i++) reach[i] = 2f * thicknessCellsAcross * field.spacing[i];
+            result.thickness = ScaleField.Thickness(result.topology, reach);
+            result.thicknessFor = result.topology;
+            return result.thickness;
+        }
+
+        static ScaleField SizingField(RemeshResult result, int target, float adaptivity, bool withPaint = true,
+            bool withThickness = true)
         {
             // Painted: sized for the count the unpainted surface takes, then multiplied by the paint.
             var paintFactors = result.paintCountRatio > 0f ? PaintFactors(result) : null;
@@ -1418,7 +1666,10 @@ namespace NativeRemesher
             }
             if (paintFactors != null)
                 target = Mathf.Max(4, Mathf.RoundToInt(target / result.paintCountRatio));
+            if (withThickness && result.thinCountRatio > 0f)
+                target = Mathf.Max(4, Mathf.RoundToInt(target / result.thinCountRatio));
             var field = SizingFieldCore(result, target, adaptivity);
+            if (withThickness && result.topology != null) field = DetailCaps(result, field);
             if (smallPartSizing && smallPartGaps && result.topology != null)
                 field = ScaleField.ShrunkToGaps(result.topology, field, target, smallPartAngle, smallPartFraction,
                     smallPartMaxExtentCells, smallPartMinLengthCells, smallPartSlope, smallPartFloorCells, smallPartDetour);
@@ -1825,6 +2076,40 @@ namespace NativeRemesher
                 result.requestedQuadCount = requested;
                 result.adaptiveQuadCountFactor = factor;
                 settings.targetQuadCount = Mathf.RoundToInt(requested * factor);
+            }
+
+            // --- thin parts' extra quads ---
+            //
+            // As the paint: the field is sized for the target and then capped where the model is
+            // thin, and the target is raised by what the cap adds, so a finger's quads are not taken
+            // back from the flat ground by the count control. The target is raised only under
+            // Adapt Quad Count, which is the setting that allows the result past it; off, the count
+            // holds and the finger's quads come from everywhere else.
+            result.thinCountRatio = 0f;
+            if ((thicknessSizing && ThicknessCapFor(result.modelType) || ridgeGapSizing)
+                && result.profile.integerGridMap
+                && result.profile.curvatureAdaptivity > 0f && settings.targetQuadCount > 0
+                && (!result.profile.integerGridMap || Extraction.IntegerGridMap.gradeSpacing))
+            {
+                var plain = SizingField(result, settings.targetQuadCount, result.profile.curvatureAdaptivity,
+                    withThickness: false);
+                var capped = DetailCaps(result, plain);
+                var before = ScaleField.QuadCount(result.topology, plain);
+                var ratio = before > 0 ? (float)(ScaleField.QuadCount(result.topology, capped) / before) : 1f;
+                // A model that is mostly thin -- knotwork, chain mail, a lattice of rods -- would
+                // want several times the quads; squeezed into the limit, the rest of it coarsens.
+                // Fingers and toes are a small share of a body, so past the limit it is not used.
+                if (ratio > thicknessMaxGrowth)
+                {
+                    result.thicknessSkipped = ratio;
+                    ratio = 1f;
+                }
+                ratio = Mathf.Clamp(ratio, 1f, Extraction.IntegerGridMap.adaptiveQuadCountMaxGrowth);
+                if (ratio > 1.001f && Extraction.IntegerGridMap.adaptiveQuadCount)
+                {
+                    result.thinCountRatio = ratio;
+                    settings.targetQuadCount = Mathf.RoundToInt(settings.targetQuadCount * ratio);
+                }
             }
 
             // --- local refinement for a graded lattice (integer grid map only) ---

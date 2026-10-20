@@ -621,6 +621,235 @@ namespace NativeRemesher
             return FromSpacings(values, total > 0 ? (float)(weighted / total) : field.meanSpacing);
         }
 
+        /// <summary>
+        /// How thick the part is at each vertex: the distance from it, straight in (against its
+        /// normal), to the inside of the far wall, looked for out to <paramref name="reach"/>[i].
+        /// Infinity where nothing is found that close -- a wide part, or an open sheet.
+        /// </summary>
+        public static float[] Thickness(RemeshTopology topology, float[] reach)
+        {
+            var count = topology.vertexCount;
+            var thickness = new float[count];
+            var normals = topology.normals;
+            if (normals == null || normals.Length != count || topology.triangles == null)
+            {
+                for (var i = 0; i < count; i++) thickness[i] = float.PositiveInfinity;
+                return thickness;
+            }
+            var grid = new SpatialGrid(topology.positions, topology.triangles);
+            var positions = topology.positions;
+            System.Threading.Tasks.Parallel.For(0, count, BackgroundScheduler.Options, i =>
+            {
+                thickness[i] = float.PositiveInfinity;
+                var n = normals[i];
+                var r = reach[i];
+                if (!(r > 0f) || n.sqrMagnitude < 0.25f) return;
+                // Started a hair inside, so the vertex's own triangles are not the hit; only walls
+                // facing the same way as the ray count, which is the inside of the far side.
+                var inward = -n.normalized;
+                if (!grid.FirstHit(positions[i] + inward * (1e-3f * r), inward, r, 1f, out var t, out _)) return;
+                t += 1e-3f * r;
+                if (rodsOnly && !IsRod(grid, positions[i] + inward * (0.5f * t), inward, t)) return;
+                thickness[i] = t;
+            });
+            return thickness;
+        }
+
+        /// <summary>
+        /// <see cref="Thickness"/> counts only parts thin in two directions -- a finger, a toe, a
+        /// rod, the rim of a strap -- and not a plate's face, which is thin one way and wide the
+        /// other: sized to its thickness, a panel or a coat modelled with two sides would take a
+        /// grid several times finer over its whole area.
+        /// </summary>
+        public static bool rodsOnly = true;
+
+        /// <summary>
+        /// How fast <see cref="CappedByThickness"/>'s small cells grow back out: the spacing may
+        /// multiply by this much over one of its own cells. 1 or less: per edge, by the gradation.
+        /// </summary>
+        public static float thicknessGradationPerCell = 1.5f;
+
+        /// <summary>
+        /// Whether the solid round <paramref name="middle"/> (half way through it along
+        /// <paramref name="through"/>, <paramref name="thickness"/> across) is closed in on both
+        /// sides along some direction square to <paramref name="through"/>, within 0.75 of the
+        /// thickness: across a rod it is, at 0.5; across a plate's face it runs on.
+        /// </summary>
+        static bool IsRod(SpatialGrid grid, Vector3 middle, Vector3 through, float thickness)
+        {
+            var u = OrientationField.ArbitraryTangent(through);
+            var v = Vector3.Cross(through, u);
+            var reach = 0.75f * thickness;
+            for (var k = 0; k < 4; k++)
+            {
+                var angle = k * Mathf.PI / 4f;
+                var d = u * Mathf.Cos(angle) + v * Mathf.Sin(angle);
+                if (grid.FirstHit(middle, d, reach, 0f, out _, out _) && grid.FirstHit(middle, -d, reach, 0f, out _, out _))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// The field with no cell wider than a part's thickness over <paramref name="cellsAcross"/>,
+        /// graded back out to its surroundings: a finger, a toe, a rod gets that many cells across
+        /// whatever the rest of the model is sized at. Parts thinner than
+        /// <paramref name="thinnestCells"/> of the local cell are left alone -- a panel modelled
+        /// with two sides a few millimetres apart is a sheet, not a finger, and sizing to its
+        /// thickness would multiply the whole panel's quads.
+        /// </summary>
+        /// <remarks>
+        /// Why not more curvature grading: the chord-error law's ratio is powered by the adaptivity
+        /// (0.25 at Adaptive Size 50), so a finger whose radius is under one cell is given about 0.8
+        /// of the median spacing, where eight segments round it need about 0.45. Raising the power
+        /// regrades the whole model; this touches only what is thin. Creases are not thin, so a
+        /// building's edge or a panel's fold is not refined by it.
+        /// </remarks>
+        public static ScaleField CappedByThickness(RemeshTopology topology, ScaleField field, float[] thickness,
+            float cellsAcross, float thinnestCells, float gradation, float floor = 0f)
+        {
+            if (field?.spacing == null || thickness == null || thickness.Length != field.spacing.Length
+                || !(cellsAcross > 0f)) return field;
+            var values = (float[])field.spacing.Clone();
+            var capped = 0;
+            for (var i = 0; i < values.Length; i++)
+            {
+                var t = thickness[i];
+                var h = values[i];
+                if (float.IsInfinity(t) || !(h > 0f) || t < thinnestCells * h) continue;
+                var cap = Mathf.Max(t / cellsAcross, floor * h);
+                if (cap < h) { values[i] = cap; capped++; }
+            }
+            if (capped == 0) return field;
+            // Graded by distance in cells rather than per edge: per edge, how far a finger's small
+            // cells spread depended on how finely the solve mesh happened to be cut, and the count
+            // taken before local refinement disagreed with the one after it (body: 258 quads more
+            // ungraded, 6,500 more graded per edge).
+            if (thicknessGradationPerCell > 1f) GradePerCell(topology, values, thicknessGradationPerCell, 1f);
+            else Grade(topology, values, Mathf.Max(1.01f, gradation));
+            var areas = topology.areas;
+            double weighted = 0, total = 0;
+            for (var i = 0; i < values.Length; i++) { weighted += values[i] * areas[i]; total += areas[i]; }
+            return FromSpacings(values, total > 0 ? (float)(weighted / total) : field.meanSpacing);
+        }
+
+        /// <summary>
+        /// The field with cells no wider than the gap between a crest and the groove beside it over
+        /// <paramref name="cellsPerGap"/>, graded back out: fingers pressed together, toes, a boot's
+        /// welt, the ribs of a panel get a row on each crest and in each groove instead of being
+        /// averaged into one smooth paddle.
+        /// </summary>
+        /// <remarks>
+        /// A crest and a groove are vertices whose stronger principal curvature, averaged over half
+        /// a cell (CurvatureDirections.ShapeTensors), turns the normal at least
+        /// <paramref name="strength"/> radians across a cell, convex and concave. A pair counts when
+        /// they are within <paramref name="reachCells"/> of each other and the surface between them
+        /// slopes at least <paramref name="minSlopeDegrees"/> away from the groove's normal: a
+        /// shallow wrinkle bends as sharply as a finger's groove but is not deep enough to be worth
+        /// quads. The cell is not taken under <paramref name="floor"/> of the field's own.
+        /// </remarks>
+        /// <summary>Radius, in cells, the curvature is averaged over for <see cref="CappedByRidgeGaps"/>.</summary>
+        public static float ridgeGapRadiusCells = 0.5f;
+
+        public static ScaleField CappedByRidgeGaps(RemeshTopology topology, ScaleField field, float strength,
+            float reachCells, float minSlopeDegrees, float cellsPerGap, float floor, float gradation,
+            out int capped)
+        {
+            capped = 0;
+            if (field?.spacing == null || topology?.normals == null || !(cellsPerGap > 0f)) return field;
+            var count = topology.vertexCount;
+            var h = field.spacing;
+            var positions = topology.positions;
+            var normals = topology.normals;
+            var start = topology.adjacencyStart;
+            var adjacency = topology.adjacency;
+            var median = Median(h);
+            if (!(median > 0f)) return field;
+            var tensor = CurvatureDirections.ShapeTensors(topology, ridgeGapRadiusCells * median, out _);
+
+            // Signed stronger principal curvature times the local cell: + convex, - concave.
+            var turn = new float[count];
+            for (var i = 0; i < count; i++)
+            {
+                var n = normals[i];
+                var u = OrientationField.ArbitraryTangent(n);
+                var v = Vector3.Cross(n, u);
+                var o = i * 6;
+                Vector3 Apply(Vector3 x) => new Vector3(
+                    tensor[o] * x.x + tensor[o + 1] * x.y + tensor[o + 2] * x.z,
+                    tensor[o + 1] * x.x + tensor[o + 3] * x.y + tensor[o + 4] * x.z,
+                    tensor[o + 2] * x.x + tensor[o + 4] * x.y + tensor[o + 5] * x.z);
+                var m11 = Vector3.Dot(u, Apply(u));
+                var m12 = Vector3.Dot(u, Apply(v));
+                var m22 = Vector3.Dot(v, Apply(v));
+                var mean = 0.5f * (m11 + m22);
+                var radius = Mathf.Sqrt(0.25f * (m11 - m22) * (m11 - m22) + m12 * m12);
+                var k1 = Mathf.Abs(mean + radius) >= Mathf.Abs(mean - radius) ? mean + radius : mean - radius;
+                turn[i] = k1 * h[i];
+            }
+
+            // From every groove vertex at once, over the edges: the nearest groove, how far, and the
+            // steepest the surface has turned from that groove's normal on the way.
+            var source = new int[count];
+            var slope = new float[count];
+            for (var i = 0; i < count; i++) source[i] = -1;
+            var queue = new Queue<int>();
+            for (var i = 0; i < count; i++)
+            {
+                if (!(turn[i] <= -strength)) continue;
+                source[i] = i;
+                queue.Enqueue(i);
+            }
+            var gap = new float[count];
+            for (var i = 0; i < count; i++) gap[i] = float.PositiveInfinity;
+            var cosMin = Mathf.Cos(minSlopeDegrees * Mathf.Deg2Rad);
+            while (queue.Count > 0)
+            {
+                var vtx = queue.Dequeue();
+                var s = source[vtx];
+                var reach = reachCells * h[s];
+                for (var a = start[vtx]; a < start[vtx + 1]; a++)
+                {
+                    var j = adjacency[a];
+                    if (source[j] >= 0) continue;
+                    var d = (positions[j] - positions[s]).magnitude;
+                    if (d > reach) continue;
+                    source[j] = s;
+                    slope[j] = Mathf.Max(slope[vtx], Vector3.Dot(normals[j], normals[s]) < cosMin ? 1f : 0f);
+                    queue.Enqueue(j);
+                    if (turn[j] >= strength && slope[j] > 0f)
+                    {
+                        gap[j] = Mathf.Min(gap[j], d);
+                        gap[s] = Mathf.Min(gap[s], d);
+                    }
+                }
+            }
+
+            var values = (float[])h.Clone();
+            for (var i = 0; i < count; i++)
+            {
+                if (float.IsInfinity(gap[i])) continue;
+                var cap = Mathf.Max(gap[i] / cellsPerGap, floor * h[i]);
+                if (cap < values[i]) { values[i] = cap; capped++; }
+            }
+            if (capped == 0) return field;
+            Grade(topology, values, Mathf.Max(1.01f, gradation));
+            var areas = topology.areas;
+            double weighted = 0, total = 0;
+            for (var i = 0; i < values.Length; i++) { weighted += values[i] * areas[i]; total += areas[i]; }
+            return FromSpacings(values, total > 0 ? (float)(weighted / total) : field.meanSpacing);
+        }
+
+        /// <summary>Quads <paramref name="field"/> asks for over <paramref name="topology"/>: the sum of area over spacing squared.</summary>
+        public static double QuadCount(RemeshTopology topology, ScaleField field)
+        {
+            var areas = topology.areas;
+            double sum = 0;
+            for (var i = 0; i < field.spacing.Length && i < areas.Length; i++)
+                if (field.spacing[i] > 0f) sum += areas[i] / ((double)field.spacing[i] * field.spacing[i]);
+            return sum;
+        }
+
         public static ScaleField FromSpacings(float[] values, float meanSpacing)
         {
             if (values == null) throw new ArgumentNullException(nameof(values));
