@@ -740,6 +740,78 @@ namespace NativeRemesher
         public bool polylinesCarried { get; private set; } = true;
 
         /// <summary>
+        /// The boundary edges plus the crease edges that stand alone: those with less than
+        /// <paramref name="maxLengthOverRadius"/> x <paramref name="radius"/> of crease (themselves
+        /// included) whose midpoints lie within <paramref name="radius"/> of their own.
+        /// </summary>
+        /// <remarks>
+        /// One crease straight through the disc measures about 2, a corner where three meet about
+        /// 3, two creases side by side about 4. A tire's tread, a grille or a knurled grip at the
+        /// grid's scale is a dozen creases inside one cell: no grid can follow them, and pinned to
+        /// all of them it crumples. They are surface detail, for the normal map.
+        /// </remarks>
+        public FeatureGraph KeepSparseCreases(RemeshTopology topology, float radius, float maxLengthOverRadius,
+            out int dropped)
+        {
+            if (topology == null) throw new ArgumentNullException(nameof(topology));
+            dropped = 0;
+            if (radius <= 0f || maxLengthOverRadius <= 0f) return this;
+
+            var boundary = new HashSet<long>(EdgeKey.Comparer);
+            var halfEdgeCount = topology.halfEdgeVertex?.Length ?? 0;
+            for (var h = 0; h < halfEdgeCount; h++)
+                if (topology.halfEdgeTwin[h] < 0)
+                    boundary.Add(Key(topology.halfEdgeVertex[h], topology.HalfEdgeTarget(h)));
+
+            var creases = new List<long>();
+            foreach (var edge in m_FeatureEdges)
+                if (!boundary.Contains(edge)) creases.Add(edge);
+            if (creases.Count == 0) return this;
+
+            var p = topology.positions;
+            var mid = new Vector3[creases.Count];
+            var length = new float[creases.Count];
+            var cells = new Dictionary<Vector3Int, List<int>>();
+            for (var i = 0; i < creases.Count; i++)
+            {
+                Vector3 a = p[EdgeKey.First(creases[i])], b = p[EdgeKey.Second(creases[i])];
+                mid[i] = 0.5f * (a + b);
+                length[i] = (b - a).magnitude;
+                var c = Vector3Int.FloorToInt(mid[i] / radius);
+                if (!cells.TryGetValue(c, out var list)) cells[c] = list = new List<int>();
+                list.Add(i);
+            }
+
+            var keep = new bool[creases.Count];
+            var radiusSqr = radius * radius;
+            var limit = maxLengthOverRadius * radius;
+            System.Threading.Tasks.Parallel.For(0, creases.Count, i =>
+            {
+                var c = Vector3Int.FloorToInt(mid[i] / radius);
+                var sum = 0f;
+                for (var dx = -1; dx <= 1; dx++)
+                for (var dy = -1; dy <= 1; dy++)
+                for (var dz = -1; dz <= 1; dz++)
+                {
+                    if (!cells.TryGetValue(new Vector3Int(c.x + dx, c.y + dy, c.z + dz), out var list)) continue;
+                    foreach (var j in list)
+                        if ((mid[j] - mid[i]).sqrMagnitude <= radiusSqr) sum += length[j];
+                }
+                keep[i] = sum <= limit;
+            });
+
+            var edges = new List<(int a, int b)>();
+            foreach (var edge in boundary) edges.Add((EdgeKey.First(edge), EdgeKey.Second(edge)));
+            for (var i = 0; i < creases.Count; i++)
+            {
+                if (keep[i]) edges.Add((EdgeKey.First(creases[i]), EdgeKey.Second(creases[i])));
+                else dropped++;
+            }
+            if (dropped == 0) return this;
+            return Empty(topology.vertexCount).WithEdges(topology, edges);
+        }
+
+        /// <summary>
         /// Detects features by dihedral angle. <paramref name="angleDegrees"/> at or below zero
         /// disables crease detection; boundaries are still reported, because a boundary is a feature
         /// regardless of any angle threshold.

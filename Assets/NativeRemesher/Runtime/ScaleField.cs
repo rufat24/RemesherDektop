@@ -656,6 +656,131 @@ namespace NativeRemesher
         }
 
         /// <summary>
+        /// How wide an open strip is at each vertex: on the strip, the distance between its two
+        /// borders; infinity elsewhere (closed surface, wide panels, more than
+        /// <paramref name="reach"/>[i] across).
+        /// </summary>
+        /// <remarks>
+        /// A border vertex's width is the distance to the nearest border vertex that is not its
+        /// neighbour along the border -- one on another loop, or on its own loop at least
+        /// <see cref="stripDetour"/> times further round than straight across. A panel's edge has
+        /// no such vertex within reach; a pillar strip, a flange, a trim band has the other side
+        /// right across. A vertex inside takes the width of the nearest border vertex when it lies
+        /// within that width of it.
+        /// </remarks>
+        public static float[] StripWidth(RemeshTopology topology, float[] reach)
+        {
+            var count = topology.vertexCount;
+            var width = new float[count];
+            for (var i = 0; i < count; i++) width[i] = float.PositiveInfinity;
+            var twin = topology.halfEdgeTwin;
+            if (twin == null) return width;
+
+            // Border loops: each border vertex's next along its loop, and its arc length.
+            var next = new Dictionary<int, int>();
+            for (var h = 0; h < twin.Length; h++)
+                if (twin[h] < 0) next[topology.halfEdgeVertex[h]] = topology.HalfEdgeTarget(h);
+            if (next.Count == 0) return width;
+            var loop = new Dictionary<int, int>();
+            var arc = new Dictionary<int, float>();
+            var loopLength = new List<float>();
+            var positions = topology.positions;
+            foreach (var start in next.Keys)
+            {
+                if (loop.ContainsKey(start)) continue;
+                var id = loopLength.Count;
+                var length = 0f;
+                var v = start;
+                for (var guard = 0; guard <= next.Count && !loop.ContainsKey(v); guard++)
+                {
+                    loop[v] = id;
+                    arc[v] = length;
+                    if (!next.TryGetValue(v, out var w)) break;
+                    length += (positions[w] - positions[v]).magnitude;
+                    v = w;
+                }
+                loopLength.Add(length);
+            }
+
+            var border = new List<int>(loop.Keys);
+            var maxReach = 0f;
+            foreach (var v in border) maxReach = Mathf.Max(maxReach, reach[v]);
+            if (!(maxReach > 0f)) return width;
+            var cell = maxReach;
+            var buckets = new Dictionary<Vector3Int, List<int>>();
+            foreach (var v in border)
+            {
+                var c = Vector3Int.FloorToInt(positions[v] / cell);
+                if (!buckets.TryGetValue(c, out var list)) buckets[c] = list = new List<int>();
+                list.Add(v);
+            }
+
+            var borderWidth = new Dictionary<int, float>();
+            foreach (var v in border)
+            {
+                var r = reach[v];
+                if (!(r > 0f)) continue;
+                var c = Vector3Int.FloorToInt(positions[v] / cell);
+                var best = float.PositiveInfinity;
+                for (var dx = -1; dx <= 1; dx++)
+                for (var dy = -1; dy <= 1; dy++)
+                for (var dz = -1; dz <= 1; dz++)
+                {
+                    if (!buckets.TryGetValue(new Vector3Int(c.x + dx, c.y + dy, c.z + dz), out var list)) continue;
+                    foreach (var w in list)
+                    {
+                        if (w == v) continue;
+                        var d = (positions[w] - positions[v]).magnitude;
+                        if (d >= best || d > r) continue;
+                        if (loop[w] == loop[v])
+                        {
+                            var along = Mathf.Abs(arc[w] - arc[v]);
+                            along = Mathf.Min(along, loopLength[loop[v]] - along);
+                            if (along < stripDetour * d) continue;
+                        }
+                        best = d;
+                    }
+                }
+                if (!float.IsInfinity(best)) borderWidth[v] = best;
+            }
+            if (borderWidth.Count == 0) return width;
+
+            var strip = new List<int>(borderWidth.Keys);
+            var stripBuckets = new Dictionary<Vector3Int, List<int>>();
+            foreach (var v in strip)
+            {
+                var c = Vector3Int.FloorToInt(positions[v] / cell);
+                if (!stripBuckets.TryGetValue(c, out var list)) stripBuckets[c] = list = new List<int>();
+                list.Add(v);
+            }
+            System.Threading.Tasks.Parallel.For(0, count, BackgroundScheduler.Options, i =>
+            {
+                var c = Vector3Int.FloorToInt(positions[i] / cell);
+                var nearest = float.PositiveInfinity;
+                var nearestWidth = float.PositiveInfinity;
+                for (var dx = -1; dx <= 1; dx++)
+                for (var dy = -1; dy <= 1; dy++)
+                for (var dz = -1; dz <= 1; dz++)
+                {
+                    if (!stripBuckets.TryGetValue(new Vector3Int(c.x + dx, c.y + dy, c.z + dz), out var list)) continue;
+                    foreach (var w in list)
+                    {
+                        var d = (positions[w] - positions[i]).magnitude;
+                        if (d < nearest) { nearest = d; nearestWidth = borderWidth[w]; }
+                    }
+                }
+                if (nearest <= nearestWidth) width[i] = nearestWidth;
+            });
+            return width;
+        }
+
+        /// <summary>
+        /// How much further round its own border loop than straight across another border vertex
+        /// must be to count as the far side of a strip (<see cref="StripWidth"/>).
+        /// </summary>
+        public static float stripDetour = 3f;
+
+        /// <summary>
         /// <see cref="Thickness"/> counts only parts thin in two directions -- a finger, a toe, a
         /// rod, the rim of a strap -- and not a plate's face, which is thin one way and wide the
         /// other: sized to its thickness, a panel or a coat modelled with two sides would take a

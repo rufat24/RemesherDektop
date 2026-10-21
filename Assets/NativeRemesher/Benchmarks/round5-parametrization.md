@@ -975,3 +975,79 @@ kept as they were (the window says so); under the old profile they came out as g
 Tests 227: 225 pass, 2 skipped (Headless/tests22.xml), including ShapeRecognitionTests (hard
 surface / even quad sphere / open jittered sheet / rod against plate / part shut inside another,
 and the same behind glass).
+
+## Round 30: the window's settings, wheels and car panels (branch remesher-band-structure)
+
+**The window's settings, audited.** Every switch was run on and off on the helmet head (5000),
+main1 (5000), the Porsche body (1280) and a wheel pair (1500), type Auto, with everything else at
+the window's defaults (irregular / Hausdorff):
+
+| switch | head | main1 | car body | wheel |
+|---|---|---|---|---|
+| defaults | 2.9 % / 0.051 | 1.1 % / 0.0057 | 2.3 % / 0.220 | 8.0 % / 0.094 |
+| Extractor Collapse | 46.7 % / 0.026 | 23.6 % / 0.025 | 37.4 % / 0.080 | 46.6 % / 0.037 |
+| Detail Quads | 34.9 % / 0.051 | 22.6 % / 0.0034 | 11.6 % / 0.058 | 19.5 % / 0.058 |
+| Quad Layout off | 4.1 % / 0.039 | 1.5 % / 0.0060 | 3.4 % / 0.117 | 18.8 % / 0.095 |
+| Global Parametrization off | (= layout off) | 1.9 % / 0.0188 | (= layout off) | (= layout off) |
+| Curvature Alignment 0.3 | 3.8 % / 0.049 | 1.4 % / 0.0055 | 2.2 % / 0.012 | 6.9 % / 0.096 |
+| Patch Curves | 2.9 % / 0.050 | 1.2 % / 0.0032 | 4.1 % / 0.120 | 8.7 % / 0.091 |
+| Straps As Tubes off | 2.4 % / 0.012 | unchanged | unchanged | unchanged |
+
+None is dead -- each changes something -- but Collapse and Detail Quads are worse everywhere, Quad
+Layout and Global Parametrization are better on and fall back on their own (layout coverage),
+Curvature Alignment and Patch Curves are mixed, and the strap finder is Model Type's business
+(Character only). The window now shows only what a user decides: Parts (Combine Parts, Fewer Quads
+On Hidden Parts), Model Type, Quads (QuadRemesher's six), Output (Bake Texture, Bake Normal Map,
+Texture Size for both bakes with the size Auto resolves to, Save As Asset, Quad Topology In Asset),
+Fix Areas, and a folded "Last Run Details". The Profile list and Auto Profile went with it (Model
+Type's Auto is that selection). All the methods stay in Runtime behind their statics.
+
+**Texture Size Auto, checked end to end** (headless PartsCheck, ccnb at 5000): colour texture and
+normal map both written and imported 8192 x 8192. The user's last ccnb output (2048) predated the
+change; the popup sat indented under Bake Normal Map and read as the normal map's alone -- it has
+its own row now.
+
+**Wheels: the rim barrel was lidded.** The wheel part is 8 pieces (tire -- an open tube --, spoke
+disc, rim barrel -- open both ends, 51 edges round --, caliper, twice). After the cap pass, which
+leaves the input's own outline open, `CapSmallLoopsUndirected` zipped every loop up to 64 edges shut
+with a ladder of quads, outline or not: a flat striped disc over every wheel. It now uses the same
+outline test (`HoleFiller.OutlineTest`, `IntegerGridMap.closeKeepsOutline`). Rim barrel alone at
+300: Hausdorff 0.287 -> 0.039; the wheel pair at 1500: 0.095 -> 0.027, irregular 20.8 -> 7.8 %.
+
+**Dense creases are detail** (`hardSurfaceSparseCreases`, `FeatureGraph.KeepSparseCreases`): Hard
+Surface keeps its 20-degree creases only where, within a cell, there is less than 4.5 cells of crease
+-- one crease reads ~2, a corner ~3, a tread or grille a dozen. Wheel: 27,162 tread crease edges
+dropped, irregular 7.8 -> 4.5-6.5 %. Taking Hard Surface's creases by chains instead
+(`hardSurfaceCoherentCreases`, as Detect Hard Edges on the other types) helped the wheel and hurt
+the panels (roof Hausdorff 0.029 -> 0.062, bumper irregular 4.0 -> 8.5 %) -- off.
+
+**The decimation cut across the shape** (`decimateMaxErrorCells` 0.1, `DecimateOptions.maxDistance`).
+Most cheap collapses on a modelled car part are refused as slivers, so the heap ran down to dear
+ones and took them: front bumper 74,336 -> 7,771 triangles with a largest error of 2.56, its curled
+lip cut straight across a cell inside the surface, and every quad followed (output vertices 0.54
+cells off the source on average). A collapse is now refused past 0.1 cell RMS over the planes it
+stands for; the mesh stays a little above budget instead (8,774). Bumper Hausdorff 0.092 -> 0.037,
+chamfer 0.0080 -> 0.0031, vertices 0.06 cells off. Sculpts and ccnb hardly reach the limit (0-119
+refusals).
+
+**Open strips get two cells across** (`stripSizing`, `ScaleField.StripWidth`, Hard Surface): a
+strip's width is the distance between its two borders (a border vertex whose nearest border vertex
+is 3x further round its own loop than straight across), and the field is capped to width / 2 there,
+graded out, the target raised by what it adds (as the finger cap). The body's rear pillar strips,
+narrower than a cell, were dropped: body at 600 Hausdorff 0.220 -> 0.010, chamfer 0.0021 -> 0.0010,
++18 % quads; roof 0.084 -> 0.007 (coverage 99.2 % had hidden its lost strip from the 98 % check).
+
+**Car parts, now** (Hard Surface against Scan/Character on the same code, Hausdorff): body 0.010
+(Scan 0.221), hood 0.027 (0.031), door 0.0069 (0.011), Fenders 0.015 (0.016), wheels 0.028 (0.041),
+roof 0.007 (0.014), bumper 0.037 (0.036) -- Hard Surface is right for them.
+
+**Regression, old build (6eeaa6d) against new, type Auto** (Hausdorff / irregular): head 5000
+0.0507 / 2.92 % -> 0.0497 / 2.75 %; head 2000 0.0517 -> 0.0249; body, main1, helmet, horn
+identical; ccnb 5000 0.0135 -> 0.0169 (irregular 4.64 -> 4.60 %), ccnb 2000 0.0205 -> 0.0170.
+
+**The Porsche through the window's own path** (8000, Auto): 23,945 -> 22,866 faces, 143 -> 137 s.
+Wheels with spokes instead of lids, the pillars and the windscreen frame whole, doors and front
+smooth; the right rear arch and the wing are still rough.
+
+Tests 231: 229 pass, 2 skipped (Headless/tests24.xml), including HardSurfaceTests (open tube not
+lidded, dense creases dropped and a lone one kept, strip width, decimation error limit).

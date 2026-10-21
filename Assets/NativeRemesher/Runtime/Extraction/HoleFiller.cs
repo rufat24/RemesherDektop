@@ -1332,6 +1332,19 @@ namespace NativeRemesher.Extraction
             return path[path.Count - 1];
         }
 
+        /// <summary>
+        /// The same "is this loop the input's own outline" test <see cref="Fill"/> leaves loops open
+        /// by, for the passes that close rims after it; null when the input is closed.
+        /// </summary>
+        public static Func<List<int>, Vector3[], bool> OutlineTest(Vector3[] outlineVertices, int[] outlineEdges,
+            float tolerance)
+        {
+            if (outlineVertices == null || outlineEdges == null || outlineEdges.Length < 2 || tolerance <= 0f)
+                return null;
+            var grid = new OutlineGrid(outlineVertices, outlineEdges, tolerance);
+            return (loop, positions) => IsOnInputOutline(loop, positions, grid, tolerance);
+        }
+
         static bool IsOnInputOutline(List<int> loop, Vector3[] positions, OutlineGrid outline,
             float tolerance)
         {

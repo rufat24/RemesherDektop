@@ -858,12 +858,20 @@ namespace NativeRemesher
                 FaceOrienter.Run(faces, positions, normals);
                 Cap();
                 igStats.capsDroppedNonManifold += DropNonManifoldNew(faces, extracted);
-                igStats.smallLoopsCapped = CapSmallLoopsUndirected(faces, 8);
+                // The input's own openings stay open here too, as in the cap above: a car's rim
+                // barrel, an open tube 51 edges round at each end, was zipped shut at both ends by
+                // the ladder -- the flat striped disc over every wheel of the Porsche.
+                var outlineTest = Extraction.IntegerGridMap.closeKeepsOutline && topology.boundaryEdgeCount > 0
+                    ? HoleFiller.OutlineTest(topology.positions, outlineEdges, position.scale)
+                    : null;
+                Func<List<int>, bool> onOutline = null;
+                if (outlineTest != null) onOutline = loop => outlineTest(loop, positions);
+                igStats.smallLoopsCapped = CapSmallLoopsUndirected(faces, 8, null, onOutline);
                 // Longer rims the directed walk abandoned at a fold -- up to 51 edges, 66 open edges
                 // on the head at 4,600 with Adapt Quad Count -- zipped shut with a ladder of quads.
                 if (Extraction.IntegerGridMap.ladderCapMaxEdges > 8)
                     igStats.smallLoopsCapped += CapSmallLoopsUndirected(faces,
-                        Extraction.IntegerGridMap.ladderCapMaxEdges, positions);
+                        Extraction.IntegerGridMap.ladderCapMaxEdges, positions, onOutline);
                 igStats.capsDroppedNonManifold += DropNonManifoldNew(faces, extracted);
 
                 // A rim too curved for a flat grid is capped as one n-gon. ToMesh would fan it into
@@ -992,7 +1000,8 @@ namespace NativeRemesher
         /// exactly two open edges, which leaves no choice about how to walk it; FaceOrienter
         /// decides the winding afterwards as it does for every face.
         /// </remarks>
-        static int CapSmallLoopsUndirected(List<int[]> faces, int maxLength, Vector3[] ladderPositions = null)
+        static int CapSmallLoopsUndirected(List<int[]> faces, int maxLength, Vector3[] ladderPositions = null,
+            Func<List<int>, bool> onOutline = null)
         {
             var incidence = new Dictionary<long, int>(EdgeKey.Comparer);
             foreach (var face in faces)
@@ -1041,6 +1050,7 @@ namespace NativeRemesher
                 }
                 foreach (var v in loop) visited.Add(v);
                 if (!simple || current != start || loop.Count < 3 || loop.Count > maxLength) continue;
+                if (onOutline != null && onOutline(loop)) continue;
                 if (ladderPositions != null && loop.Count > 8) AddLadder(faces, loop, ladderPositions);
                 else faces.Add(loop.ToArray());
                 capped++;

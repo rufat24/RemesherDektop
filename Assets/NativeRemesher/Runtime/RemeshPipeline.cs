@@ -181,6 +181,10 @@ namespace NativeRemesher
         /// </summary>
         public float thinCountRatio;
 
+        /// <summary>Open strips' widths per solve vertex (RemeshPipeline.stripSizing), and the topology they are for.</summary>
+        internal float[] stripWidth;
+        internal RemeshTopology stripWidthFor;
+
         internal float[] thickness;
         internal RemeshTopology thicknessFor;
 
@@ -239,6 +243,9 @@ namespace NativeRemesher
         public string faceCountTrace = "";
         /// <summary>Target after clamping to the coarsen-only ceiling.</summary>
         public int effectiveTargetQuadCount;
+
+        /// <summary>Hard Surface creases left out as dense detail (RemeshPipeline.hardSurfaceSparseCreases).</summary>
+        public int denseCreasesDropped;
 
         /// <summary>
         /// The count asked for, before Adaptive Quad Count raised it; see
@@ -786,14 +793,16 @@ namespace NativeRemesher
                             return w;
                         };
                     }
+                    // Cells of the requested count, on the input's area.
+                    double inputArea = 0;
+                    for (var t = 0; t + 2 < triangles.Length; t += 3)
+                        inputArea += Vector3.Cross(positions[triangles[t + 1]] - positions[triangles[t]],
+                            positions[triangles[t + 2]] - positions[triangles[t]]).magnitude * 0.5;
+                    var inputCell = (float)Math.Sqrt(inputArea / Math.Max(1, settings.targetQuadCount));
+                    if (decimateMaxErrorCells > 0f) decimateOptions.maxDistance = decimateMaxErrorCells * inputCell;
                     if (decimateKeepsCreases && Extraction.IntegerGridMap.coherentCreases)
                     {
-                        // Cells of the requested count, on the input's area.
-                        double area = 0;
-                        for (var t = 0; t + 2 < triangles.Length; t += 3)
-                            area += Vector3.Cross(positions[triangles[t + 1]] - positions[triangles[t]],
-                                positions[triangles[t + 2]] - positions[triangles[t]]).magnitude * 0.5;
-                        var cell = (float)Math.Sqrt(area / Math.Max(1, settings.targetQuadCount));
+                        var cell = inputCell;
                         decimateOptions.creaseAngle = Extraction.IntegerGridMap.coherentCreaseAngle;
                         decimateOptions.creaseMinLength = decimateCreaseMinCells * cell;
                         decimateOptions.creaseStraightness = decimateCreaseStraightness;
@@ -904,6 +913,13 @@ namespace NativeRemesher
         /// long. Off (false): decimation as before, and a scan's wall foot comes out as slivers.
         /// </summary>
         public static bool decimateKeepsCreases = true;
+
+        /// <summary>
+        /// The pre-decimation stops short of its triangle budget rather than move a vertex further
+        /// than this, in cells of the requested count, off the input (DecimateOptions.maxDistance).
+        /// 0: no limit (the old behaviour).
+        /// </summary>
+        public static float decimateMaxErrorCells = 0.1f;
 
         /// <summary>
         /// Most triangles the solver's mesh is decimated to, whatever the target. 0: no cap.
@@ -1402,8 +1418,8 @@ namespace NativeRemesher
             coarseOptions = options.Clone();
             coarseOptions.creaseLoopPositions = options.featurePositions;
             coarseOptions.featurePositions = topology.positions;
-            coarseOptions.features = result.decimatedFeatures ??= FeatureGraph.Detect(topology,
-                result.profile.featureAngleDegrees);
+            coarseOptions.features = result.decimatedFeatures ??= ProfileFeatures(result, topology,
+                result.effectiveTargetQuadCount);
             if (Extraction.IntegerGridMap.relaxAlongLayoutLines && featureEdges != null && featureEdges.Count > 0)
             {
                 var lines = new Vector3[2 * featureEdges.Count];
@@ -1450,8 +1466,52 @@ namespace NativeRemesher
 
         static FeatureGraph DetectCreases(RemeshResult result, RemeshTopology topology, float cell) =>
             creaseScaleCells > 0f && (!creaseScaleOpenOnly || topology.boundaryEdgeCount > 0)
-                ? FeatureGraph.DetectAtScale(topology, Extraction.IntegerGridMap.coherentCreaseAngle, creaseScaleCells * cell)
-                : FeatureGraph.Detect(topology, Extraction.IntegerGridMap.coherentCreaseAngle);
+                ? FeatureGraph.DetectAtScale(topology, CreaseAngle(result), creaseScaleCells * cell)
+                : FeatureGraph.Detect(topology, CreaseAngle(result));
+
+        /// <summary>
+        /// OFF, measured worse (see hardSurfaceSparseCreases for what replaced it). Hard Surface
+        /// finds its creases the way Detect Hard Edges does on the other types -- whole
+        /// chains, kept when they run long and straight -- instead of by the profile's plain 20
+        /// degree test, which marks every edge of a tire's tread and of a decimated grille as a
+        /// crease and pins the grid to all of them. Off: the profile's own test (the old behaviour).
+        /// </summary>
+        public static bool hardSurfaceCoherentCreases = false;
+
+        /// <summary>The bend a Hard Surface crease needs under <see cref="hardSurfaceCoherentCreases"/>.</summary>
+        public static float hardSurfaceCreaseAngle = 30f;
+
+        /// <summary>
+        /// Hard Surface keeps its profile's creases (every edge bent past 20 degrees) only where
+        /// they stand apart (FeatureGraph.KeepSparseCreases): a tire's tread and a grille are left
+        /// to the normal map instead of pinning the grid to every groove. Off: all of them.
+        /// </summary>
+        public static bool hardSurfaceSparseCreases = true;
+
+        /// <summary>The radius, in cells, the crease density is measured over.</summary>
+        public static float sparseCreaseRadiusCells = 1f;
+
+        /// <summary>Most crease length, over the radius, within it that a kept crease edge may have.</summary>
+        public static float sparseCreaseMaxLength = 4.5f;
+
+        /// <summary>The profile's dihedral creases on <paramref name="topology"/>, as Hard Surface keeps them.</summary>
+        static FeatureGraph ProfileFeatures(RemeshResult result, RemeshTopology topology, int quadCount,
+            FeatureGraph detected = null)
+        {
+            var graph = detected ?? FeatureGraph.Detect(topology, result.profile.featureAngleDegrees);
+            if (!hardSurfaceSparseCreases || result.profile.kind != RemeshProfileKind.HardSurface
+                || result.profile.featureAngleDegrees <= 0f) return graph;
+            var cell = topology.EdgeLengthForQuadCount(Mathf.Max(1, quadCount));
+            graph = graph.KeepSparseCreases(topology, sparseCreaseRadiusCells * cell, sparseCreaseMaxLength,
+                out var dropped);
+            result.denseCreasesDropped += dropped;
+            return graph;
+        }
+
+        static float CreaseAngle(RemeshResult result) =>
+            hardSurfaceCoherentCreases && result.modelType == ModelType.HardSurface && hardSurfaceCreaseAngle > 0f
+                ? hardSurfaceCreaseAngle
+                : Extraction.IntegerGridMap.coherentCreaseAngle;
 
         /// <summary>
         /// On a scan, a crease shorter than the minimum is still kept from this many cells when it
@@ -1587,8 +1647,41 @@ namespace NativeRemesher
         /// <summary>Last run's vertices capped by the ridge gaps (diagnostic).</summary>
         public static int lastRidgeGapCapped;
 
+        /// <summary>
+        /// Hard Surface: an open strip narrower than a few cells -- a car's pillar strips, trim and
+        /// flanges -- gets <see cref="stripCellsAcross"/> cells across it (ScaleField.StripWidth), the
+        /// way a finger gets rows round it. A grid coarser than the strip drops it or shreds it: the
+        /// Porsche's body at 600 lost both rear pillar strips (Hausdorff 0.22). Off: not measured.
+        /// </summary>
+        public static bool stripSizing = true;
+
+        /// <summary>Cells across an open strip under <see cref="stripSizing"/>.</summary>
+        public static float stripCellsAcross = 2f;
+
+        /// <summary>Strips narrower than this many cells are a lip, not a strip, and are left alone.</summary>
+        public static float stripThinnestCells = 0.25f;
+
+        /// <summary>The strip cap runs for this type.</summary>
+        static bool StripCapFor(ModelType type) => type == ModelType.HardSurface;
+
+        static float[] StripWidthFor(RemeshResult result, ScaleField field)
+        {
+            if (result.stripWidth != null && result.stripWidthFor == result.topology
+                && result.stripWidth.Length == field.spacing.Length) return result.stripWidth;
+            // Out to twice the widest strip the cap acts on, so a later field reads the same widths.
+            var reach = new float[field.spacing.Length];
+            for (var i = 0; i < reach.Length; i++) reach[i] = 2f * stripCellsAcross * field.spacing[i];
+            result.stripWidth = ScaleField.StripWidth(result.topology, reach);
+            result.stripWidthFor = result.topology;
+            return result.stripWidth;
+        }
+
         static ScaleField DetailCaps(RemeshResult result, ScaleField field)
         {
+            if (stripSizing && StripCapFor(result.modelType) && !(result.thicknessSkipped > 0f)
+                && result.topology.boundaryEdgeCount > 0)
+                field = ScaleField.CappedByThickness(result.topology, field, StripWidthFor(result, field),
+                    stripCellsAcross, stripThinnestCells, result.profile.curvatureGradation);
             if (thicknessSizing && ThicknessCapFor(result.modelType) && !(result.thicknessSkipped > 0f))
                 field = ScaleField.CappedByThickness(result.topology, field, ThicknessFor(result, field),
                     thicknessCellsAcross, thicknessThinnestCells, result.profile.curvatureGradation, thicknessFloor);
@@ -1627,11 +1720,15 @@ namespace NativeRemesher
                 case ModelType.Scan: kind = RemeshProfileKind.Photogrammetry; break;
                 default: return;
             }
-            if (profile.kind == kind && !autoSelectProfile) return;
-            var chosen = RemeshProfile.For(kind);
-            chosen.extractor = profile.extractor;
-            profile = chosen;
-            autoSelectProfile = false;
+            if (profile.kind != kind || autoSelectProfile)
+            {
+                var chosen = RemeshProfile.For(kind);
+                chosen.extractor = profile.extractor;
+                profile = chosen;
+                autoSelectProfile = false;
+            }
+            // Creases by chains rather than by edges (see hardSurfaceCoherentCreases).
+            if (kind == RemeshProfileKind.HardSurface && hardSurfaceCoherentCreases) profile.featureAngleDegrees = 0f;
         }
 
         /// <summary>The strap finder (RibbonParts) runs for this type: not on a car or a scan.</summary>
@@ -1870,7 +1967,7 @@ namespace NativeRemesher
                         edges.Add((graph.polylineVertices[i - 1], graph.polylineVertices[i]));
             }
             // Boundaries, and the profile's own creases where it has any.
-            Add(FeatureGraph.Detect(topology, result.profile.featureAngleDegrees));
+            Add(ProfileFeatures(result, topology, result.effectiveTargetQuadCount));
             // Material borders (Use Materials): the decimator kept them as edge chains.
             if (result.materials != null)
             {
@@ -2086,7 +2183,8 @@ namespace NativeRemesher
             // Adapt Quad Count, which is the setting that allows the result past it; off, the count
             // holds and the finger's quads come from everywhere else.
             result.thinCountRatio = 0f;
-            if ((thicknessSizing && ThicknessCapFor(result.modelType) || ridgeGapSizing)
+            if ((thicknessSizing && ThicknessCapFor(result.modelType) || ridgeGapSizing
+                 || stripSizing && StripCapFor(result.modelType) && result.topology.boundaryEdgeCount > 0)
                 && result.profile.integerGridMap
                 && result.profile.curvatureAdaptivity > 0f && settings.targetQuadCount > 0
                 && (!result.profile.integerGridMap || Extraction.IntegerGridMap.gradeSpacing))
@@ -2185,10 +2283,10 @@ namespace NativeRemesher
             // The probe graph is reused when the chosen profile asks the same question — which is
             // the GameAsset branch, since the probe angle is GameAsset's own. Detecting twice at
             // one angle would be a second pass over every half-edge for an identical answer.
-            result.features = profileProbe != null
-                              && result.profile.featureAngleDegrees == autoProfileProbeAngleDegrees
-                ? profileProbe
-                : FeatureGraph.Detect(result.topology, result.profile.featureAngleDegrees);
+            result.features = ProfileFeatures(result, result.topology, settings.targetQuadCount,
+                profileProbe != null && result.profile.featureAngleDegrees == autoProfileProbeAngleDegrees
+                    ? profileProbe
+                    : null);
 
             // A dihedral threshold cannot tell a crease from noise, and on a photogrammetry scan
             // there is nothing BUT noise at 30 degrees. The reference scan run under GameAsset

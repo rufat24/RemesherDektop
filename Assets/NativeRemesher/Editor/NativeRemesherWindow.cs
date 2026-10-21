@@ -15,19 +15,39 @@ namespace NativeRemesher
 {
     internal sealed partial class NativeRemesherWindow : EditorWindow
     {
-        [SerializeField] int m_Iterations = 50;
-        [SerializeField] int m_TargetQuadCount = 2000;
-        // ON by default, and the default is the point of it. The dropdown used to open on
-        // GameAsset, which declares creases at 30 degrees; on a scan that fires on noise in every
-        // soft fold, and each false crease pins a vertex against surface relaxation. Measured on
-        // the delivered files, vertices left sitting off the surface: 215 in 75 clusters under
-        // GameAsset against 2 in 2 under Character, with the competitor at 10. Nothing in the
-        // window said the profile was wrong for the input, so the setting that mattered most was
-        // the one nobody was asked about. See RemeshPipeline.SelectProfileKind.
-        [SerializeField] bool m_AutoProfile = true;
+        // The settings a user decides, and nothing else. Everything the window used to offer beside
+        // them -- the Profile list and Auto Profile, the Extractor (Collapse), Global Parametrization,
+        // Quad Layout, Curvature Alignment, Patch Curves, Straps As Tubes, Detail Quads and the
+        // step-by-step field inspector -- either measured worse than the default on every model
+        // (Collapse 24-47 % irregular vertices against 1-8 %, Detail Quads 11-35 %), or is decided
+        // by Model Type now. Their code stays in Runtime, behind the same statics, for the tests and
+        // the benchmarks. See Benchmarks/round5-parametrization.md, round 30.
 
-        /// <summary>The manual pick, and the seed the auto path decimates with.</summary>
-        [SerializeField] RemeshProfileKind m_ProfileKind = RemeshProfileKind.GameAsset;
+        [SerializeField] ModelType m_ModelType = ModelType.Auto;
+
+        // QuadRemesher's own settings, with its add-on's defaults. See the matching statics on
+        // Extraction.IntegerGridMap.
+        [SerializeField] int m_TargetQuadCount = 2000;
+        [SerializeField] float m_AdaptiveSize = 50f;
+        [SerializeField] bool m_AdaptQuadCount = true;
+        [SerializeField] bool m_DetectHardEdges = true;
+        [SerializeField] SymmetryAxis m_Symmetry = SymmetryAxis.None;
+        [SerializeField] bool m_UseMaterials;
+
+        // A model in parts. Off: each part is remeshed on its own (see RunParts).
+        [SerializeField] bool m_CombineParts;
+        /// <summary>A model in parts: split the quads by how much of each part can be seen.</summary>
+        [SerializeField] bool m_HiddenPartsFewer = true;
+
+        // On: the transferred UVs cut across every seam of a scan's atlas (ccnb at 5000: 6,530 of
+        // 14,884 faces), and the bake is closer to the source on screen (see TextureBake). Does
+        // nothing when the source has no UVs or no texture.
+        [SerializeField] bool m_BakeTexture = true;
+        [SerializeField] bool m_BakeNormalMap = true;
+        // 0 is Auto: the source texture's own size (ccnb.jpg is 8192 square; the old fixed 4096, or
+        // the 2048 a window had kept, baked it at a quarter or a sixteenth of its pixels).
+        [SerializeField] int m_TextureSize;
+        [SerializeField] bool m_SaveAsAsset = true;
         // OFF, so the asset is one submesh and therefore one material slot.
         //
         // Quad topology in the .asset reads like the more faithful choice and is not: Unity
@@ -37,77 +57,10 @@ namespace NativeRemesher
         // leave in the .fbx, which is written from the face list rather than from this mesh.
         [SerializeField] bool m_QuadTopology;
 
-        /// <summary>Which extractor runs. See <see cref="RemeshExtractor"/>.</summary>
-        /// <remarks>
-        /// IntegerGrid by default. On the user's helmet head at 5000 / 11000 quads, Collapse gives
-        /// 34 % irregular vertices, 38 / 23 open edges and 7 / 3 pieces; IntegerGrid gives 8.75 %,
-        /// no open edges and one piece (body: 25 % against 2.77 %). Renamed from m_ExtractorChoice so a
-        /// window already open picks the new default up instead of its serialised Collapse.
-        /// Collapse stays in the list.
-        /// </remarks>
-        [SerializeField] RemeshExtractor m_ExtractorChoice = RemeshExtractor.IntegerGrid;
+        [SerializeField] bool m_ShowDetails;
 
-        /// <summary>
-        /// Pull of the integer grid's cross field toward the principal curvature directions.
-        /// Zero, the measured best on the helmet head and the body; see
-        /// Extraction.IntegerGridMap.curvatureAlignment for the numbers.
-        /// </summary>
-        [SerializeField] float m_CurvatureAlignment;
-
-        /// <summary>
-        /// Cut the lattice along traced ridge/valley curves. See Extraction.IntegerGridMap.curveNetwork.
-        /// </summary>
-        [SerializeField] bool m_PatchCurves;
-
-        // QuadRemesher's own three main settings, with its add-on's defaults. See the matching
-        // statics on Extraction.IntegerGridMap.
-        [SerializeField] bool m_AdaptQuadCount = true;
-        [SerializeField] float m_AdaptiveSize = 50f;
-        [SerializeField] bool m_DetectHardEdges = true;
-        [SerializeField] SymmetryAxis m_Symmetry = SymmetryAxis.None;
-        [SerializeField] bool m_UseMaterials;
-        // On: the transferred UVs cut across every seam of a scan's atlas (ccnb at 5000: 6,530 of
-        // 14,884 faces), and the bake is closer to the source on screen (see TextureBake). Does
-        // nothing when the source has no UVs or no texture.
-        [SerializeField] bool m_BakeTexture = true;
-        // 0 is Auto: the source texture's own size (ccnb.jpg is 8192 square; the old fixed 4096, or
-        // the 2048 a window had kept, baked it at a quarter or a sixteenth of its pixels). Renamed
-        // from m_BakeResolution so an open window picks Auto up instead of its serialised size.
-        [SerializeField] int m_TextureSize;
-
-        /// <summary>
-        /// Which kind of model this is (see ShapeRecognition). Auto reads it off each mesh, and off
-        /// each part of a model in parts on its own.
-        /// </summary>
-        [SerializeField] ModelType m_ModelType = ModelType.Auto;
-
-        /// <summary>A model in parts: split the quads by how much of each part can be seen.</summary>
-        [SerializeField] bool m_HiddenPartsFewer = true;
-        [SerializeField] bool m_BakeNormalMap = true;
-        [SerializeField] bool m_GlobalParametrization = true;
-        // Renamed from m_QuadLayout so an open window picks up the new default (on) instead of its
-        // serialised off: the layout measured better than the per-singularity rounding on the head
-        // and the body at 2k, 3.5k and 5k (Benchmarks/round5-parametrization.md, round 9).
-        [SerializeField] bool m_QuadLayoutOn = true;
-        [SerializeField] bool m_DetailQuads;
-        [SerializeField] bool m_RibbonParts = true;
-        // Off: a model in parts keeps its parts, each remeshed on its own (see RunParts).
-        [SerializeField] bool m_CombineParts;
-        [SerializeField] bool m_ShowAdvanced;
-
-        [SerializeField] bool m_SaveAsAsset = true;
-        [SerializeField] bool m_ShowField = true;
-        [SerializeField] float m_CrossScale = 0.4f;
-        [SerializeField] int m_MaxDrawn = 20000;
-
-        GameObject m_Source;
-        RemeshTopology m_Topology;
-        OrientationField m_Field;
         QuadExtractionResult m_Extraction;
         RemeshResult m_LastResult;
-
-        Vector3[] m_SegmentsU;
-        Vector3[] m_SegmentsV;
         string m_Status = "";
 
         [MenuItem("Tools/Native Remesher/Native Remesher", false, 0)]
@@ -143,8 +96,6 @@ namespace NativeRemesher
         void OnGUI()
         {
             EditorGUILayout.LabelField("Native Quad Remesher", EditorStyles.boldLabel);
-            EditorGUILayout.LabelField("Instant Meshes / QuadriFlow, implemented in C#",
-                EditorStyles.miniLabel);
             EditorGUILayout.Space();
 
             var mesh = GetSelectedMesh(out var selected, out var error);
@@ -154,6 +105,8 @@ namespace NativeRemesher
             if (multi) error = partsError;
             if (error != null)
                 EditorGUILayout.HelpBox(error, MessageType.Info);
+
+            // ---- the model
             if (multi)
             {
                 EditorGUILayout.HelpBox(PartsSummary(partsRoot, parts), MessageType.None);
@@ -161,8 +114,7 @@ namespace NativeRemesher
                     new GUIContent("Combine Parts",
                         "Join the parts into one mesh and remesh that, as one object. Off: each part is " +
                         "remeshed on its own and the result keeps the model's hierarchy -- the quad budget " +
-                        "split over the parts by surface area, so the quads come out the same size on all " +
-                        "of them, and one shared texture and normal map for the whole model."),
+                        "split over the parts, and one shared texture and normal map for the whole model."),
                     m_CombineParts);
                 using (new EditorGUI.DisabledScope(m_CombineParts))
                     m_HiddenPartsFewer = EditorGUILayout.Toggle(
@@ -174,13 +126,16 @@ namespace NativeRemesher
                         m_HiddenPartsFewer);
             }
 
+            // The model's kind picks the profile and every setting measured best for it.
             m_ModelType = (ModelType)EditorGUILayout.IntPopup(
                 new GUIContent("Model Type",
                     "What kind of model this is; it picks the settings that measured best for that kind.\n\n" +
-                    "Auto: read off the mesh (each part on its own).\n" +
-                    "Character: sculpted or organic -- fingers and toes get rows of quads across them.\n" +
+                    "Auto: read off the mesh (each part of a model in parts on its own).\n" +
+                    "Character: sculpted or organic -- fingers and toes get rows of quads across them, " +
+                    "thin straps and belts become clean tubes.\n" +
                     "Hard Surface: modelled in a modelling tool -- vehicles, props, machines; sharp edges " +
-                    "become edge loops.\n" +
+                    "become edge loops where they stand apart, dense ones (tread, grilles) are left to " +
+                    "the normal map.\n" +
                     "Scan: photogrammetry or a laser scan -- noise is not taken for edges, short building " +
                     "edges are kept."),
                 (int)m_ModelType,
@@ -190,7 +145,9 @@ namespace NativeRemesher
             if (!string.IsNullOrEmpty(m_TypeNote))
                 EditorGUILayout.LabelField(" ", m_TypeNote, EditorStyles.wordWrappedMiniLabel);
 
-            // The settings QuadRemesher shows, in its order; the rest is under Advanced.
+            // ---- the quads: QuadRemesher's own settings, in its order
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Quads", EditorStyles.boldLabel);
             m_TargetQuadCount = Mathf.Max(4, EditorGUILayout.IntField(
                 new GUIContent("Target Quad Count",
                     "The number of quads wanted. With Adapt Quad Count on, curved areas get extra " +
@@ -227,6 +184,10 @@ namespace NativeRemesher
                     "materials (submeshes) become edge loops, and the result keeps one submesh per " +
                     "material, with the source's materials on it."),
                 m_UseMaterials);
+
+            // ---- what is written out
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Output", EditorStyles.boldLabel);
             m_BakeTexture = EditorGUILayout.Toggle(
                 new GUIContent("Bake Texture",
                     "Give the result its own UV layout and bake the source's texture into it, with a " +
@@ -238,36 +199,28 @@ namespace NativeRemesher
                 new GUIContent("Bake Normal Map",
                     "Bake the source's surface detail into a tangent-space normal map over the result's " +
                     "own UV layout, with a material using it: what the quads are too coarse to carry -- " +
-                    "slots, screws, seams, folds -- comes back as shading, the way game assets are made. " +
-                    "Needs no source texture."),
+                    "slots, screws, seams, folds, a tire's tread -- comes back as shading, the way game " +
+                    "assets are made. Needs no source texture."),
                 m_BakeNormalMap);
-            if (m_BakeTexture || m_BakeNormalMap)
-                using (new EditorGUI.IndentLevelScope())
-                    m_TextureSize = EditorGUILayout.IntPopup(
-                        new GUIContent("Texture Size",
-                            "Width and height of the baked texture. Auto: the source texture's own size " +
-                            "(the largest, with several), so an 8K scan bakes at 8K; 4096 when only a " +
-                            "normal map is baked."),
-                        m_TextureSize, new[] { new GUIContent("Auto"), new GUIContent("1024"), new GUIContent("2048"), new GUIContent("4096"), new GUIContent("8192") },
-                        new[] { 0, 1024, 2048, 4096, 8192 });
-            using (new EditorGUI.DisabledScope(!m_GlobalParametrization || m_ExtractorChoice != RemeshExtractor.IntegerGrid))
-                m_QuadLayoutOn = EditorGUILayout.Toggle(
-                    new GUIContent("Quad Layout",
-                        "Split the surface into rectangular patches along the separatrices and creases, " +
-                        "give every patch side a whole number of quads together, and fill each patch " +
-                        "with a regular grid - instead of rounding each singularity on its own. Close " +
-                        "singularities come out a whole number of cells apart instead of folding, " +
-                        "creases are patch borders, limbs get closed rings. On an open mesh (a scan) " +
-                        "the border is laid as patch sides too."),
-                    m_QuadLayoutOn);
-
-            DrawPaintGUI(mesh != null ? selected : null);
-
-            EditorGUILayout.Space();
+            using (new EditorGUI.DisabledScope(!m_BakeTexture && !m_BakeNormalMap))
+            {
+                // Its own row, not under Bake Normal Map: it is the size of both bakes, and drawn
+                // indented under the normal map it read as the normal map's alone.
+                m_TextureSize = EditorGUILayout.IntPopup(
+                    new GUIContent("Texture Size",
+                        "Width and height of both baked textures, the colour texture and the normal map. " +
+                        "Auto: the source texture's own size, read from its file (the largest, with " +
+                        "several), so an 8K scan bakes at 8K; 4096 when there is no source texture."),
+                    m_TextureSize, new[] { new GUIContent("Auto"), new GUIContent("1024"), new GUIContent("2048"), new GUIContent("4096"), new GUIContent("8192") },
+                    new[] { 0, 1024, 2048, 4096, 8192 });
+                if (m_TextureSize == 0)
+                    EditorGUILayout.LabelField(" ", AutoTextureSizeNote(multi ? partsRoot : selected),
+                        EditorStyles.wordWrappedMiniLabel);
+            }
             m_SaveAsAsset = EditorGUILayout.Toggle(
                 new GUIContent("Save As Asset",
-                    "Write the result to a .asset file. Without this the mesh lives only in " +
-                    "memory and does not survive a domain reload or a scene save."),
+                    "Write the result to a .asset file (and an .fbx with the quads). Without this the mesh " +
+                    "lives only in memory and does not survive a domain reload or a scene save."),
                 m_SaveAsAsset);
             m_QuadTopology = EditorGUILayout.Toggle(
                 new GUIContent("Quad Topology In Asset",
@@ -277,29 +230,9 @@ namespace NativeRemesher
                     ".fbx keeps the quads either way."),
                 m_QuadTopology);
 
+            // ---- painted fixes
+            DrawPaintGUI(mesh != null ? selected : null);
             EditorGUILayout.Space();
-            m_ShowAdvanced = EditorGUILayout.Foldout(m_ShowAdvanced, "Advanced", true);
-            var profile = RemeshProfile.For(m_ProfileKind);
-            if (m_ShowAdvanced)
-            {
-                using (new EditorGUI.IndentLevelScope())
-                    DrawAdvanced(mesh, selected, ref profile);
-            }
-            EditorGUILayout.Space();
-
-            // Warn when the request sits outside the band the solver can serve, instead of quietly
-            // producing a poor result and leaving the user to wonder why.
-            if (m_Topology != null && !profile.preDecimate)
-            {
-                m_Topology.UsefulQuadCountRange(out var coarsest, out var finest);
-                if (m_TargetQuadCount < coarsest)
-                    EditorGUILayout.HelpBox(
-                        $"{m_TargetQuadCount:N0} quads is coarser than this mesh can serve well " +
-                        $"({coarsest:N0} is about the limit). Quality falls off sharply past that " +
-                        "point. Enable a profile with pre-decimation, which raises the input's edge " +
-                        "length instead of the lattice spacing and keeps the ratio in range.",
-                        MessageType.Warning);
-            }
 
             // A run in flight replaces the button with its own progress bar and a cancel control,
             // drawn in this window rather than through EditorUtility.DisplayProgressBar. The modal
@@ -335,184 +268,25 @@ namespace NativeRemesher
             // The profile mismatch that cost a user several rounds of "it still looks wrong". A
             // dihedral threshold cannot tell a crease from scan noise, so on a scan under a profile
             // meant for modelled geometry it marks a third of the mesh as creased - and every one of
-            // those pins a vertex against surface relaxation. Silently. The result looked dented in
-            // exactly the soft folds where relaxation had been refused, and every geometric metric
-            // in the project said the mesh was fine, because it was: the defect was in which
-            // vertices were allowed to move.
+            // those pins a vertex against surface relaxation.
             if (m_LastResult != null && m_LastResult.featureDetectionSuspect)
                 EditorGUILayout.HelpBox(
                     $"Feature detection marked {m_LastResult.featureVertexFraction * 100f:F0} % of " +
                     $"the input as creased, at {m_LastResult.profile.featureAngleDegrees:F0} " +
-                    "degrees. That is the signature of a scan rather than modelled geometry - a " +
-                    "dihedral test cannot tell a crease from noise, and each false crease holds a " +
-                    "vertex still against surface relaxation. Turn Auto Profile back on, or pick " +
-                    "Photogrammetry or Character yourself - both declare no creases.",
+                    "degrees. That is the signature of a scan rather than modelled geometry. Set " +
+                    "Model Type to Auto or Scan.",
                     MessageType.Warning);
-
-            if (m_Extraction != null)
-                EditorGUILayout.HelpBox(m_Extraction.ToString(), MessageType.None);
 
             if (!string.IsNullOrEmpty(m_Status))
                 EditorGUILayout.LabelField(m_Status, EditorStyles.wordWrappedMiniLabel);
-        }
 
-        // Development and comparison settings: the step-by-step field solve, the profile, the
-        // extractor and its older options. Kept, not shown by default.
-        void DrawAdvanced(Mesh mesh, GameObject selected, ref RemeshProfile profile)
-        {
-            EditorGUILayout.LabelField("Step by step (inspection)", EditorStyles.miniBoldLabel);
-
-            using (new EditorGUI.DisabledScope(mesh == null))
+            // The extractor's own counters, for a bug report; folded away.
+            if (m_Extraction != null)
             {
-                if (GUILayout.Button("1 · Build Topology", GUILayout.Height(24)))
-                    BuildTopology(selected, mesh);
+                m_ShowDetails = EditorGUILayout.Foldout(m_ShowDetails, "Last Run Details", true);
+                if (m_ShowDetails)
+                    EditorGUILayout.HelpBox(m_Extraction.ToString(), MessageType.None);
             }
-
-
-            if (m_Topology != null)
-            {
-                EditorGUILayout.HelpBox(m_Topology.ToString(), MessageType.None);
-
-
-            }
-
-            EditorGUILayout.Space();
-
-            using (new EditorGUI.DisabledScope(m_Topology == null))
-            {
-                m_Iterations = Mathf.Clamp(EditorGUILayout.IntField(
-                    new GUIContent("Smoothing Iterations",
-                        "Gauss-Seidel sweeps. Stage 3 (hierarchy) will make these far cheaper."),
-                    m_Iterations), 1, 2000);
-
-                if (GUILayout.Button("2 · Solve Orientation Field", GUILayout.Height(24)))
-                    SolveField();
-            }
-
-            if (m_Field != null)
-            {
-                EditorGUILayout.HelpBox(
-                    $"Converged after {m_Field.iterationsRun} iterations\n" +
-                    $"residual {m_Field.lastResidual:E2} rad " +
-                    $"({m_Field.lastResidual * Mathf.Rad2Deg:F4}°)",
-                    MessageType.None);
-
-                EditorGUI.BeginChangeCheck();
-                m_ShowField = EditorGUILayout.Toggle("Show Cross Field", m_ShowField);
-                m_CrossScale = EditorGUILayout.Slider("Cross Size", m_CrossScale, 0.05f, 1.5f);
-                m_MaxDrawn = EditorGUILayout.IntField("Max Drawn Vertices", m_MaxDrawn);
-                if (EditorGUI.EndChangeCheck())
-                {
-                    RebuildSegments();
-                    SceneView.RepaintAll();
-                }
-            }
-
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Pipeline", EditorStyles.boldLabel);
-
-            m_AutoProfile = EditorGUILayout.Toggle(
-                new GUIContent("Auto Profile",
-                    "Read the profile off the input. A dihedral test that fires on a third of the " +
-                    "mesh is measuring scanner noise rather than creases, and an input like that " +
-                    "is sent to a profile which declares none. Turn this off to choose yourself."),
-                m_AutoProfile);
-
-            using (new EditorGUI.DisabledScope(m_AutoProfile))
-            {
-                m_ProfileKind = (RemeshProfileKind)EditorGUILayout.EnumPopup(
-                    new GUIContent("Profile",
-                        "Selects the pre-stages and how the shared stages are tuned. These " +
-                        "settings are not independent, which is why they are presented as a " +
-                        "profile rather than as separate checkboxes."),
-                    m_ProfileKind);
-            }
-
-            profile = RemeshProfile.For(m_ProfileKind);
-
-            // What the auto path decided LAST run, not a prediction of the next one. The decision
-            // is made after decimation, on the mesh the solver actually sees, so there is nothing
-            // honest to show here until a run has happened.
-            if (m_AutoProfile)
-            {
-                var chosen = m_LastResult != null && m_LastResult.profileWasAutoSelected
-                    ? $"chose {m_LastResult.profile.kind} last run - " +
-                      $"{m_LastResult.profileProbeFeatureFraction:P0} of vertices creased at " +
-                      $"{RemeshPipeline.autoProfileProbeAngleDegrees:F0} deg"
-                    : "decided from the input, once it has been decimated";
-                EditorGUILayout.LabelField(" ", chosen, EditorStyles.miniLabel);
-            }
-            else
-            {
-                EditorGUILayout.LabelField(" ", profile.Describe(), EditorStyles.miniLabel);
-            }
-
-
-
-            m_ExtractorChoice = (RemeshExtractor)EditorGUILayout.EnumPopup(
-                new GUIContent("Extractor",
-                    "Which method turns the solved fields into quads. Integer Grid (default) " +
-                    "solves one global integer map and reads a quad per cell - the family " +
-                    "Exoside's engine is in: far fewer irregular vertices, closed output. " +
-                    "Collapse is the older per-edge method, kept for comparison."),
-                m_ExtractorChoice);
-
-            EditorGUILayout.LabelField(" ", m_ExtractorChoice == RemeshExtractor.IntegerGrid
-                ? "global integer map - torus 0 irregular, 100 % quads"
-                : "per-edge collapse - torus 366 irregular, 97 % quads", EditorStyles.miniLabel);
-
-            m_DetailQuads = EditorGUILayout.Toggle(
-                new GUIContent("Detail Quads (experimental)",
-                    "Build the quads from a simplification of the source instead of a grid: the edges " +
-                    "follow rims and corners and small parts are kept at a low face count, at the cost of " +
-                    "an irregular flow. Seconds instead of a minute. The settings below do not apply."),
-                m_DetailQuads);
-
-            m_RibbonParts = EditorGUILayout.Toggle(
-                new GUIContent("Straps As Tubes",
-                    "Thin free-standing bands of the source -- straps, belts, flat cables -- are found and " +
-                    "meshed on their own as clean quad tubes, a few quads round and about a quad per step " +
-                    "along; the rest is remeshed without them. Off: they go through the grid with " +
-                    "everything else, which melts a band thinner than a quad into the surface behind it."),
-                m_RibbonParts);
-
-            if (m_ExtractorChoice == RemeshExtractor.IntegerGrid)
-            {
-
-                m_GlobalParametrization = EditorGUILayout.Toggle(
-                    new GUIContent("Global Parametrization",
-                        "Place the quad grid with one global seamless parametrisation (the " +
-                        "mixed-integer method FreeRemesher is built on) instead of the local " +
-                        "position field: straighter loops, no shear bands between singularities, " +
-                        "creases as exact grid lines. Meshes with an open border (scans) keep " +
-                        "the previous extractor, which handles a ragged border better. Off is the " +
-                        "previous extractor everywhere."),
-                    m_GlobalParametrization);
-
-            }
-
-            if (m_ExtractorChoice == RemeshExtractor.IntegerGrid)
-                m_CurvatureAlignment = EditorGUILayout.Slider(
-                    new GUIContent("Curvature Alignment",
-                        "Pull the quad directions toward the surface's principal curvature " +
-                        "directions - rings round limbs and rims. 0 is off, which measured best " +
-                        "on the sculpted head and body (fewer irregular vertices, lower error); " +
-                        "try 0.1-0.3 on models with long clean cylindrical forms."),
-                    m_CurvatureAlignment, 0f, 1f);
-
-            if (m_ExtractorChoice == RemeshExtractor.IntegerGrid)
-                m_PatchCurves = EditorGUILayout.Toggle(
-                    new GUIContent("Patch Curves",
-                        "Trace the model's ridges and valleys (brims, rims, panel edges) and " +
-                        "cut the quad grid along them, so each becomes a clean edge loop - the " +
-                        "way QuadRemesher cuts the surface into patches before solving. Edges come " +
-                        "out about a third closer to the original. Best on gear with plates and " +
-                        "panels (a vest comes out crisp); on thin shells like a helmet brim the " +
-                        "edge can come out jagged, so leave it off there."),
-                    m_PatchCurves);
-
-
-
         }
 
         // ------------------------------------------------------------------ actions
@@ -642,51 +416,6 @@ namespace NativeRemesher
                 if (m != null && m.isReadable) for (var i = 0; i < m.subMeshCount; i++) triangles += m.GetIndexCount(i) / 3;
             }
             return $"'{root.name}' is {parts.Count} parts, {triangles:N0} triangles in all.";
-        }
-
-        void BuildTopology(GameObject selected, Mesh mesh)
-        {
-            m_Source = selected;
-            m_Field = null;
-            m_SegmentsU = m_SegmentsV = null;
-
-            var watch = System.Diagnostics.Stopwatch.StartNew();
-            m_Topology = RemeshTopology.Build(mesh);
-            watch.Stop();
-
-            m_Status = $"Topology built in {watch.ElapsedMilliseconds} ms.";
-            Debug.Log($"[Native Remesher] {m_Topology} ({watch.ElapsedMilliseconds} ms)");
-            SceneView.RepaintAll();
-        }
-
-        void SolveField()
-        {
-            var watch = System.Diagnostics.Stopwatch.StartNew();
-            try
-            {
-                m_Field = OrientationField.Solve(m_Topology, m_Iterations, progress =>
-                {
-                    if (EditorUtility.DisplayCancelableProgressBar(
-                            "Native Remesher", "Solving orientation field...", progress))
-                        throw new System.OperationCanceledException();
-                });
-            }
-            catch (System.OperationCanceledException)
-            {
-                m_Status = "Cancelled.";
-                return;
-            }
-            finally
-            {
-                EditorUtility.ClearProgressBar();
-            }
-            watch.Stop();
-
-            RebuildSegments();
-            m_Status = $"Orientation field solved in {watch.ElapsedMilliseconds} ms.";
-            Debug.Log($"[Native Remesher] orientation field: {m_Field.iterationsRun} iterations, " +
-                      $"residual {m_Field.lastResidual:E3} rad, {watch.ElapsedMilliseconds} ms");
-            SceneView.RepaintAll();
         }
 
         /// <summary>
@@ -837,28 +566,27 @@ namespace NativeRemesher
             settings.useMaterials = m_UseMaterials;
             settings.modelType = m_ModelType;
 
-            // The profile owns the sweep counts, so the window's single iteration field is not
-            // applied here: it drives the step-by-step orientation button above, where seeing the
-            // effect of more sweeps is the point.
-            //
-            // Under Auto Profile this is the SEED rather than the choice: the pipeline decimates
-            // with it and then picks from the decimated mesh, which is the only population the
-            // selection threshold was calibrated against. See RemeshPipeline.SelectProfileKind.
-            profile = RemeshProfile.For(m_ProfileKind);
-            profile.extractor = m_ExtractorChoice;
-            // A static the integer path reads; set here, on the main thread, before the job starts.
-            Extraction.IntegerGridMap.curvatureAlignment =
-                m_ExtractorChoice == RemeshExtractor.IntegerGrid ? m_CurvatureAlignment : 0f;
-            Extraction.IntegerGridMap.curveNetwork =
-                m_ExtractorChoice == RemeshExtractor.IntegerGrid && m_PatchCurves;
+            // Auto profile selection, seeded with GameAsset, on the integer grid: Model Type picks
+            // Hard Surface's and Scan's profiles over it (RemeshPipeline.ApplyModelType). Under Auto
+            // the seed is what the pipeline decimates with before it picks from the decimated mesh,
+            // the only population the selection threshold was calibrated against.
+            profile = RemeshProfile.For(RemeshProfileKind.GameAsset);
+            profile.extractor = RemeshExtractor.IntegerGrid;
+            autoProfile = true;
+
+            // The statics the solve reads; set here, on the main thread, before the job starts.
+            // The methods are the measured best and no longer the user's to pick (see the fields).
+            Extraction.IntegerGridMap.curvatureAlignment = 0f;
+            Extraction.IntegerGridMap.curveNetwork = false;
+            Extraction.IntegerGridMap.parametrization = true;
+            Extraction.IntegerGridMap.parametrizationLayout = true;
+            RemeshPipeline.detailQuads = false;
+            // Straps as tubes: the pipeline runs the finder for Character models only (StrapsFor).
+            RemeshPipeline.ribbonParts = true;
+            // QuadRemesher's settings.
             Extraction.IntegerGridMap.adaptiveQuadCount = m_AdaptQuadCount;
             Extraction.IntegerGridMap.adaptiveSize = m_AdaptiveSize / 100f;
             Extraction.IntegerGridMap.coherentCreases = m_DetectHardEdges;
-            Extraction.IntegerGridMap.parametrization = m_GlobalParametrization;
-            RemeshPipeline.detailQuads = m_DetailQuads;
-            RemeshPipeline.ribbonParts = m_RibbonParts;
-            Extraction.IntegerGridMap.parametrizationLayout = m_GlobalParametrization && m_QuadLayoutOn;
-            autoProfile = m_AutoProfile;
             return settings;
         }
 
@@ -1002,11 +730,8 @@ namespace NativeRemesher
 
             RemeshPipeline.BuildOutputMesh(result, selected.name, m_QuadTopology);
 
-            m_Topology = result.topology;
-            m_Field = result.orientation;
             m_Extraction = result.extraction;
             m_LastResult = result;
-            RebuildSegments();
 
             var outputMesh = result.mesh;
             var assetPath = "";
@@ -1237,6 +962,33 @@ namespace NativeRemesher
         }
 
         /// <summary>
+        /// What Auto will bake at for <paramref name="root"/>: the largest texture its renderers use,
+        /// at the size of the file (not the size it is imported at).
+        /// </summary>
+        static string AutoTextureSizeNote(GameObject root)
+        {
+            var largest = 0;
+            string largestName = null;
+            if (root != null)
+                foreach (var renderer in root.GetComponentsInChildren<Renderer>())
+                foreach (var material in renderer.sharedMaterials)
+                {
+                    // The texture the bake reads (ReadSourceTextures): the material's main texture.
+                    var texture = material != null ? material.mainTexture : null;
+                    if (texture == null) continue;
+                    int w = texture.width, h = texture.height;
+                    if (AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(texture)) is TextureImporter importer)
+                        importer.GetSourceTextureWidthAndHeight(out w, out h);
+                    if (Mathf.Max(w, h) <= largest) continue;
+                    largest = Mathf.Max(w, h);
+                    largestName = texture.name;
+                }
+            if (largest <= 0) return "no source texture: 4096";
+            var size = Mathf.Clamp(Mathf.NextPowerOfTwo(largest), 1024, 8192);
+            return $"{size} x {size}, from {largestName} ({largest} px)";
+        }
+
+        /// <summary>
         /// The Texture Size, or under Auto the largest source texture's own size, rounded up to a
         /// power of two between 1024 and 8192; 4096 when there is no texture (a normal map only).
         /// </summary>
@@ -1402,54 +1154,9 @@ namespace NativeRemesher
             return texture;
         }
 
-        // ------------------------------------------------------------------ drawing
-
-        void RebuildSegments()
-        {
-            if (m_Field == null || m_Topology == null)
-            {
-                m_SegmentsU = m_SegmentsV = null;
-                return;
-            }
-
-            var count = m_Topology.vertexCount;
-            var stride = Mathf.Max(1, Mathf.CeilToInt(count / (float)Mathf.Max(1, m_MaxDrawn)));
-            var length = m_CrossScale * m_Topology.averageEdgeLength;
-
-            var u = new List<Vector3>();
-            var v = new List<Vector3>();
-
-            for (var i = 0; i < count; i += stride)
-            {
-                var p = m_Topology.positions[i];
-                m_Field.GetCross(i, m_Topology.normals[i], out var du, out var dv);
-
-                // Drawn as full crosses through the vertex, since a 4-RoSy direction and its
-                // negation are the same thing — a one-sided arrow would imply a distinction
-                // the field does not make.
-                u.Add(p - du * length);
-                u.Add(p + du * length);
-                v.Add(p - dv * length);
-                v.Add(p + dv * length);
-            }
-
-            m_SegmentsU = u.ToArray();
-            m_SegmentsV = v.ToArray();
-        }
-
         void OnSceneGUI(SceneView view)
         {
             if (m_Painting) PaintSceneGUI(view);
-            if (!m_ShowField || m_SegmentsU == null || m_Source == null)
-                return;
-
-            using (new Handles.DrawingScope(m_Source.transform.localToWorldMatrix))
-            {
-                Handles.color = new Color(1f, 0.35f, 0.2f);
-                Handles.DrawLines(m_SegmentsU);
-                Handles.color = new Color(0.2f, 0.7f, 1f);
-                Handles.DrawLines(m_SegmentsV);
-            }
         }
     }
 }

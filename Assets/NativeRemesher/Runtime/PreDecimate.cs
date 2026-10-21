@@ -84,6 +84,21 @@ namespace NativeRemesher
         /// </summary>
         public Func<Vector3[], float[]> vertexSizes;
 
+        /// <summary>
+        /// Refuse a collapse that would leave its vertex further than this, root mean square over
+        /// the face planes it stands for (by area), from the input surface; the mesh then stays above
+        /// <see cref="targetTriangles"/> where it cannot go lower without losing its shape. 0: no
+        /// limit.
+        /// </summary>
+        /// <remarks>
+        /// The quadric cost orders the collapses but nothing bounded it. Where most cheap collapses
+        /// are refused as slivers -- a modelled car part's long thin strips -- the heap runs down to
+        /// the dear ones and takes them: the Porsche's front bumper went from 74,336 to 7,771
+        /// triangles with a largest error of 2.56, its curled lip cut across from edge to edge, a
+        /// cell inside the surface, and every quad laid on it after followed the cut.
+        /// </remarks>
+        public float maxDistance;
+
         public static DecimateOptions ForTriangleCount(int triangles) =>
             new DecimateOptions { targetTriangles = triangles };
     }
@@ -103,6 +118,9 @@ namespace NativeRemesher
         public int creaseEdges;
         public int rejectedSliver;
         public int rejectedSize;
+
+        /// <summary>Collapses refused by <see cref="DecimateOptions.maxDistance"/>.</summary>
+        public int rejectedError;
 
         public float maxErrorApplied;
 
@@ -142,6 +160,7 @@ namespace NativeRemesher
             creaseEdges += o.creaseEdges;
             rejectedSliver += o.rejectedSliver;
             rejectedSize += o.rejectedSize;
+            rejectedError += o.rejectedError;
             labelSlides += o.labelSlides;
             maxErrorApplied = Mathf.Max(maxErrorApplied, o.maxErrorApplied);
             solvedTargets += o.solvedTargets;
@@ -159,7 +178,7 @@ namespace NativeRemesher
                    $"({inputVertices:N0} -> {outputVertices:N0} verts), " +
                    $"collapses={collapsesApplied} rejTopo={rejectedTopology} " +
                    $"rejFlip={rejectedNormalFlip}(solved={rejectedFlipSolved} " +
-                   $"fallback={rejectedFlipFallback}) rejBoundary={rejectedBoundary} rejLabel={rejectedLabel} creaseEdges={creaseEdges} rejSliver={rejectedSliver} rejSize={rejectedSize} labelSlides={labelSlides} labelBorderStart={labelBorderStart} " +
+                   $"fallback={rejectedFlipFallback}) rejBoundary={rejectedBoundary} rejLabel={rejectedLabel} creaseEdges={creaseEdges} rejSliver={rejectedSliver} rejSize={rejectedSize} rejError={rejectedError} labelSlides={labelSlides} labelBorderStart={labelBorderStart} " +
                    $"targets={solvedTargets}solved/{fallbackTargets}fallback " +
                    $"drift={(solvedTargets + driftRejected > 0 ? driftSum / (solvedTargets + driftRejected) : 0):F2}mean/" +
                    $"{driftMax:F2}max edgeLengths rejByDrift={driftRejected} " +
@@ -241,6 +260,9 @@ namespace NativeRemesher
             public double c2, cd;
             public double d2;
 
+            /// <summary>The faces' own plane weights (their area), without the boundary and crease planes.</summary>
+            public double area;
+
             public static Quadric FromPlane(double a, double b, double c, double d, double weight)
             {
                 return new Quadric
@@ -258,6 +280,7 @@ namespace NativeRemesher
                 b2 += o.b2; bc += o.bc; bd += o.bd;
                 c2 += o.c2; cd += o.cd;
                 d2 += o.d2;
+                area += o.area;
             }
 
             public static Quadric Sum(in Quadric x, in Quadric y)
@@ -693,7 +716,8 @@ namespace NativeRemesher
 
             var maxFlipCos = Mathf.Cos(Mathf.Clamp(options.maxNormalFlipDegrees, 1f, 179f) * Mathf.Deg2Rad);
             var live = CollapseLoop(positions, triangles, triangleCount, quadrics, null, heap, triAlive,
-                vertAlive, version, incident, target, maxFlipCos, stats, onProgress, triLabel, vertexSize);
+                vertAlive, version, incident, target, maxFlipCos, stats, onProgress, triLabel, vertexSize,
+                (double)options.maxDistance * options.maxDistance);
 
             msCollapse = phase.ElapsedMilliseconds; phase.Restart();
             // --- compact ---
@@ -737,7 +761,7 @@ namespace NativeRemesher
         static int CollapseLoop(Vector3[] positions, int[] triangles, int triangleCount,
             Quadric[] quadrics, bool[] locked, List<Candidate> heap, bool[] triAlive, bool[] vertAlive,
             int[] version, Incidence incident, int target, float maxFlipCos, DecimateStats stats,
-            Action<float> onProgress, int[] triLabel = null, float[] size = null)
+            Action<float> onProgress, int[] triLabel = null, float[] size = null, double maxDistanceSqr = 0)
         {
             var live = triangleCount;
 
@@ -777,6 +801,14 @@ namespace NativeRemesher
                 incident.Prune(best.v, triAlive);
 
                 if (!AreConnected(incident, triangles, triAlive, best.u, best.v)) continue;
+
+                // Too far off the surface it stands for (DecimateOptions.maxDistance).
+                if (maxDistanceSqr > 0
+                    && best.cost > maxDistanceSqr * (quadrics[best.u].area + quadrics[best.v].area))
+                {
+                    stats.rejectedError++;
+                    continue;
+                }
 
                 if (!PassesLinkCondition(incident, triangles, triAlive, best.u, best.v))
                 {
@@ -1041,7 +1073,8 @@ namespace NativeRemesher
                     for (var l = 0; l < localCount; l++) localSize[l] = vertexSize[globalOf[l]];
                 }
                 CollapseLoop(localPositions, localTriangles, count, localQuadrics, locked, heap, triAlive,
-                    vertAlive, version, incident, localTarget, maxFlipCos, blockStat, null, null, localSize);
+                    vertAlive, version, incident, localTarget, maxFlipCos, blockStat, null, null, localSize,
+                    (double)options.maxDistance * options.maxDistance);
 
                 // Unlocked vertices belong to this block alone, so these writes never collide.
                 for (var l = 0; l < localCount; l++)
@@ -1219,6 +1252,7 @@ namespace NativeRemesher
                 if (vertexWeight != null && vertexWeight.Length == positions.Length)
                     weight *= (vertexWeight[ia] + vertexWeight[ib] + vertexWeight[ic]) / 3f;
                 var plane = Quadric.FromPlane(normal.x, normal.y, normal.z, d, weight);
+                plane.area = area * 0.5f;
 
                 quadrics[ia].Add(plane);
                 quadrics[ib].Add(plane);

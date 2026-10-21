@@ -742,6 +742,12 @@ namespace NativeRemesher.Extraction
         public static int ladderCapMaxEdges = 64;
 
         /// <summary>
+        /// The undirected small-loop and ladder caps leave a rim open when it runs along the input's
+        /// own border, as HoleFiller.Fill does. Off: they close it (the old behaviour).
+        /// </summary>
+        public static bool closeKeepsOutline = true;
+
+        /// <summary>
         /// Cap the holes extraction leaves (HoleFiller) and pair the triangles that makes back into
         /// quads (TrianglePairing), as the collapse path does. See QuadExtractor.ExtractIntegerGrid.
         /// </summary>
