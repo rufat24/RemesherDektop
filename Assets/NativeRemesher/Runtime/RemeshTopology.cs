@@ -244,7 +244,21 @@ namespace NativeRemesher
             var submeshOf = new List<int>(mesh.triangles.Length / 3);
             for (var sub = 0; sub < mesh.subMeshCount; sub++)
             {
-                if (mesh.GetTopology(sub) != MeshTopology.Triangles)
+                var topology = mesh.GetTopology(sub);
+                if (topology == MeshTopology.Quads)
+                {
+                    // Keep Quads: each quad as two consecutive triangles, which is how QuadReduction
+                    // finds its quads again. Skipping these read such a model as empty.
+                    var quads = mesh.GetIndices(sub);
+                    for (var q = 0; q + 3 < quads.Length; q += 4)
+                    {
+                        gathered.Add(quads[q]); gathered.Add(quads[q + 1]); gathered.Add(quads[q + 2]);
+                        gathered.Add(quads[q]); gathered.Add(quads[q + 2]); gathered.Add(quads[q + 3]);
+                        submeshOf.Add(sub); submeshOf.Add(sub);
+                    }
+                    continue;
+                }
+                if (topology != MeshTopology.Triangles)
                     continue;
 
                 var subTriangles = mesh.GetTriangles(sub);

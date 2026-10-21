@@ -53,6 +53,7 @@ namespace NativeRemesher
             foreach (var go in parts)
             {
                 RemeshTopology.ReadMesh(MeshOn(go), out var positions, out var triangles, out var uvs, out var submesh);
+                QuadSource.Reorder(MeshOn(go), ref triangles, ref submesh);
                 var renderer = go.GetComponent<Renderer>();
                 var mats = renderer != null ? renderer.sharedMaterials : new Material[0];
                 var textures = bakeTexture && uvs != null ? ReadTextures(mats, submesh, triangles.Length / 3, images, read) : null;

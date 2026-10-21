@@ -554,6 +554,7 @@ namespace NativeRemesher
             // right and disagreed with the product, which is the worst way for this to fail.
             RemeshTopology.ReadMesh(mesh, out var positions, out var triangles, out var sourceUvs,
                 out var triangleSubmesh);
+            QuadSource.Reorder(mesh, ref triangles, ref triangleSubmesh);
             RunSingle(selected, null, positions, triangles, sourceUvs, triangleSubmesh, settings, profile, autoProfile);
         }
 

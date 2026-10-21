@@ -1051,3 +1051,62 @@ smooth; the right rear arch and the wing are still rough.
 
 Tests 231: 229 pass, 2 skipped (Headless/tests24.xml), including HardSurfaceTests (open tube not
 lidded, dense creases dropped and a lone one kept, strip width, decimation error limit).
+
+## Round 31 -- models that already have good topology: reduce their quads, do not remesh them
+
+The user: "you struggle with objects that already have good topology, but are amazing with AI
+generated models". Every one of the Porsche's 43 parts is 100 % quads. The remesher triangulates
+them, decimates and lays a new grid by curvature -- the right thing for a triangle soup, which has
+no loops to keep, and the wrong one for a modelled part: a cell wider than the arch's rolled lip
+cuts across it, the flange crumples, the support loops become noise.
+
+**QuadReduction** (Runtime/QuadReduction.cs, `RemeshPipeline.quadInputReduction`, Hard Surface and
+Character): a clean quad input is reduced by removing whole quad strips (chords). Each rung of a
+strip merges to one point, on the rung where the two ends' quadrics (face planes, border planes)
+are least; every other loop keeps its course and the artist's poles stay. Cost per strip:
+(widest rung / cell)^2 + (largest distance of the input it stood for, or of a new point from that
+input, / 0.1 cell)^2 -- narrow strips (support loops, dense rows) first, strips that carry a lip or
+a crease last. Batches of strips two rings apart, rebuilt between. Refused: a fold (normal turned
+past 78 degrees, or a quad folded over its diagonal -- each rung's quadric point is retried at the
+rung middles and either end, which zigzag-placed points needed), a face merged onto itself, a pinched
+border, an edge with three faces. A strip crossing itself (up to twice) collapses its crossing quad
+to a point -- body at 571 went from stuck at 1,758 to 570.
+
+Gates, falling back to the remesher: 95 % of the triangles must pair into quads and 50 % of those
+pairs be square (sculpts pair 91-97 % since the augmenting pass, but only 11-19 % square; car parts
+65-92 %); strips run out more than 1.5x and 100 quads over the target; a strip moved the surface more
+than 2 cells; more than 22 % irregular vertices on 100+ faces (the wheels -- 277,000 quads of tread
+at ~500 -- come out 24-31 %, panels 1-21 %).
+
+**Unity reorders triangles** (Optimize Polygons, on by default): order pairing found 95-97 % and
+shape pairing 95-99.6 % with wrong pairs -- 14 % of the door, whose sheared rows make halves of two
+neighbouring quads a better rectangle than the quads. Editor/QuadSource.cs imports a temporary Keep
+Quads copy of the model file (deleted at once, the user's asset untouched), and puts the original
+mesh's own triangles in quad order: 100 % on all 43 meshes, 3.3 s once per model per session.
+ReadMesh also read Keep Quads meshes as empty; it now splits their quads in order.
+
+**At the window's budgets (Porsche 8000), strips against the remesher** (faces / Hausdorff):
+
+| part | strips | remesher |
+|---|---|---|
+| body (rear quarters, arches) | 603 / 0.0065 | 2163 / 0.0079 |
+| Fenders | 464 / 0.0064 | 1254 / 0.0119 |
+| trunk | 385 / 0.0048 | 1168 / 0.0136 |
+| door | 383 / 0.0052 | 1252 / 0.0065 |
+| front bumper | 350 / 0.032 | 1055 / 0.040 |
+| rear bumper | 216 / 0.0125 | 530 / 0.043 |
+| top spoiler | 164 / 0.044 | 95 / 0.135 |
+| hood (the whale-tail wing) | 213 / 0.062 | 433 / 0.040 |
+| roof | 437 / 0.027 | 1378 / 0.0074 |
+
+Strips keep the target (the remesher's thin-part raises take it 2-3x over) and lose on the roof's
+thin rear trim and the wing's slot (normal-map detail at that count). Irregular vertices are higher
+(4-18 % against 0.5-4.5 %): the artist's poles plus strip crossings.
+
+**The Porsche through the window** (8000): 22,866 -> 11,377 faces, 137 -> 140 s; 28 parts by strips.
+Rear arches, the wing, bumpers, doors and roof clean. The wheels stay on the remesher (their tread at
+~500 quads).
+
+Regression (head, body, main1, ccnb, helmet, horn, head 2000, ccnb 2000): identical -- all "not quads".
+
+Tests 236: 234 pass, 2 skipped (Headless/tests27.xml), including QuadReductionTests (panel reduced to target all quads with its rolled lip, open tube stays round, shuffled triangles pair back > 99 %, an icosphere is left to the remesher, ReadMesh reads Keep Quads meshes).

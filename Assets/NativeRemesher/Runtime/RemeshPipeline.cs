@@ -270,6 +270,9 @@ namespace NativeRemesher
 
         /// <summary>What RemeshPipeline.detailQuads did, when on.</summary>
         public DetailQuads.Stats detailQuadsStats;
+
+        /// <summary>The strip reduction's counters when it was tried (RemeshPipeline.quadInputReduction); null otherwise.</summary>
+        public QuadReduction.Stats quadReductionStats;
         public bool targetWasClamped;
 
         /// <summary>Fraction of input vertices the feature detector marked as sitting in a crease.</summary>
@@ -377,6 +380,18 @@ namespace NativeRemesher
         /// seconds rather than a minute. Off: the lattice pipeline.
         /// </summary>
         public static bool detailQuads = false;
+
+        /// <summary>
+        /// An input that already is clean quads (a modelled part: 95 % of its triangles pair into
+        /// quads) is reduced by removing whole quad strips (QuadReduction) instead of remeshed, so
+        /// its loops, lips, flanges and poles stay the artist's. Hard Surface and Character only;
+        /// when the strips cannot get near the target the remesher runs as before. Off: always the
+        /// remesher.
+        /// </summary>
+        public static bool quadInputReduction = true;
+
+        /// <summary>The strip reduction is tried for this type.</summary>
+        static bool QuadReductionFor(ModelType type) => type == ModelType.HardSurface || type == ModelType.Character;
 
         /// <summary>Diagnostic: overrides the chosen profile's relaxation sweeps when >= 0 (0 = off).</summary>
         public static int debugRelaxIterations = -1;
@@ -675,6 +690,13 @@ namespace NativeRemesher
             ApplyModelType(settings.modelType, ref profile, ref autoSelectProfile);
             profile = profile.Validated();
             settings = profile.ApplyTo(settings).Validated();
+            if (quadInputReduction && QuadReductionFor(settings.modelType) && lockAxis == SymmetryAxis.None
+                && !t_SolvingWithoutRibbons)
+            {
+                var reduced = SolveByStrips(positions, triangles, settings, profile, onProgress, sourceUvs,
+                    triangleMaterials, out var reductionStats);
+                if (reduced != null) return reduced;
+            }
             if (ribbonParts && StrapsFor(settings.modelType) && !t_SolvingWithoutRibbons && lockAxis == SymmetryAxis.None)
                 return SolveWithRibbons(positions, triangles, settings, profile, onProgress, sourceUvs,
                     autoSelectProfile, triangleMaterials);
@@ -891,6 +913,53 @@ namespace NativeRemesher
 
             TransferUvs(result, positions, triangles, sourceUvs, watch, onProgress);
             LabelFaces(result);
+            return result;
+        }
+
+        // The input reduced by quad strips (QuadReduction), or null when it is not quads or will not reduce.
+        static RemeshResult SolveByStrips(Vector3[] positions, int[] triangles, RemeshSettings settings,
+            RemeshProfile profile, Action<string, float> onProgress, Vector2[] sourceUvs, int[] triangleMaterials,
+            out QuadReduction.Stats stats)
+        {
+            onProgress?.Invoke("Reducing the quads", 0f);
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var reducedOk = QuadReduction.Reduce(positions, triangles, Mathf.Max(1, settings.targetQuadCount),
+                out var outPositions, out var outFaces, out stats);
+            if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {(reducedOk ? "strips" : "remesher")}: {stats}");
+            if (!reducedOk) return null;
+            var result = new RemeshResult
+            {
+                profile = profile, modelType = settings.modelType, shapeSignals = settings.shapeSignals,
+                quadReductionStats = stats
+            };
+            if (settings.useMaterials && triangleMaterials != null && triangleMaterials.Length == triangles.Length / 3)
+            {
+                var labels = new MaterialLabels(positions, triangles, triangleMaterials);
+                if (labels.labelCount > 1) result.materials = labels;
+            }
+            var extraction = new QuadExtractionResult { positions = outPositions, faces = outFaces };
+            extraction.normals = new Vector3[outPositions.Length];
+            foreach (var face in outFaces)
+            {
+                if (face.Length == 4) extraction.quadCount++;
+                else if (face.Length == 3) extraction.triangleCount++;
+                else extraction.ngonCount++;
+                var fn = Vector3.zero;
+                for (var k = 1; k + 1 < face.Length; k++)
+                    fn += Vector3.Cross(outPositions[face[k]] - outPositions[face[0]],
+                        outPositions[face[k + 1]] - outPositions[face[0]]);
+                foreach (var v in face) extraction.normals[v] += fn;
+            }
+            for (var v = 0; v < extraction.normals.Length; v++)
+                extraction.normals[v] = MeshMath.SafeNormalize(extraction.normals[v], Vector3.up);
+            extraction.shadingNormals = Extraction.NormalRecalculator.Compute(outFaces, outPositions, extraction.normals);
+            result.extraction = extraction;
+            result.extractionMs = watch.ElapsedMilliseconds;
+            result.originalPositions = positions;
+            result.originalTriangles = triangles;
+            TransferUvs(result, positions, triangles, sourceUvs, watch, onProgress);
+            LabelFaces(result);
+            onProgress?.Invoke("Done", 1f);
             return result;
         }
 
