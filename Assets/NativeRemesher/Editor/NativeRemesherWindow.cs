@@ -25,6 +25,19 @@ namespace NativeRemesher
 
         [SerializeField] ModelType m_ModelType = ModelType.Auto;
 
+        // Each Model Type's own settings: what that kind of model is remeshed with, each a measured
+        // default that a model may still want off. See RemeshPipeline's statics of the same meaning.
+        [SerializeField] bool m_ShowTypeSettings;
+        [SerializeField] bool m_RoundParts = true;              // all: KinematicSurfaces on whole pieces
+        [SerializeField] bool m_CharacterSourceLoops = true;    // quadReductionCharacter
+        [SerializeField] bool m_CharacterStraps = true;         // ribbonParts
+        [SerializeField] bool m_CharacterThinRows = true;       // thicknessSizing
+        [SerializeField] bool m_HardSourceLoops = true;         // quadReductionHardSurface
+        [SerializeField] bool m_HardDenseToNormalMap = true;    // hardSurfaceSparseCreases
+        [SerializeField] bool m_HardThinStrips = true;          // stripSizing
+        [SerializeField] bool m_HardShapeRegions = true;        // kinematicRegionsHardSurface
+        [SerializeField] bool m_ScanShapeRegions = true;        // kinematicRegionsScan
+
         // QuadRemesher's own settings, with its add-on's defaults. See the matching statics on
         // Extraction.IntegerGridMap.
         [SerializeField] int m_TargetQuadCount = 2000;
@@ -144,6 +157,7 @@ namespace NativeRemesher
             if (m_ModelType == ModelType.General) m_ModelType = ModelType.Auto;
             if (!string.IsNullOrEmpty(m_TypeNote))
                 EditorGUILayout.LabelField(" ", m_TypeNote, EditorStyles.wordWrappedMiniLabel);
+            DrawTypeSettings();
 
             // ---- the quads: QuadRemesher's own settings, in its order
             EditorGUILayout.Space();
@@ -558,6 +572,75 @@ namespace NativeRemesher
             RunSingle(selected, null, positions, triangles, sourceUvs, triangleSubmesh, settings, profile, autoProfile);
         }
 
+        // The selected Model Type's own settings (all three groups under Auto, since each part is
+        // read on its own then).
+        void DrawTypeSettings()
+        {
+            m_ShowTypeSettings = EditorGUILayout.Foldout(m_ShowTypeSettings, "Settings For This Type", true);
+            if (!m_ShowTypeSettings) return;
+            using (new EditorGUI.IndentLevelScope())
+            {
+                m_RoundParts = EditorGUILayout.Toggle(
+                    new GUIContent("Rings On Round Parts",
+                        "Any type. A piece a rotation sweeps -- a tyre, a rim, a disc, a bottle, a knob -- " +
+                        "gets its quads in rings round its axis and rows along it; one an extrusion sweeps, in " +
+                        "rows along it. Found by fitting the motion that slides the piece along itself."),
+                    m_RoundParts);
+                var auto = m_ModelType == ModelType.Auto;
+                if (auto || m_ModelType == ModelType.Character)
+                {
+                    if (auto) EditorGUILayout.LabelField("Character", EditorStyles.miniBoldLabel);
+                    m_CharacterSourceLoops = EditorGUILayout.Toggle(
+                        new GUIContent("Keep Source Loops",
+                            "A model that already is clean quads (retopologised, modelled) is reduced by taking " +
+                            "out whole edge rings, so its own loops and poles stay, instead of being remeshed."),
+                        m_CharacterSourceLoops);
+                    m_CharacterStraps = EditorGUILayout.Toggle(
+                        new GUIContent("Straps As Tubes",
+                            "Thin straps, belts and cords get clean tubes of quads round them."),
+                        m_CharacterStraps);
+                    m_CharacterThinRows = EditorGUILayout.Toggle(
+                        new GUIContent("Fingers And Toes Get Rows",
+                            "Parts thinner than a few quads (fingers, toes, ears' rims) get quads across them, " +
+                            "with the count raised to pay for it, instead of being flattened."),
+                        m_CharacterThinRows);
+                }
+                if (auto || m_ModelType == ModelType.HardSurface)
+                {
+                    if (auto) EditorGUILayout.LabelField("Hard Surface", EditorStyles.miniBoldLabel);
+                    m_HardSourceLoops = EditorGUILayout.Toggle(
+                        new GUIContent("Keep Source Loops",
+                            "A modelled part that already is clean quads (a car's panels) is reduced by taking out " +
+                            "whole edge rings: its lips, flanges and panel edges stay its own. Parts that will " +
+                            "not reduce cleanly (a tyre's tread at a few hundred quads) are remeshed."),
+                        m_HardSourceLoops);
+                    m_HardDenseToNormalMap = EditorGUILayout.Toggle(
+                        new GUIContent("Dense Edges To Normal Map",
+                            "Sharp edges packed close (tread, grilles, vents) are left to the normal map; " +
+                            "edges standing apart (panel lines) become edge loops."),
+                        m_HardDenseToNormalMap);
+                    m_HardThinStrips = EditorGUILayout.Toggle(
+                        new GUIContent("Thin Strips Get Quads",
+                            "Open strips narrower than a quad (pillar trims, flanges) get two quads across."),
+                        m_HardThinStrips);
+                    m_HardShapeRegions = EditorGUILayout.Toggle(
+                        new GUIContent("Follow Shape Regions",
+                            "Inside a piece, regions that are round (turned) or straight (extruded) get rings or " +
+                            "rows along their shape."),
+                        m_HardShapeRegions);
+                }
+                if (auto || m_ModelType == ModelType.Scan)
+                {
+                    if (auto) EditorGUILayout.LabelField("Scan", EditorStyles.miniBoldLabel);
+                    m_ScanShapeRegions = EditorGUILayout.Toggle(
+                        new GUIContent("Follow Shape Regions",
+                            "Walls, columns and other straight or turned regions of the scan get rows or rings " +
+                            "along their shape (ccnb at 5000: worst distance 0.0169 -> 0.0135)."),
+                        m_ScanShapeRegions);
+                }
+            }
+        }
+
         /// <summary>The window's settings onto a run's (and the statics the solve reads), on the main thread.</summary>
         RemeshSettings PrepareRun(out RemeshProfile profile, out bool autoProfile)
         {
@@ -582,8 +665,16 @@ namespace NativeRemesher
             Extraction.IntegerGridMap.parametrization = true;
             Extraction.IntegerGridMap.parametrizationLayout = true;
             RemeshPipeline.detailQuads = false;
-            // Straps as tubes: the pipeline runs the finder for Character models only (StrapsFor).
-            RemeshPipeline.ribbonParts = true;
+            // Each type's own settings (the pipeline gates each by type).
+            RemeshPipeline.ribbonParts = m_CharacterStraps;
+            RemeshPipeline.thicknessSizing = m_CharacterThinRows;
+            RemeshPipeline.quadReductionCharacter = m_CharacterSourceLoops;
+            RemeshPipeline.quadReductionHardSurface = m_HardSourceLoops;
+            RemeshPipeline.hardSurfaceSparseCreases = m_HardDenseToNormalMap;
+            RemeshPipeline.stripSizing = m_HardThinStrips;
+            RemeshPipeline.kinematicGuides = m_RoundParts;
+            RemeshPipeline.kinematicRegionsHardSurface = m_HardShapeRegions;
+            RemeshPipeline.kinematicRegionsScan = m_ScanShapeRegions;
             // QuadRemesher's settings.
             Extraction.IntegerGridMap.adaptiveQuadCount = m_AdaptQuadCount;
             Extraction.IntegerGridMap.adaptiveSize = m_AdaptiveSize / 100f;

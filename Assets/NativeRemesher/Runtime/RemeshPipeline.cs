@@ -273,6 +273,9 @@ namespace NativeRemesher
 
         /// <summary>The strip reduction's counters when it was tried (RemeshPipeline.quadInputReduction); null otherwise.</summary>
         public QuadReduction.Stats quadReductionStats;
+
+        /// <summary>What the motion recognition found (RemeshPipeline.kinematicGuides); null when off.</summary>
+        public KinematicSurfaces.Stats kinematicStats;
         public bool targetWasClamped;
 
         /// <summary>Fraction of input vertices the feature detector marked as sitting in a crease.</summary>
@@ -390,8 +393,50 @@ namespace NativeRemesher
         /// </summary>
         public static bool quadInputReduction = true;
 
-        /// <summary>The strip reduction is tried for this type.</summary>
-        static bool QuadReductionFor(ModelType type) => type == ModelType.HardSurface || type == ModelType.Character;
+        /// <summary>
+        /// Pieces a rotation, translation or screw carries into themselves get the motion's
+        /// direction as a guide (KinematicSurfaces): a tyre in rings, an extrusion in rows. Off: as before.
+        /// </summary>
+        public static bool kinematicGuides = true;
+
+        /// <summary>
+        /// Motion regions inside a piece (KinematicSurfaces.regions) for this type. Measured: Scan
+        /// better (ccnb 5000 Hausdorff 0.0169 -> 0.0135, a building's walls are extrusions); Character
+        /// worse (helmet irregular 5.4 -> 7.9 %, a head is near enough a solid of revolution to mislead).
+        /// </summary>
+        static bool KinematicRegionsFor(ModelType type) =>
+            type == ModelType.Scan && kinematicRegionsScan || type == ModelType.HardSurface && kinematicRegionsHardSurface;
+
+        /// <summary>The window's Follow Shape Regions, per type.</summary>
+        public static bool kinematicRegionsScan = true;
+        public static bool kinematicRegionsHardSurface = true;
+
+        /// <summary>Weight of a motion guide in the orientation field (curve guides: 0.5).</summary>
+        public static float kinematicGuideWeight = 1f;
+
+        /// <summary>The strip reduction is tried for this type (the window's Keep Source Loops, per type).</summary>
+        public static bool StripsFor(ModelType type) =>
+            type == ModelType.HardSurface && quadReductionHardSurface || type == ModelType.Character && quadReductionCharacter;
+
+        /// <summary>Keep Source Loops for Hard Surface and for Character models.</summary>
+        public static bool quadReductionHardSurface = true;
+        public static bool quadReductionCharacter = true;
+
+        [ThreadStatic] static bool t_NoStrips;
+
+        /// <summary>
+        /// Solve without trying the strip reduction: for a part whose strips were already tried with
+        /// the rest of its model (QuadReduction.ReduceParts).
+        /// </summary>
+        public static RemeshResult SolveWithoutStrips(Vector3[] positions, int[] triangles, RemeshSettings settings,
+            RemeshProfile profile, Action<string, float> onProgress, Vector2[] sourceUvs, bool autoSelectProfile,
+            int[] triangleMaterials)
+        {
+            var was = t_NoStrips;
+            t_NoStrips = true;
+            try { return Solve(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile, triangleMaterials); }
+            finally { t_NoStrips = was; }
+        }
 
         /// <summary>Diagnostic: overrides the chosen profile's relaxation sweeps when >= 0 (0 = off).</summary>
         public static int debugRelaxIterations = -1;
@@ -690,8 +735,8 @@ namespace NativeRemesher
             ApplyModelType(settings.modelType, ref profile, ref autoSelectProfile);
             profile = profile.Validated();
             settings = profile.ApplyTo(settings).Validated();
-            if (quadInputReduction && QuadReductionFor(settings.modelType) && lockAxis == SymmetryAxis.None
-                && !t_SolvingWithoutRibbons)
+            if (quadInputReduction && StripsFor(settings.modelType) && lockAxis == SymmetryAxis.None
+                && !t_SolvingWithoutRibbons && !t_NoStrips)
             {
                 var reduced = SolveByStrips(positions, triangles, settings, profile, onProgress, sourceUvs,
                     triangleMaterials, out var reductionStats);
@@ -927,6 +972,20 @@ namespace NativeRemesher
                 out var outPositions, out var outFaces, out stats);
             if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {(reducedOk ? "strips" : "remesher")}: {stats}");
             if (!reducedOk) return null;
+            return FromQuadReduction(positions, triangles, outPositions, outFaces, stats, settings, profile,
+                sourceUvs, triangleMaterials, watch, onProgress);
+        }
+
+        /// <summary>
+        /// A result from a strip reduction's output (QuadReduction), with the UVs and materials the
+        /// remesher's results carry. The input and the output are in the same space.
+        /// </summary>
+        public static RemeshResult FromQuadReduction(Vector3[] positions, int[] triangles, Vector3[] outPositions,
+            List<int[]> outFaces, QuadReduction.Stats stats, RemeshSettings settings, RemeshProfile profile,
+            Vector2[] sourceUvs, int[] triangleMaterials, System.Diagnostics.Stopwatch watch = null,
+            Action<string, float> onProgress = null)
+        {
+            watch ??= System.Diagnostics.Stopwatch.StartNew();
             var result = new RemeshResult
             {
                 profile = profile, modelType = settings.modelType, shapeSignals = settings.shapeSignals,
@@ -2530,6 +2589,27 @@ namespace NativeRemesher
                     Extraction.IntegerGridMap.curvatureAlignment,
                     Extraction.IntegerGridMap.curvatureRadiusCells,
                     out guideDirections, out guideWeights, out result.curvatureGuideStats);
+            }
+
+            // Motion guides: rings round a piece a rotation sweeps (a tyre, a rim, a knob), rows along
+            // an extrusion, threads along a screw. See KinematicSurfaces.
+            if (kinematicGuides && result.profile.integerGridMap)
+            {
+                var motionCell = result.topology.EdgeLengthForQuadCount(Mathf.Max(1, settings.targetQuadCount));
+                KinematicSurfaces.Guides(result.topology, motionCell, kinematicGuideWeight,
+                    out var motionDirections, out var motionWeights, out result.kinematicStats,
+                    KinematicRegionsFor(result.modelType));
+                if (result.kinematicStats.guided > 0)
+                {
+                    guideDirections ??= new Vector3[result.topology.vertexCount];
+                    guideWeights ??= new float[result.topology.vertexCount];
+                    for (var i = 0; i < motionWeights.Length; i++)
+                    {
+                        if (!(motionWeights[i] > guideWeights[i])) continue;
+                        guideDirections[i] = motionDirections[i];
+                        guideWeights[i] = motionWeights[i];
+                    }
+                }
             }
 
             // Curve directions as guides, when asked for instead of hard constraints.

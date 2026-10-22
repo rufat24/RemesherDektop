@@ -147,11 +147,53 @@ namespace NativeRemesher
                         var weight = PartBake.VisibilityWeight(run.visibility[p]);
                         weighted[p] = areas[p] * weight;
                         // The least a part's pieces need, scaled down too, but not under 8 a piece.
-                        partFloors[p] = Mathf.Max(16, Mathf.RoundToInt(floors[p] * Mathf.Max(weight, 0.4f)));
+                        partFloors[p] = Mathf.Max(16, Mathf.RoundToInt(floors[p] * Mathf.Max(weight, 0.2f)));
                     }
                 }
+                var watch = m_JobWatch;
+                void Timing(string stage)
+                {
+                    if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {stage} by {watch.ElapsedMilliseconds} ms");
+                }
+                Timing("visibility");
                 var targets = PartBake.SplitTarget(weighted, settings.targetQuadCount, 16, partFloors);
                 run.targets = targets;
+
+                // Parts that already are clean quads (modelled parts) are reduced together by quad
+                // strips, at one cell size over the whole model: a flat floor pan gives its quads to a
+                // wheel arch. Each part's share above anchors it (QuadReduction.ReduceParts).
+                var strips = new QuadReduction.Part[n];
+                var types = new ModelType[n];
+                if (RemeshPipeline.quadInputReduction && settings.symmetry == SymmetryAxis.None)
+                {
+                    m_JobStage = "Reducing the quads";
+                    var pool = new List<QuadReduction.Part>();
+                    for (var p = 0; p < n; p++)
+                    {
+                        types[p] = settings.modelType == ModelType.Auto
+                            ? ShapeRecognition.Classify(inputs[p].positions, inputs[p].triangles, out _)
+                            : settings.modelType;
+                        if (!RemeshPipeline.StripsFor(types[p])) continue;
+                        var model = new Vector3[inputs[p].positions.Length];
+                        for (var i = 0; i < model.Length; i++) model[i] = inputs[p].toModel.MultiplyPoint3x4(inputs[p].positions[i]);
+                        strips[p] = new QuadReduction.Part
+                        {
+                            positions = model, triangles = inputs[p].triangles, target = targets[p],
+                            weight = run.visibility != null ? PartBake.VisibilityWeight(run.visibility[p]) : 1f,
+                        };
+                        pool.Add(strips[p]);
+                    }
+                    QuadReduction.ReduceParts(pool, progress =>
+                    {
+                        token.ThrowIfCancellationRequested();
+                        m_JobProgress = progress / (n + 1);
+                    });
+                    Timing("quad strips");
+                    if (QuadReduction.logStats) Debug.Log($"[Native Remesher] quad strips: {QuadReduction.lastTimings}");
+                    for (var p = 0; p < n; p++)
+                        if (strips[p] != null && QuadReduction.logStats)
+                            Debug.Log($"[Native Remesher] {names[p]}: {(strips[p].reduced ? "strips" : "remesher")} {strips[p].stats}");
+                }
                 for (var p = 0; p < n; p++)
                 {
                     var index = p;
@@ -167,13 +209,26 @@ namespace NativeRemesher
                     // One part failing (a throw, or nothing out) does not cost the model its other parts:
                     // it is tried again with four times the quads, then left as it was.
                     RemeshResult solved = null;
+                    if (strips[p] != null && strips[p].reduced)
+                    {
+                        Progress("Reduced with its quads", 0f);
+                        var toPart = PartBake.InverseAffine(inputs[p].toModel);
+                        var back = new Vector3[strips[p].outPositions.Length];
+                        for (var i = 0; i < back.Length; i++) back[i] = toPart.MultiplyPoint3x4(strips[p].outPositions[i]);
+                        partSettings.modelType = types[p];
+                        solved = RemeshPipeline.FromQuadReduction(inputs[p].positions, inputs[p].triangles, back,
+                            strips[p].outFaces, strips[p].stats, partSettings, profile, rawUvs[p], submeshes[p]);
+                    }
                     for (var attempt = 0; attempt < 2 && (solved?.extraction == null || solved.extraction.faces.Count == 0); attempt++)
                     {
                         partSettings.targetQuadCount = attempt == 0 ? targets[p] : targets[p] * 4;
                         try
                         {
-                            solved = RemeshPipeline.Solve(inputs[p].positions, inputs[p].triangles, partSettings, profile,
-                                Progress, rawUvs[p], autoProfile, submeshes[p]);
+                            solved = strips[p] != null
+                                ? RemeshPipeline.SolveWithoutStrips(inputs[p].positions, inputs[p].triangles, partSettings,
+                                    profile, Progress, rawUvs[p], autoProfile, submeshes[p])
+                                : RemeshPipeline.Solve(inputs[p].positions, inputs[p].triangles, partSettings, profile,
+                                    Progress, rawUvs[p], autoProfile, submeshes[p]);
                         }
                         catch (System.Exception e) when (!(e is System.OperationCanceledException))
                         {
@@ -184,7 +239,9 @@ namespace NativeRemesher
                     if (solved?.extraction == null || solved.extraction.faces.Count == 0) solved = null;
                     inputs[p].result = solved;
                     run.results.Add(solved);
+                    Timing($"part '{names[p]}' ({(strips[p] != null && strips[p].reduced ? "strips" : "remesher")}, {solved?.totalMs ?? 0} ms own)");
                 }
+                Timing("parts");
                 if (bakeTexture && imageArray.Length > 0 || bakeNormals)
                     run.shared = PartBake.Bake(inputs, imageArray, bakeTexture && imageArray.Length > 0, bakeNormals,
                         bakeResolution, (stage, progress) =>
@@ -193,6 +250,7 @@ namespace NativeRemesher
                             m_JobStage = $"All parts: {stage}";
                             m_JobProgress = (n + Mathf.Clamp01(progress)) / (n + 1);
                         });
+                Timing("bake");
                 return run;
             }, token);
 
@@ -394,7 +452,9 @@ namespace NativeRemesher
                 if (hidden.Count > 0)
                     hiddenNote = $"\nhidden parts, given fewer quads: {string.Join(", ", hidden)}";
             }
-            m_Status = $"{parts.Count} parts: {faces:N0} faces ({quads:N0} quads) in {ms / 1000.0:F1} s{saved}{bakeNote}{keptNote}{hiddenNote}";
+            // The whole run (strips, visibility, bake), not only the parts' own solves.
+            var seconds = m_JobWatch != null ? m_JobWatch.Elapsed.TotalSeconds : ms / 1000.0;
+            m_Status = $"{parts.Count} parts: {faces:N0} faces ({quads:N0} quads) in {seconds:F1} s{saved}{bakeNote}{keptNote}{hiddenNote}";
             Debug.Log($"[Native Remesher] {root.name}: {m_Status.Replace('\n', ' ')}", top);
             SceneView.RepaintAll();
         }

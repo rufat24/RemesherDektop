@@ -1110,3 +1110,63 @@ Rear arches, the wing, bumpers, doors and roof clean. The wheels stay on the rem
 Regression (head, body, main1, ccnb, helmet, horn, head 2000, ccnb 2000): identical -- all "not quads".
 
 Tests 236: 234 pass, 2 skipped (Headless/tests27.xml), including QuadReductionTests (panel reduced to target all quads with its rolled lip, open tube stays round, shuffled triangles pair back > 99 %, an icosphere is left to the remesher, ReadMesh reads Keep Quads meshes).
+
+## Round 32: one budget for a model's quad parts, motion-swept shapes, settings per Model Type
+
+**Settings per Model Type.** A "Settings For This Type" foldout under Model Type (all three groups
+under Auto): Rings On Round Parts (any type); Character: Keep Source Loops, Straps As Tubes, Fingers
+And Toes Get Rows; Hard Surface: Keep Source Loops, Dense Edges To Normal Map, Thin Strips Get Quads,
+Follow Shape Regions; Scan: Follow Shape Regions. Each sets the RemeshPipeline static it names
+(quadReductionCharacter / quadReductionHardSurface, ribbonParts, thicknessSizing,
+hardSurfaceSparseCreases, stripSizing, kinematicGuides, kinematicRegionsHardSurface / Scan), all on.
+
+**Motion-swept shapes (Runtime/KinematicSurfaces.cs).** After Pottmann & Randrup (line geometry,
+kinematic surfaces): a surface a rigid motion slides along itself has every normal perpendicular to
+the motion's velocity v(x) = c' + c x x, so the motion is the least eigenvector of a 6x6 matrix of the
+normals' Pluecker coordinates. One eigenvalue near zero: a rotation (tyre, rim, knob, bottle), a
+translation (extrusion) or a screw; two: a cylinder (its rotation taken); three or more: a plane or
+sphere, left alone. A piece that fits (90 % of its normals within 10 degrees) gets its orientation
+field guided along the motion: rings round the axis, rows along an extrusion, faded out near the
+axis. Pieces that fit no one motion are grown into regions from seed patches (Scan and Hard Surface
+only: on characters regions took the helmet from 5.4 % to 7.9-10.6 % irregular).
+
+| model | before | after |
+|---|---|---|
+| Porsche tyre (alone, 1500) | irregular 6.56 % | 4.86 %, clean rings |
+| ccnb 5000 | Hausdorff 0.0169 | 0.0135 |
+| ccnb 2000 | Hausdorff 0.0170 | 0.0138 |
+| head, body, main1, helmet, horn | -- | identical |
+
+**One budget for a model's quad parts (QuadReduction.ReduceParts).** All parts that are clean quads
+are reduced together at one cell size: each part's strips cost as before, scaled by its visibility
+weight, so a hidden floor pan gives its quads to a seen wheel arch. A part's share anchors it: under
+0.8 of it a part takes no more strips, over 1.25 its strips go first (each forced part with its own
+cost limit, before any other part's), and a part with no strip left is left as it is. Visibility
+weight is a smoothstep from 0.05 (hidden, under 0.08 seen) to 1 (over 0.6).
+
+Speed (the Porsche, 43 parts, 1.3 M quads of which the wheels are 554,000): a batch costs only open
+parts' strips (none of the others' during the forced phase); a strip's plan is kept from the last
+batch when its faces and rungs are the same and no vertex round it has moved (a stamp per vertex);
+the error is measured only for strips whose width cost alone is within the batch's limit; costing
+reuses per-thread containers (Unity's collector is slow with many threads allocating); adjacency is
+built without a dictionary, for open parts only. Same output at each step.
+
+| | .NET harness | headless Unity |
+|---|---|---|
+| joint reduction before | 160 s | ~1000 s |
+| after | 16 s | 24 s |
+| whole window run (8000) | | 1126 s -> 242 s |
+
+Of the 242 s, 180 s are parts the remesher solves (strips ran out, too irregular): pedals 33 s, wing
+30 s, seats 30 s, rubber 21 s, gauge 16 s at 16-150 quads each. The status line now gives the run's
+wall clock (it summed the parts' stage times, 80 s, missing a layout's second solve and the strips).
+
+Window Porsche 8000: 11,377 -> 10,953 faces. Panels at 0.8-1.25 of their shares (door 294/365, body
+795/686, Fenders 541/525, trunk 324/401, roof 534/440). The front bumper keeps its grille slots.
+Still open: the wheels (277,000 quads each) come out of strips 25-30 % irregular and go to the
+remesher, which drops their rims and spokes at ~400 quads; mirrors and headlights crumple at their
+budgets; interior parts run out of strips.
+
+Regression (head, body, main1, ccnb, helmet, horn, head 2000, ccnb 2000): identical.
+
+Tests 236: 234 pass, 2 skipped (Headless/tests29.xml).

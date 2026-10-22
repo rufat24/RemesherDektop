@@ -147,8 +147,26 @@ namespace NativeRemesher
         /// A part's weight in the budget split for its visibility: <paramref name="hidden"/> for a
         /// part nobody can see, rising to 1 for one fully on the outside.
         /// </summary>
-        public static float VisibilityWeight(float visibility, float hidden = 0.15f) =>
-            hidden + (1f - hidden) * Mathf.Clamp01(visibility);
+        /// <remarks>
+        /// Steep at the bottom (visibilityCurve): a part seen only through the windows (the
+        /// Porsche's seats 6 %, its dash 2-5 %) is next to hidden, one half in view (a wheel under
+        /// its arch, 26-29 %) is not. Linear, the cabin's parts kept ~1,500 of 8,000 quads.
+        /// </remarks>
+        public static float VisibilityWeight(float visibility, float hidden = -1f)
+        {
+            if (hidden < 0f) hidden = hiddenWeight;
+            var v = Mathf.Clamp01(visibility);
+            if (visibilityCurve) v = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(visibilityHiddenBelow, visibilitySeenAbove, v));
+            return hidden + (1f - hidden) * v;
+        }
+
+        /// <summary>Weight of a part nobody can see.</summary>
+        public static float hiddenWeight = 0.05f;
+
+        /// <summary>Visibility under visibilityHiddenBelow weighs as hidden, over visibilitySeenAbove as fully seen. Off: linear (hidden 0.15 before).</summary>
+        public static bool visibilityCurve = true;
+        public static float visibilityHiddenBelow = 0.08f;
+        public static float visibilitySeenAbove = 0.6f;
 
         /// <summary>
         /// The inverse of an affine transform (no projection), in managed code: Matrix4x4.inverse is
