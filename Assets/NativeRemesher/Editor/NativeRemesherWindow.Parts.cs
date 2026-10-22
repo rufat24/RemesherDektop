@@ -422,6 +422,7 @@ namespace NativeRemesher
             }
             Undo.CollapseUndoOperations(undoGroup);
             Selection.activeGameObject = top;
+            if (m_MakeLods) MakeLods(top);
 
             m_Extraction = null;
             m_LastResult = run.results.Count > 0 ? run.results[0] : null;

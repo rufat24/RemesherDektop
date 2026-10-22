@@ -140,6 +140,7 @@ namespace NativeRemesher
             if (Section(4, "Fix Areas", FixAreasSummary(mesh != null ? selected : null), ref m_OpenFix))
                 DrawPaintGUI(mesh != null ? selected : null);
             DrawResultSection(multi ? partsRoot : selected);
+            DrawLodsSection(multi ? partsRoot : selected);
             EditorGUILayout.EndScrollView();
 
             EditorGUILayout.Space(6);
@@ -732,7 +733,7 @@ namespace NativeRemesher
         volatile string m_JobStage = "";
         volatile float m_JobProgress;
 
-        bool isRunning => m_Job != null || m_PartsJob != null;
+        bool isRunning => m_Job != null || m_PartsJob != null || m_LodJob != null;
 
         // Combine Parts: the joined parts' materials, one after another (null: the source's own).
         Material[] m_JobMaterials;
@@ -1040,6 +1041,7 @@ namespace NativeRemesher
 
             Undo.CollapseUndoOperations(undoGroup);
             Selection.activeGameObject = go;
+            if (m_MakeLods) MakeLods(go);
 
             var decimated = result.decimateStats != null
                 ? $", pre-decimated {result.decimateStats.inputTriangles:N0}->" +
