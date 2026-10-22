@@ -88,6 +88,7 @@ namespace NativeRemesher
             SceneView.duringSceneGui += OnSceneGUI;
             Selection.selectionChanged += Repaint;
             Undo.undoRedoPerformed += OnPaintUndoRedo;
+            UpgradeLodSettings();
         }
 
         void OnDisable()
@@ -102,6 +103,7 @@ namespace NativeRemesher
             // A worker holding a million-vertex array must not outlive the window that started it,
             // and EditorApplication.update would otherwise keep a dead instance subscribed.
             EditorApplication.update -= OnJobUpdate;
+            EditorApplication.update -= OnLevelsUpdate;
             m_Cancel?.Cancel();
         }
 
@@ -450,10 +452,13 @@ namespace NativeRemesher
                 var elapsed = m_JobWatch != null ? m_JobWatch.Elapsed.TotalSeconds : 0.0;
                 var rect = EditorGUILayout.GetControlRect(false, 22f);
                 EditorGUI.ProgressBar(rect, Mathf.Clamp01(m_JobProgress),
-                    $"{m_JobStage}  ({elapsed:F1}s)");
+                    $"{LevelChainStage()}{m_JobStage}  ({elapsed:F1}s)");
 
                 if (GUILayout.Button("Cancel"))
+                {
                     m_Cancel?.Cancel();
+                    if (m_LevelChain != null) m_LevelChain.cancelled = true;
+                }
             }
             else
             {
@@ -733,7 +738,13 @@ namespace NativeRemesher
         volatile string m_JobStage = "";
         volatile float m_JobProgress;
 
-        bool isRunning => m_Job != null || m_PartsJob != null || m_LodJob != null;
+        bool isRunning => jobRunning || m_LevelChain != null;
+
+        /// <summary>A worker in flight (a level chain between its runs is not one).</summary>
+        bool jobRunning => m_Job != null || m_PartsJob != null || m_LodJob != null;
+
+        // The object the last finished run put in the scene.
+        GameObject m_LastMade;
 
         // Combine Parts: the joined parts' materials, one after another (null: the source's own).
         Material[] m_JobMaterials;
@@ -741,7 +752,7 @@ namespace NativeRemesher
         /// <summary>Starts the pipeline on a worker thread.</summary>
         void RunPipeline()
         {
-            if (isRunning) return;
+            if (jobRunning) return;
             var parts = GetSelectedParts(out var partsRoot, out var partsError);
             if (parts.Count > 1)
             {
@@ -1041,6 +1052,7 @@ namespace NativeRemesher
 
             Undo.CollapseUndoOperations(undoGroup);
             Selection.activeGameObject = go;
+            m_LastMade = go;
             if (m_MakeLods) MakeLods(go);
 
             var decimated = result.decimateStats != null

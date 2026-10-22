@@ -34,6 +34,25 @@ namespace NativeRemesher.Tests
         }
 
         [Test]
+        public void ASpikeCoveringLittleOfTheSurfaceSetsTheWorstButNotTheSharedError()
+        {
+            // The same sheet, one vertex of the copy pulled up: the worst gap is the spike, while
+            // 99 % of either surface stays almost on the other.
+            var a = Sheet(100);
+            var b = Sheet(100);
+            var positions = (Vector3[])b.positions.Clone();
+            positions[50 * 101 + 50] += Vector3.up * 0.3f;
+            var triA = LodChain.Triangulate(a.faces, out _);
+            var triB = LodChain.Triangulate(b.faces, out _);
+            var grid = new SpatialGrid(positions, triB);
+            var reference = new SpatialGrid(a.positions, triA);
+            var worst = LodChain.Error(positions, triB, grid, reference, a.positions, triA);
+            var share = LodChain.Error(positions, triB, grid, reference, a.positions, triA, quantile: 0.99f);
+            Assert.That(worst, Is.GreaterThan(0.25f));
+            Assert.That(share, Is.LessThan(worst * 0.25f));
+        }
+
+        [Test]
         public void ImportedQuadsAreReadBackAsQuads()
         {
             var input = Sheet(20, scramble: true);

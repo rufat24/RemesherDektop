@@ -7,10 +7,12 @@ using UnityEngine;
 namespace NativeRemesher
 {
     // Levels of detail in one click: the selected object (a result made here, or any mesh model)
-    // gets a LODGroup whose levels are its meshes reduced (LodChain), switching where each level's
-    // measured error shrinks under a pixel budget. A result whose textures were baked here gets each
-    // level baked again from the source, at a smaller size, into its own atlas; any other mesh keeps
-    // its UVs and materials on every level.
+    // gets a LODGroup switching where each level's measured error shrinks under a pixel budget.
+    // By default each level is the source remeshed again at its own quad count -- counted down
+    // from the base's budget, or typed in per level -- through the same pipeline as the Remesh
+    // button (parts, hidden parts, bakes). Off, the levels are the base's meshes reduced
+    // (LodChain): a result whose textures were baked here gets each level baked again from the
+    // source into its own atlas, and any other mesh keeps its UVs and materials on every level.
     internal sealed partial class NativeRemesherWindow
     {
         [SerializeField] bool m_OpenLods = true;
@@ -19,6 +21,32 @@ namespace NativeRemesher
         [SerializeField] float m_LodKeep = 50f;
         [SerializeField] float m_LodPixels = 1f;
         [SerializeField] bool m_LodOwnTextures = true;
+        [SerializeField] bool m_LodRemesh = true;
+        [SerializeField] bool m_LodAutoQuads = true;
+        [SerializeField] int[] m_LodQuads = new int[0];
+
+        /// <summary>
+        /// The share of the surface a remeshed level's error is measured over. Two remeshes differ
+        /// most at thin parts (fingers, straps) that cover few pixels, and the very largest gap
+        /// put the body's LOD1 at a 46-pixel-high body.
+        /// </summary>
+        public static float lodErrorShare = 0.99f;
+
+        // The LOD settings' version: a window saved before remeshed levels existed comes back with
+        // their switches off (Unity restores a field missing from the saved window as false), not
+        // at their defaults.
+        [SerializeField] int m_LodSettingsVersion;
+
+        void UpgradeLodSettings()
+        {
+            if (m_LodSettingsVersion >= 1) return;
+            m_LodRemesh = true;
+            m_LodAutoQuads = true;
+            m_LodSettingsVersion = 1;
+        }
+
+        /// <summary>Auto stops counting down below this many quads: a level that small is a box.</summary>
+        const int k_LodMinQuads = 32;
 
         /// <summary>A part whose size on screen is under this many pixels where a level starts is left out of it.</summary>
         const float k_LodPartPixels = 3f;
@@ -61,23 +89,78 @@ namespace NativeRemesher
 
         void DrawLodsSection(GameObject subject)
         {
-            var summary = $"{m_LodLevels} levels, each {m_LodKeep:0}%" + (m_MakeLods ? ", after each remesh" : "");
+            var target = LodTarget(subject);
+            var auto = target != null ? AutoLevelQuads(target) : new int[0];
+            var summary = (m_LodRemesh
+                              ? m_LodAutoQuads ? $"{auto.Length} remeshed levels, auto" : $"{m_LodLevels} remeshed levels, by hand"
+                              : $"{m_LodLevels} levels, each {m_LodKeep:0}%") +
+                          (m_MakeLods ? ", after each remesh" : "");
             if (!Section(6, "Levels of Detail", summary, ref m_OpenLods)) return;
 
+            m_LodRemesh = EditorGUILayout.ToggleLeft(
+                new GUIContent("Remesh each level from the source",
+                    "Each level is the source remeshed again at its own quad count, as the Remesh button " +
+                    "would make it (parts, hidden parts and bakes included). Off, the levels are this " +
+                    "mesh reduced: quicker, but below the first level a remesh runs out of clean loops " +
+                    "and the levels turn to triangles."),
+                m_LodRemesh);
             m_LodLevels = EditorGUILayout.IntSlider(
                 new GUIContent("Levels", "How many levels below the mesh itself (LOD1, LOD2, ...)."), m_LodLevels, 1, 6);
-            m_LodKeep = EditorGUILayout.Slider(
-                new GUIContent("Each level keeps (%)",
-                    "Each level has this share of the triangles of the one before it. Quad models whose " +
-                    "loops run cleanly lose whole quad strips and stay quads; other meshes are collapsed."),
-                m_LodKeep, 10f, 90f);
+            if (m_LodRemesh)
+            {
+                m_LodAutoQuads = EditorGUILayout.Popup(
+                    new GUIContent("Quads per level",
+                        "Auto: each level has the share below of the quads of the one before, counted down " +
+                        "from the quads the result has (LOD1 at the Quads count for a model not made " +
+                        "here), and stops before a level would be under " + k_LodMinQuads + " quads. " +
+                        "By hand: type each level's quads. Either way a level is remeshed to its count " +
+                        "exactly, without curves adding quads."),
+                    m_LodAutoQuads ? 0 : 1, new[] { new GUIContent("Auto"), new GUIContent("By hand") }) == 0;
+                if (m_LodAutoQuads)
+                {
+                    m_LodKeep = EditorGUILayout.Slider(
+                        new GUIContent("Each level keeps (%)", "The share of the quads of the level before."),
+                        m_LodKeep, 10f, 90f);
+                    if (auto.Length > 0)
+                    {
+                        var counts = new List<string>();
+                        for (var k = 0; k < auto.Length; k++) counts.Add($"LOD{k + 1} {auto[k]:N0}");
+                        EditorGUILayout.LabelField(" ", string.Join("   ", counts) + " quads", EditorStyles.miniLabel);
+                    }
+                }
+                else
+                {
+                    ManualLevelQuads(auto);
+                    for (var k = 0; k < m_LodLevels; k++)
+                        m_LodQuads[k] = Mathf.Max(4, EditorGUILayout.IntField($"LOD{k + 1} quads", m_LodQuads[k]));
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        GUILayout.FlexibleSpace();
+                        if (GUILayout.Button(new GUIContent("Fill from Auto", "Auto's counts for this object as a start."),
+                                EditorStyles.miniButton, GUILayout.Width(100)))
+                        {
+                            m_LodQuads = new int[0];
+                            ManualLevelQuads(auto);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                m_LodKeep = EditorGUILayout.Slider(
+                    new GUIContent("Each level keeps (%)",
+                        "Each level has this share of the triangles of the one before it. Quad models whose " +
+                        "loops run cleanly lose whole quad strips and stay quads; other meshes are collapsed."),
+                    m_LodKeep, 10f, 90f);
+            }
             m_LodPixels = EditorGUILayout.Slider(
                 new GUIContent("Switch under (pixels)",
                     "A level takes over once the change it makes covers at most this many pixels on a " +
                     "1080-pixel-high screen. Each level's change is measured, so the switch distances " +
                     "come from the mesh, not from a fixed table. Higher switches sooner."),
                 m_LodPixels, 0.25f, 8f);
-            m_LodOwnTextures = EditorGUILayout.ToggleLeft(
+            if (!m_LodRemesh)
+                m_LodOwnTextures = EditorGUILayout.ToggleLeft(
                 new GUIContent("Bake each level its own smaller textures",
                     "For a result whose texture or normal map was baked here: each level is baked again " +
                     "from the source at half the size of the one before, so the detail it loses comes back " +
@@ -86,7 +169,6 @@ namespace NativeRemesher
             m_MakeLods = EditorGUILayout.ToggleLeft(
                 new GUIContent("Make them after each remesh", "Add the levels to every new result."), m_MakeLods);
 
-            var target = LodTarget(subject);
             using (new EditorGUI.DisabledScope(isRunning || target == null))
             {
                 var label = target != null ? $"Make LODs for '{target.name}'" : "Make LODs (select a model)";
@@ -114,23 +196,30 @@ namespace NativeRemesher
             return false;
         }
 
+        /// <summary>Whether the object has no LOD group, or only one made here (one the model came with is its author's).</summary>
+        bool GroupIsOurs(GameObject target)
+        {
+            var group = target.GetComponent<LODGroup>();
+            if (group == null) return true;
+            var lods = group.GetLODs();
+            for (var l = 1; l < lods.Length; l++)
+                foreach (var r in lods[l].renderers)
+                    if (r != null && !IsLevelObject(r.transform, target.transform))
+                    {
+                        m_LodStatus = $"'{target.name}' already has a LOD Group of its own; select its LOD 0 mesh instead.";
+                        return false;
+                    }
+            return true;
+        }
+
         void MakeLods(GameObject target)
         {
             if (isRunning || target == null) return;
-            var group = target.GetComponent<LODGroup>();
-            if (group != null)
+            if (!GroupIsOurs(target)) return;
+            if (m_LodRemesh)
             {
-                // Only a group made here is replaced; one the model came with is its author's.
-                var ours = true;
-                var lods = group.GetLODs();
-                for (var l = 1; l < lods.Length; l++)
-                    foreach (var r in lods[l].renderers)
-                        if (r != null && !IsLevelObject(r.transform, target.transform)) ours = false;
-                if (!ours)
-                {
-                    m_LodStatus = $"'{target.name}' already has a LOD Group of its own; select its LOD 0 mesh instead.";
-                    return;
-                }
+                StartLevelChain(target);
+                return;
             }
 
             var run = new LodRun
@@ -532,6 +621,445 @@ namespace NativeRemesher
                     if (mat.HasProperty(property) && Ours(mat.GetTexture(property), "_Normal")) return true;
             }
             return false;
+        }
+
+        // ------------------------------------------------------------------ levels remeshed
+
+        /// <summary>Levels being remeshed one after another, each a run of the window's own pipeline.</summary>
+        sealed class LevelChain
+        {
+            public GameObject target, source;
+            public int[] quads;
+            public int[] resolutions;   // per level, or null: the window's texture size
+            public int next;            // the level being made is LOD(next + 1)
+            public bool running, cancelled;
+            public List<GameObject> made = new List<GameObject>();
+            public List<long> ms = new List<long>();
+            public System.Diagnostics.Stopwatch watch, levelWatch;
+            public float baseQuads;     // the base's own, as quads
+        }
+
+        LevelChain m_LevelChain;
+
+        string LevelChainStage() =>
+            m_LevelChain != null ? $"LOD{m_LevelChain.next + 1} of {m_LevelChain.quads.Length} ({m_LevelChain.quads[Mathf.Min(m_LevelChain.next, m_LevelChain.quads.Length - 1)]:N0} quads): " : "";
+
+        /// <summary>
+        /// Auto's quad counts: from the quads the result has (or, for a model not made here, LOD1
+        /// at the window's Quads count, under the model's own size), each level the kept share of
+        /// the one before, stopping before one would be under k_LodMinQuads. From what the base
+        /// has rather than what it was asked for: with curves adding quads a scan's base came out
+        /// at three times its count, and LOD1 at half the count would have been two thirds smaller.
+        /// </summary>
+        int[] AutoLevelQuads(GameObject target)
+        {
+            var link = target.GetComponent<RemeshSource>();
+            var keep = Mathf.Clamp(m_LodKeep / 100f, 0.1f, 0.9f);
+            var from = link != null && link.source != null
+                ? QuadsOf(target)
+                : Mathf.Min(m_TargetQuadCount, QuadsOf(target) * keep) / keep;
+            var counts = new List<int>();
+            for (var k = 1; k <= m_LodLevels; k++)
+            {
+                var q = Mathf.RoundToInt(from * Mathf.Pow(keep, k));
+                if (q < k_LodMinQuads || counts.Count > 0 && q >= counts[counts.Count - 1]) break;
+                counts.Add(q);
+            }
+            return counts.ToArray();
+        }
+
+        /// <summary>The by-hand counts, one per level, the missing ones filled from Auto's (or halving).</summary>
+        void ManualLevelQuads(int[] auto)
+        {
+            if (m_LodQuads == null) m_LodQuads = new int[0];
+            if (m_LodQuads.Length >= m_LodLevels) return;
+            var grown = new int[m_LodLevels];
+            for (var k = 0; k < grown.Length; k++)
+                grown[k] = k < m_LodQuads.Length && m_LodQuads[k] > 0 ? m_LodQuads[k]
+                    : k < auto.Length ? auto[k]
+                    : k > 0 ? Mathf.Max(4, grown[k - 1] / 2) : Mathf.Max(4, m_TargetQuadCount / 2);
+            m_LodQuads = grown;
+        }
+
+        /// <summary>The object's faces as quads (a triangle a half), its level objects left out.</summary>
+        static float QuadsOf(GameObject target)
+        {
+            long indices4 = 0, indices3 = 0;
+            foreach (var filter in target.GetComponentsInChildren<MeshFilter>(false))
+            {
+                if (IsLevelObject(filter.transform, target.transform) || filter.sharedMesh == null) continue;
+                var mesh = filter.sharedMesh;
+                for (var i = 0; i < mesh.subMeshCount; i++)
+                    if (mesh.GetTopology(i) == MeshTopology.Quads) indices4 += mesh.GetIndexCount(i);
+                    else if (mesh.GetTopology(i) == MeshTopology.Triangles) indices3 += mesh.GetIndexCount(i);
+            }
+            return indices4 / 4f + indices3 / 6f;
+        }
+
+        void StartLevelChain(GameObject target)
+        {
+            var quads = m_LodAutoQuads ? AutoLevelQuads(target) : null;
+            if (!m_LodAutoQuads)
+            {
+                ManualLevelQuads(AutoLevelQuads(target));
+                quads = new int[m_LodLevels];
+                System.Array.Copy(m_LodQuads, quads, m_LodLevels);
+            }
+            if (quads.Length == 0)
+            {
+                m_LodStatus = $"'{target.name}' is already under {k_LodMinQuads} quads a level; nothing to count down to.";
+                return;
+            }
+            var chain = new LevelChain
+            {
+                target = target, source = SourceOf(target), quads = quads,
+                // A model not made here has no remeshed base: its first level is the measure.
+                baseQuads = target.GetComponent<RemeshSource>() != null ? QuadsOf(target) : quads[0],
+                watch = System.Diagnostics.Stopwatch.StartNew(),
+            };
+
+            // A base baked here sets the levels' texture size: as many texels per quad's width
+            // as the base, so a level with a quarter of the quads gets half the size, not under 512.
+            var materials = new List<Material>();
+            foreach (var r in target.GetComponentsInChildren<Renderer>(false))
+                if (!IsLevelObject(r.transform, target.transform)) materials.AddRange(r.sharedMaterials);
+            var baseSize = BakedHere(materials.ToArray(), out var size) ? size : m_TextureSize;
+            if (baseSize > 0)
+            {
+                var reference = Mathf.Max(QuadsOf(target), quads[0]);
+                chain.resolutions = new int[quads.Length];
+                for (var k = 0; k < quads.Length; k++)
+                    chain.resolutions[k] = Mathf.Clamp(
+                        Mathf.NextPowerOfTwo(Mathf.CeilToInt(baseSize * Mathf.Sqrt(quads[k] / reference))), 512, Mathf.Max(512, baseSize));
+            }
+
+            // The old levels made here go first.
+            for (var i = target.transform.childCount - 1; i >= 0; i--)
+            {
+                var child = target.transform.GetChild(i);
+                if (child.name.StartsWith(target.name + "_LOD")) Undo.DestroyObjectImmediate(child.gameObject);
+            }
+            m_LevelChain = chain;
+            m_LodStatus = $"Remeshing {quads.Length} levels: {string.Join(", ", quads)} quads";
+            m_JobWatch = System.Diagnostics.Stopwatch.StartNew();
+            EditorApplication.update -= OnLevelsUpdate;
+            EditorApplication.update += OnLevelsUpdate;
+        }
+
+        // Between the runs: the level just made taken under the target, then the next one started.
+        void OnLevelsUpdate()
+        {
+            var chain = m_LevelChain;
+            if (chain == null) { EditorApplication.update -= OnLevelsUpdate; return; }
+            if (jobRunning) return;
+            if (chain.running)
+            {
+                chain.running = false;
+                var made = m_LastMade;
+                var link = made != null ? made.GetComponent<RemeshSource>() : null;
+                if (chain.cancelled || made == null || made == chain.target || link == null || link.source != chain.source ||
+                    chain.made.Contains(made))
+                {
+                    EndLevelChain(false, chain.cancelled ? "Levels cancelled." : $"LOD{chain.next + 1} was not made: {m_Status}");
+                    return;
+                }
+                made.name = $"{chain.target.name}_LOD{chain.next + 1}";
+                // The result sits where the source does, as the target does: kept in place under it.
+                made.transform.SetParent(chain.target.transform, true);
+                chain.made.Add(made);
+                chain.ms.Add(chain.levelWatch.ElapsedMilliseconds);
+                chain.next++;
+            }
+            if (chain.cancelled) { EndLevelChain(false, "Levels cancelled."); return; }
+            if (chain.target == null || chain.source == null) { EndLevelChain(false, "The object was removed while its levels were made."); return; }
+            if (chain.next >= chain.quads.Length) { EndLevelChain(true, null); return; }
+
+            // The window's own run on the source, at this level's count (and texture size), the
+            // count exact: a level is the number it was given, not one that curves add to.
+            Selection.activeGameObject = chain.source;
+            m_LastMade = null;
+            var quadsWas = m_TargetQuadCount;
+            var textureWas = m_TextureSize;
+            var curvesWas = m_CurvesAddQuads;
+            m_TargetQuadCount = chain.quads[chain.next];
+            if (chain.resolutions != null) m_TextureSize = chain.resolutions[chain.next];
+            m_CurvesAddQuads = false;
+            // The least each piece of a part is given shrinks with the level: held at LOD0's, the
+            // Porsche's rear lights (17 pieces) kept 340 quads at LOD3 while its body had 115.
+            var perPieceWas = PartBake.quadsPerPiece;
+            PartBake.quadsPerPiece = Mathf.Clamp(Mathf.RoundToInt(perPieceWas * chain.quads[chain.next] / Mathf.Max(1f, chain.baseQuads)),
+                4, perPieceWas);
+            try { RunPipeline(); }
+            finally
+            {
+                m_TargetQuadCount = quadsWas;
+                m_TextureSize = textureWas;
+                m_CurvesAddQuads = curvesWas;
+                PartBake.quadsPerPiece = perPieceWas;
+            }
+            if (!jobRunning) { EndLevelChain(false, $"LOD{chain.next + 1} could not start: {m_Status}"); return; }
+            chain.running = true;
+            chain.levelWatch = System.Diagnostics.Stopwatch.StartNew();
+        }
+
+        void EndLevelChain(bool ok, string message)
+        {
+            var chain = m_LevelChain;
+            m_LevelChain = null;
+            EditorApplication.update -= OnLevelsUpdate;
+            if (!ok)
+            {
+                foreach (var go in chain.made) if (go != null) Undo.DestroyObjectImmediate(go);
+                if (chain.target != null) Selection.activeGameObject = chain.target;
+                m_LodStatus = message;
+                Repaint();
+                return;
+            }
+
+            // Each level's error against the base, in the target's space, sets where it takes over:
+            // part by part (a level mirrors the base's hierarchy), over the parts seen from outside.
+            // Over the whole car, its seats and dash -- collapsed differently at each count, and
+            // never on screen -- put LOD1's switch at a 51-pixel-high car.
+            var target = chain.target;
+            var toTarget = target.transform.worldToLocalMatrix;
+            var lod0 = new List<Renderer>();
+            foreach (var r in target.GetComponentsInChildren<Renderer>(false))
+                if (!IsLevelObject(r.transform, target.transform)) lod0.Add(r);
+            var baseParts = new List<PartBake.Part>();
+            var occludes = new List<bool>();
+            var bounds = new Bounds();
+            var first = true;
+            foreach (var r in lod0)
+            {
+                Surface(new[] { r }, toTarget, out var positions, out var triangles);
+                baseParts.Add(new PartBake.Part { positions = positions, triangles = triangles });
+                occludes.Add(!SeeThrough(r.sharedMaterials));
+                foreach (var p in positions)
+                {
+                    if (first) { bounds = new Bounds(p, Vector3.zero); first = false; }
+                    else bounds.Encapsulate(p);
+                }
+            }
+            var size = Mathf.Max(bounds.size.x, Mathf.Max(bounds.size.y, bounds.size.z), 1e-6f);
+            var seen = new bool[lod0.Count];
+            var visibility = lod0.Count > 1 ? PartBake.Visibility(baseParts, occludes) : null;
+            var anySeen = false;
+            for (var p = 0; p < seen.Length; p++)
+            {
+                seen[p] = baseParts[p].triangles.Length >= 3 &&
+                          (visibility == null || PartBake.VisibilityWeight(visibility[p]) >= hiddenCollapseWeight);
+                anySeen |= seen[p];
+            }
+            if (!anySeen) for (var p = 0; p < seen.Length; p++) seen[p] = baseParts[p].triangles.Length >= 3;
+            var baseGrids = new SpatialGrid[lod0.Count];
+            var baseInputs = new LodChain.Input[lod0.Count];
+            var samples = Mathf.Clamp(80000 / Mathf.Max(1, lod0.Count), 2000, 20000);
+            var reducedParts = new List<string>();
+
+            var levels = new List<LodChain.Level> { new LodChain.Level() };
+            var renderers = new List<List<Renderer>> { lod0 };
+            var partSizes = new List<float[]> { null };
+            foreach (var go in chain.made)
+            {
+                var own = new List<Renderer>(go.GetComponentsInChildren<Renderer>(false));
+                var byPath = new Dictionary<string, int>();
+                for (var i = 0; i < own.Count; i++) byPath[PathUnder(own[i].transform, go.transform)] = i;
+                var sizes = new float[own.Count];
+                float error = 0f, worst = 0f;
+                for (var i = 0; i < own.Count; i++)
+                {
+                    Surface(new[] { own[i] }, toTarget, out var positions, out var triangles);
+                    sizes[i] = LodChain.Size(positions);
+                }
+                for (var p = 0; p < lod0.Count; p++)
+                {
+                    if (!seen[p]) continue;
+                    if (!byPath.TryGetValue(PathUnder(lod0[p].transform, target.transform), out var i)) continue;
+                    Surface(new[] { own[i] }, toTarget, out var positions, out var triangles);
+                    if (triangles.Length < 3) continue;
+                    var basePart = baseParts[p];
+                    baseGrids[p] ??= new SpatialGrid(basePart.positions, basePart.triangles);
+                    var grid = new SpatialGrid(positions, triangles);
+                    var partError = LodChain.Error(positions, triangles, grid, baseGrids[p],
+                        basePart.positions, basePart.triangles, samples, lodErrorShare);
+                    // The part's base reduced to the same triangles, when that stays closer: a
+                    // remesh at a few hundred quads can tear (the Porsche's hood at LOD3), a
+                    // reduction of what LOD0 already has cannot, and it draws with LOD0's textures.
+                    if (ReducedCloser(lod0[p], own[i], toTarget, triangles.Length / 3, basePart, baseGrids[p], samples,
+                            partError, ref baseInputs[p], out var reducedError, out var reducedPositions, out var reducedTriangles))
+                    {
+                        partError = reducedError;
+                        positions = reducedPositions;
+                        triangles = reducedTriangles;
+                        grid = new SpatialGrid(positions, triangles);
+                        reducedParts.Add($"{lod0[p].name} (LOD{levels.Count})");
+                    }
+                    error = Mathf.Max(error, partError);
+                    worst = Mathf.Max(worst, LodChain.Error(positions, triangles, grid, baseGrids[p],
+                        basePart.positions, basePart.triangles, samples));
+                }
+                levels.Add(new LodChain.Level { error = error, note = $"worst {worst / size:P2}" });
+                renderers.Add(own);
+                partSizes.Add(sizes);
+            }
+            LodChain.SwitchHeights(levels, size, new LodChain.Settings { pixelError = m_LodPixels });
+
+            // Where a level starts, a part a few pixels across is left out of it.
+            var lods = new LOD[levels.Count];
+            var faces = new List<int>();
+            var dropped = new int[levels.Count];
+            for (var l = 0; l < lods.Length; l++)
+            {
+                var kept = new List<Renderer>();
+                for (var i = 0; i < renderers[l].Count; i++)
+                {
+                    var r = renderers[l][i];
+                    if (l > 0 && partSizes[l][i] / size * levels[l - 1].switchHeight * 1080f < k_LodPartPixels)
+                    {
+                        Undo.RecordObject(r, "Make LODs");
+                        r.enabled = false;
+                        dropped[l]++;
+                        continue;
+                    }
+                    kept.Add(r);
+                }
+                lods[l] = new LOD(levels[l].switchHeight, kept.ToArray());
+                faces.Add(TrianglesOf(kept));
+            }
+            var group = target.GetComponent<LODGroup>();
+            if (group == null) group = Undo.AddComponent<LODGroup>(target);
+            Undo.RecordObject(group, "Make LODs");
+            group.SetLODs(lods);
+            group.localReferencePoint = bounds.center;
+            group.size = size;
+            Selection.activeGameObject = target;
+
+            var lines = new List<string> { $"LOD0 {faces[0]:N0} tris" };
+            for (var l = 1; l < levels.Count; l++)
+                lines.Add($"LOD{l} {faces[l]:N0} tris ({chain.quads[l - 1]:N0} quads asked, {chain.ms[l - 1] / 1000f:0} s), " +
+                          $"off by {levels[l].error / size:P2} of the size ({levels[l].note}), from {levels[l - 1].switchHeight:P0} of the screen" +
+                          (dropped[l] > 0 ? $", {dropped[l]} small parts left out" : ""));
+            if (reducedParts.Count > 0)
+                lines.Add($"reduced from LOD0 where closer than the remesh: {string.Join(", ", reducedParts)}");
+            m_LodStatus = $"{chain.made.Count} remeshed levels in {chain.watch.ElapsedMilliseconds / 1000f:0} s; " +
+                          $"culled under {levels[levels.Count - 1].switchHeight:P0}\n" + string.Join("\n", lines);
+            Debug.Log($"[Native Remesher] LODs for '{target.name}': {m_LodStatus}");
+            SceneView.RepaintAll();
+            Repaint();
+        }
+
+        /// <summary>A reduction of the base part replaces the level's remesh when its error is under this share of the remesh's.</summary>
+        public static float lodReducedCloser = 0.8f;
+
+        /// <summary>A reduction with more than this many times the remesh's triangles is not used (it would not be the level's size).</summary>
+        public static float lodReducedOver = 1.15f;
+
+        /// <summary>
+        /// The base part reduced (LodChain, sharing its UVs) to the level part's triangles; when it
+        /// is closer to the base than the level's remesh, it takes the remesh's place, drawn with
+        /// the base part's materials. Out: its error and its surface in the target's space.
+        /// </summary>
+        bool ReducedCloser(Renderer basePart, Renderer levelPart, Matrix4x4 toTarget, int triangles,
+            PartBake.Part baseSurface, SpatialGrid baseGrid, int samples, float remeshError, ref LodChain.Input input,
+            out float error, out Vector3[] positions, out int[] surface)
+        {
+            error = remeshError;
+            positions = null;
+            surface = null;
+            if (remeshError <= 0f) return false;
+            var baseFilter = basePart.GetComponent<MeshFilter>();
+            var levelFilter = levelPart.GetComponent<MeshFilter>();
+            var baseMesh = baseFilter != null ? baseFilter.sharedMesh : null;
+            if (baseMesh == null || levelFilter == null || !baseMesh.isReadable) return false;
+            if (input == null)
+            {
+                RemeshTopology.ReadMesh(baseMesh, out var p, out var t, out var uvs, out var submesh);
+                QuadSource.Reorder(baseMesh, ref t, ref submesh);
+                input = LodChain.FromMesh(p, t, uvs, submesh, baseMesh.subMeshCount);
+            }
+            var baseTriangles = baseSurface.triangles.Length / 3;
+            if (triangles >= baseTriangles) return false;
+            // Within its UV charts first; held there (a baked base's atlas has hundreds of them,
+            // and the Porsche's fender stopped at twice its count), across them, its UVs sampled.
+            LodChain.Level level = null;
+            foreach (var hold in new[] { true, false })
+            {
+                var levels = LodChain.Build(input, new LodChain.Settings
+                {
+                    levels = 1, keep = Mathf.Clamp((float)triangles / baseTriangles, 0.02f, 0.95f), shareUvs = true, holdSeams = hold,
+                });
+                if (levels.Count < 2) continue;
+                level = levels[1];
+                if (level.Cost <= triangles * lodReducedOver) break;
+                level = null;
+            }
+            if (level == null) return false;
+            var tris = LodChain.Triangulate(level.faces, out _);
+            var toModel = toTarget * basePart.transform.localToWorldMatrix;
+            var moved = new Vector3[level.positions.Length];
+            for (var i = 0; i < moved.Length; i++) moved[i] = toModel.MultiplyPoint3x4(level.positions[i]);
+            var reducedError = LodChain.Error(moved, tris, null, baseGrid, baseSurface.positions, baseSurface.triangles,
+                samples, lodErrorShare);
+            if (reducedError >= remeshError * lodReducedCloser) return false;
+
+            var mesh = QuadExtractor.ToMesh(LodChain.ToExtraction(level, input.materialSlots), levelFilter.sharedMesh.name, m_QuadTopology);
+            var meshPath = AssetDatabase.GetAssetPath(levelFilter.sharedMesh);
+            if (!string.IsNullOrEmpty(meshPath) && meshPath.EndsWith(".asset"))
+                AssetDatabase.CreateAsset(mesh, AssetDatabase.GenerateUniqueAssetPath(
+                    $"{Path.GetDirectoryName(meshPath).Replace('\\', '/')}/{SafeName(baseMesh.name)}_reduced.asset"));
+            Undo.RecordObject(levelFilter, "Make LODs");
+            levelFilter.sharedMesh = mesh;
+            var from = basePart.sharedMaterials;
+            var mats = new Material[Mathf.Max(1, mesh.subMeshCount)];
+            for (var i = 0; i < mats.Length; i++) mats[i] = from.Length > 0 ? from[Mathf.Min(i, from.Length - 1)] : null;
+            Undo.RecordObject(levelPart, "Make LODs");
+            levelPart.sharedMaterials = mats;
+            error = reducedError;
+            positions = moved;
+            surface = tris;
+            return true;
+        }
+
+        static string PathUnder(Transform t, Transform top)
+        {
+            var names = new List<string>();
+            for (; t != null && t != top; t = t.parent) names.Add(t.name);
+            names.Reverse();
+            return string.Join("/", names);
+        }
+
+        /// <summary>The renderers' meshes as one triangle surface in the target's space.</summary>
+        static void Surface(IList<Renderer> renderers, Matrix4x4 toTarget, out Vector3[] positions, out int[] triangles)
+        {
+            var p = new List<Vector3>();
+            var t = new List<int>();
+            foreach (var r in renderers)
+            {
+                var filter = r != null ? r.GetComponent<MeshFilter>() : null;
+                var mesh = filter != null ? filter.sharedMesh : null;
+                if (mesh == null || !mesh.isReadable) continue;
+                RemeshTopology.ReadMesh(mesh, out var v, out var tri);
+                var m = toTarget * r.transform.localToWorldMatrix;
+                var offset = p.Count;
+                foreach (var q in v) p.Add(m.MultiplyPoint3x4(q));
+                foreach (var i in tri) t.Add(i + offset);
+            }
+            positions = p.ToArray();
+            triangles = t.ToArray();
+        }
+
+        static int TrianglesOf(IList<Renderer> renderers)
+        {
+            var triangles = 0;
+            foreach (var r in renderers)
+            {
+                var filter = r != null ? r.GetComponent<MeshFilter>() : null;
+                var mesh = filter != null ? filter.sharedMesh : null;
+                if (mesh == null) continue;
+                for (var i = 0; i < mesh.subMeshCount; i++)
+                    triangles += (int)(mesh.GetTopology(i) == MeshTopology.Quads ? mesh.GetIndexCount(i) / 2 : mesh.GetIndexCount(i) / 3);
+            }
+            return triangles;
         }
     }
 }

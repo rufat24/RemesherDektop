@@ -35,6 +35,13 @@ namespace NativeRemesher
             /// makes, held the body's LOD3 at 3,588 triangles of a 2,594 target).
             /// </summary>
             public bool shareUvs = true;
+            /// <summary>
+            /// With shared UVs, whether a collapse keeps every face inside one chart. Off, it
+            /// reduces freely and the UVs are still sampled from the base, smeared on the few faces
+            /// that cross a seam: for a level small on screen whose base has too many charts to
+            /// reduce within them.
+            /// </summary>
+            public bool holdSeams = true;
             /// <summary>A level must have at most this share of the previous one's triangles, or the chain ends.</summary>
             public float minStep = 0.9f;
             /// <summary>Fewest triangles a level may have.</summary>
@@ -142,7 +149,7 @@ namespace NativeRemesher
                 {
                     // Chart and material borders held as label borders, so no triangle spans a UV
                     // seam and every level can draw with the base's textures.
-                    if (settings.shareUvs) seamLabels ??= SeamLabels(input, baseTriangles, triangleFace, uvPositions, uvTriangles, uvs);
+                    if (settings.shareUvs && settings.holdSeams) seamLabels ??= SeamLabels(input, baseTriangles, triangleFace, uvPositions, uvTriangles, uvs);
                     var options = new DecimateOptions { targetTriangles = Math.Max(4, target), labels = seamLabels };
                     // From the level before when that was collapsed too: each step halves a smaller
                     // mesh (a Porsche wheel's 550k triangles once, not three times).
@@ -237,11 +244,30 @@ namespace NativeRemesher
         /// <summary>
         /// Largest distance either way between a surface and the reference, sampled: points on the
         /// surface to the reference and points on the reference to the surface, so both a bulge and
-        /// a lost feature count.
+        /// a lost feature count. With <paramref name="quantile"/> under 1, the distance that share of
+        /// the samples on each side stays within, the larger side's.
         /// </summary>
         public static float Error(Vector3[] positions, int[] triangles, SpatialGrid grid, SpatialGrid reference,
-            Vector3[] referencePositions, int[] referenceTriangles, int samples = 20000)
+            Vector3[] referencePositions, int[] referenceTriangles, int samples = 20000, float quantile = 1f)
         {
+            if (quantile < 1f)
+            {
+                if (triangles.Length < 3) return float.PositiveInfinity;
+                grid ??= new SpatialGrid(positions, triangles);
+                var mineSamples = SpatialGrid.SampleSurface(positions, triangles, samples, 7);
+                var theirSamples = SpatialGrid.SampleSurface(referencePositions, referenceTriangles, samples, 11);
+                var share = new float[2];
+                Parallel.For(0, 2, side =>
+                {
+                    var points = side == 0 ? mineSamples : theirSamples;
+                    var against = side == 0 ? reference : grid;
+                    var d = new float[points.Count];
+                    for (var i = 0; i < d.Length; i++) d[i] = against.NearestDistance(points[i], out _);
+                    Array.Sort(d);
+                    share[side] = d.Length > 0 ? d[Mathf.Clamp(Mathf.CeilToInt(quantile * d.Length) - 1, 0, d.Length - 1)] : 0f;
+                });
+                return Mathf.Max(share[0], share[1]);
+            }
             if (triangles.Length < 3) return float.PositiveInfinity;
             grid ??= new SpatialGrid(positions, triangles);
             var mine = SpatialGrid.SampleSurface(positions, triangles, samples, 7);
