@@ -425,6 +425,69 @@ namespace NativeRemesher
         [ThreadStatic] static bool t_NoStrips;
 
         /// <summary>
+        /// A part reduced by edge collapse to about twice <paramref name="targetQuads"/> triangles,
+        /// whose triangles are then paired into quads: for a part that cannot be seen and whose
+        /// strips ran out. Remeshing such a part to its share (16-136 quads on the Porsche's seats,
+        /// pedals, gauges) took 20-30 s each and made a blob all the same.
+        /// </summary>
+        /// <summary>
+        /// How far the source strays from a result, in the result's own quad widths: the largest
+        /// distance from points spread over the source to the result's surface, over the square
+        /// root of the result's mean face area. Above a couple, a piece is missing or folded.
+        /// </summary>
+        public static float CellsOff(Vector3[] positions, int[] triangles, QuadExtractionResult extraction, int samples = 4000)
+        {
+            var tris = LodChain.Triangulate(extraction.faces, out _);
+            if (tris.Length < 3) return float.PositiveInfinity;
+            double area = 0;
+            for (var t = 0; t + 2 < tris.Length; t += 3)
+                area += Vector3.Cross(extraction.positions[tris[t + 1]] - extraction.positions[tris[t]],
+                    extraction.positions[tris[t + 2]] - extraction.positions[tris[t]]).magnitude * 0.5;
+            var cell = (float)Math.Sqrt(area / Math.Max(1, extraction.faces.Count));
+            if (!(cell > 0f)) return float.PositiveInfinity;
+            var grid = new SpatialGrid(extraction.positions, tris);
+            var points = SpatialGrid.SampleSurface(positions, triangles, samples, 5);
+            var worst = new float[points.Count];
+            System.Threading.Tasks.Parallel.For(0, points.Count, i => worst[i] = grid.NearestDistance(points[i], out _));
+            var max = 0f;
+            foreach (var w in worst) max = Mathf.Max(max, w);
+            return max / cell;
+        }
+
+        [ThreadStatic] public static DecimateStats lastCollapseStats;
+
+        public static void CollapseToQuads(Vector3[] positions, int[] triangles, int targetQuads,
+            out Vector3[] outPositions, out List<int[]> outFaces)
+        {
+            // Welded first: the mesh as Unity holds it is split at its UV seams, which the collapse
+            // would open into cracks.
+            var map = new Dictionary<Vector3, int>();
+            var weld = new int[positions.Length];
+            var welded = new List<Vector3>();
+            for (var i = 0; i < positions.Length; i++)
+            {
+                if (!map.TryGetValue(positions[i], out var w)) { w = welded.Count; map[positions[i]] = w; welded.Add(positions[i]); }
+                weld[i] = w;
+            }
+            var tris = new List<int>(triangles.Length);
+            for (var t = 0; t + 2 < triangles.Length; t += 3)
+            {
+                int a = weld[triangles[t]], b = weld[triangles[t + 1]], c = weld[triangles[t + 2]];
+                if (a == b || b == c || c == a) continue;
+                tris.Add(a); tris.Add(b); tris.Add(c);
+            }
+            // No sliver guard: it keeps a remesh's input faithful, and here refused 92,435 collapses
+            // on the seats' long thin strips, which stopped at 19,919 of 544 triangles.
+            var options = new DecimateOptions { targetTriangles = Math.Max(4, 2 * targetQuads), sliverGuard = 0f };
+            PreDecimate.Decimate(welded.ToArray(), tris.ToArray(), options, out var decimateStats, out outPositions, out var outTriangles);
+            lastCollapseStats = decimateStats;
+            outFaces = new List<int[]>(outTriangles.Length / 3);
+            for (var t = 0; t + 2 < outTriangles.Length; t += 3)
+                outFaces.Add(new[] { outTriangles[t], outTriangles[t + 1], outTriangles[t + 2] });
+            Extraction.TrianglePairing.Run(outFaces, outPositions);
+        }
+
+        /// <summary>
         /// Solve without trying the strip reduction: for a part whose strips were already tried with
         /// the rest of its model (QuadReduction.ReduceParts).
         /// </summary>

@@ -133,7 +133,7 @@ namespace NativeRemesher
                         if (total > 0) bestSide = Mathf.Max(bestSide, open / (float)total);
                         if (n == Vector3.zero) break;
                     }
-                    seen[s] = bestSide;
+                    seen[s] = visibilityFullAt > 0f ? Mathf.Min(1f, bestSide / visibilityFullAt) : bestSide;
                 });
                 double sum = 0;
                 foreach (var v in seen) sum += v;
@@ -142,6 +142,14 @@ namespace NativeRemesher
             }
             return visibility;
         }
+
+        /// <summary>
+        /// A surface point open to this share of the directions above it counts as fully seen; 0
+        /// counts the open share itself. A wheel's rim and spokes sit recessed and face sideways --
+        /// in plain view, open to a fraction of the sky -- and the wheels read 26-29 %, near the
+        /// seats behind glass (6 %), and gave their strips away first.
+        /// </summary>
+        public static float visibilityFullAt = 0.35f;
 
         /// <summary>
         /// A part's weight in the budget split for its visibility: <paramref name="hidden"/> for a

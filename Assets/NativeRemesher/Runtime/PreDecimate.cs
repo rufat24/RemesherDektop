@@ -99,6 +99,9 @@ namespace NativeRemesher
         /// </remarks>
         public float maxDistance;
 
+        /// <summary>This run's sliver guard (PreDecimate.sliverGuardQuality); negative: that default.</summary>
+        public float sliverGuard = -1f;
+
         public static DecimateOptions ForTriangleCount(int triangles) =>
             new DecimateOptions { targetTriangles = triangles };
     }
@@ -717,7 +720,7 @@ namespace NativeRemesher
             var maxFlipCos = Mathf.Cos(Mathf.Clamp(options.maxNormalFlipDegrees, 1f, 179f) * Mathf.Deg2Rad);
             var live = CollapseLoop(positions, triangles, triangleCount, quadrics, null, heap, triAlive,
                 vertAlive, version, incident, target, maxFlipCos, stats, onProgress, triLabel, vertexSize,
-                (double)options.maxDistance * options.maxDistance);
+                (double)options.maxDistance * options.maxDistance, options.sliverGuard);
 
             msCollapse = phase.ElapsedMilliseconds; phase.Restart();
             // --- compact ---
@@ -761,9 +764,11 @@ namespace NativeRemesher
         static int CollapseLoop(Vector3[] positions, int[] triangles, int triangleCount,
             Quadric[] quadrics, bool[] locked, List<Candidate> heap, bool[] triAlive, bool[] vertAlive,
             int[] version, Incidence incident, int target, float maxFlipCos, DecimateStats stats,
-            Action<float> onProgress, int[] triLabel = null, float[] size = null, double maxDistanceSqr = 0)
+            Action<float> onProgress, int[] triLabel = null, float[] size = null, double maxDistanceSqr = 0,
+            float sliverGuard = -1f)
         {
             var live = triangleCount;
+            if (sliverGuard < 0f) sliverGuard = sliverGuardQuality;
 
             // Progress is reported from inside the loop, not once on entry. This stage is the
             // longest one on a scan, and a bar that only moves when it finishes is
@@ -824,8 +829,8 @@ namespace NativeRemesher
                     continue;
                 }
 
-                if (sliverGuardQuality > 0f && WouldMakeSliver(incident, triangles, triAlive, positions,
-                        best.u, best.v, best.target, sliverGuardQuality))
+                if (sliverGuard > 0f && WouldMakeSliver(incident, triangles, triAlive, positions,
+                        best.u, best.v, best.target, sliverGuard))
                 {
                     stats.rejectedSliver++;
                     continue;
@@ -1074,7 +1079,7 @@ namespace NativeRemesher
                 }
                 CollapseLoop(localPositions, localTriangles, count, localQuadrics, locked, heap, triAlive,
                     vertAlive, version, incident, localTarget, maxFlipCos, blockStat, null, null, localSize,
-                    (double)options.maxDistance * options.maxDistance);
+                    (double)options.maxDistance * options.maxDistance, options.sliverGuard);
 
                 // Unlocked vertices belong to this block alone, so these writes never collide.
                 for (var l = 0; l < localCount; l++)

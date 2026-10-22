@@ -219,6 +219,20 @@ namespace NativeRemesher
                         solved = RemeshPipeline.FromQuadReduction(inputs[p].positions, inputs[p].triangles, back,
                             strips[p].outFaces, strips[p].stats, partSettings, profile, rawUvs[p], submeshes[p]);
                     }
+                    // A part that can hardly be seen and whose strips ran out: collapsed and paired,
+                    // in a second, rather than remeshed to a handful of quads.
+                    var collapsed = false;
+                    if (solved == null && strips[p] != null && run.visibility != null
+                        && PartBake.VisibilityWeight(run.visibility[p]) < hiddenCollapseWeight)
+                    {
+                        Progress("Collapsed (hidden)", 0f);
+                        RemeshPipeline.CollapseToQuads(inputs[p].positions, inputs[p].triangles, targets[p],
+                            out var collapsedPositions, out var collapsedFaces);
+                        partSettings.modelType = types[p];
+                        solved = RemeshPipeline.FromQuadReduction(inputs[p].positions, inputs[p].triangles,
+                            collapsedPositions, collapsedFaces, strips[p].stats, partSettings, profile, rawUvs[p], submeshes[p]);
+                        collapsed = solved?.extraction != null && solved.extraction.faces.Count > 0;
+                    }
                     for (var attempt = 0; attempt < 2 && (solved?.extraction == null || solved.extraction.faces.Count == 0); attempt++)
                     {
                         partSettings.targetQuadCount = attempt == 0 ? targets[p] : targets[p] * 4;
@@ -236,10 +250,60 @@ namespace NativeRemesher
                             solved = null;
                         }
                     }
+                    // A part on view whose remesh lost its shape (a piece gone, a ring folded flat)
+                    // gets the closer of two others: collapsed and paired, which follows the shape
+                    // whatever it is (the window seals, thin loops the remesher missed by 40 quad
+                    // widths), and, on a small budget, remeshed with three times the quads (the
+                    // headlights at 31 quads came out 26 widths off, at 120 under one).
+                    if (!collapsed && solved?.extraction != null && solved.extraction.faces.Count > 0
+                        && !(strips[p] != null && strips[p].reduced)
+                        && (run.visibility == null || PartBake.VisibilityWeight(run.visibility[p]) >= hiddenCollapseWeight))
+                    {
+                        var off = RemeshPipeline.CellsOff(inputs[p].positions, inputs[p].triangles, solved.extraction);
+                        if (off > retryCellsOff)
+                        {
+                            var note = $"{off:0.0} widths off at {solved.extraction.faces.Count} faces";
+                            RemeshPipeline.CollapseToQuads(inputs[p].positions, inputs[p].triangles, targets[p],
+                                out var cp, out var cf);
+                            partSettings.modelType = types[p];
+                            var byCollapse = RemeshPipeline.FromQuadReduction(inputs[p].positions, inputs[p].triangles,
+                                cp, cf, strips[p]?.stats, partSettings, profile, rawUvs[p], submeshes[p]);
+                            var offCollapse = byCollapse?.extraction != null && byCollapse.extraction.faces.Count > 0
+                                ? RemeshPipeline.CellsOff(inputs[p].positions, inputs[p].triangles, byCollapse.extraction)
+                                : float.PositiveInfinity;
+                            note += $"; collapsed {offCollapse:0.0} at {byCollapse?.extraction?.faces.Count ?? 0}";
+                            RemeshResult again = null;
+                            var offAgain = float.PositiveInfinity;
+                            if (targets[p] <= retryBudget)
+                            {
+                                partSettings.targetQuadCount = targets[p] * 3;
+                                try
+                                {
+                                    again = strips[p] != null
+                                        ? RemeshPipeline.SolveWithoutStrips(inputs[p].positions, inputs[p].triangles, partSettings,
+                                            profile, Progress, rawUvs[p], autoProfile, submeshes[p])
+                                        : RemeshPipeline.Solve(inputs[p].positions, inputs[p].triangles, partSettings, profile,
+                                            Progress, rawUvs[p], autoProfile, submeshes[p]);
+                                    if (again?.extraction != null && again.extraction.faces.Count > 0)
+                                        offAgain = RemeshPipeline.CellsOff(inputs[p].positions, inputs[p].triangles, again.extraction);
+                                }
+                                catch (System.Exception e) when (!(e is System.OperationCanceledException))
+                                {
+                                    Debug.LogWarning($"[Native Remesher] Part '{names[p]}' at {partSettings.targetQuadCount} quads: {e}");
+                                }
+                                note += $"; remeshed {offAgain:0.0} at {again?.extraction?.faces.Count ?? 0}";
+                            }
+                            // Quads when the bigger remesh holds the shape; else whichever is closer.
+                            if (offAgain <= retryCellsOff || offAgain < off && offAgain <= offCollapse) solved = again;
+                            else if (offCollapse < off) { solved = byCollapse; collapsed = true; }
+                            if (QuadReduction.logStats) Debug.Log($"[Native Remesher] part '{names[p]}' {note}");
+                        }
+                    }
                     if (solved?.extraction == null || solved.extraction.faces.Count == 0) solved = null;
                     inputs[p].result = solved;
                     run.results.Add(solved);
-                    Timing($"part '{names[p]}' ({(strips[p] != null && strips[p].reduced ? "strips" : "remesher")}, {solved?.totalMs ?? 0} ms own)");
+                    Timing($"part '{names[p]}' ({(strips[p] != null && strips[p].reduced ? "strips" : collapsed ? "collapsed" : "remesher")}, " +
+                           $"{solved?.extraction?.faces.Count ?? 0} faces, visible {(run.visibility != null ? run.visibility[p] : 1f):0.00})");
                 }
                 Timing("parts");
                 if (bakeTexture && imageArray.Length > 0 || bakeNormals)
@@ -294,6 +358,18 @@ namespace NativeRemesher
         }
 
         /// <summary>The main-thread half: the parts' meshes saved and put in the scene under one root.</summary>
+        /// <summary>
+        /// A part whose visibility weight (PartBake.VisibilityWeight) is under this, and whose
+        /// strips ran out, is collapsed and paired instead of remeshed (RemeshPipeline.CollapseToQuads).
+        /// </summary>
+        public static float hiddenCollapseWeight = 0.35f;
+
+        /// <summary>A remeshed part on view further than this many of its quads' widths from its source is solved again with more.</summary>
+        public static float retryCellsOff = 2f;
+
+        /// <summary>Only a part with at most this many quads is remeshed again with three times them (a larger one costs too long).</summary>
+        public static int retryBudget = 120;
+
         void FinishParts(PartsRun run)
         {
             var root = m_JobRoot;
