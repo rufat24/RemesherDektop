@@ -3,7 +3,7 @@
 //
 // Three sources have to be measured with the *identical* metric code or the numbers are not
 // comparable: our own QuadExtractionResult (quads and n-gons), a Unity Mesh imported from the
-// Exoside oracle (quads, or triangles once the FBX importer has had its way), and the raw input
+// reference oracle (quads, or triangles once the FBX importer has had its way), and the raw input
 // triangle mesh. This type is the common denominator.
 
 using System;

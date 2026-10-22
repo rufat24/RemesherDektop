@@ -11,7 +11,7 @@
 // of either alone picks a setting that is clearly wrong on the other, which is exactly how this
 // project shipped a pass that amputated a thumb while every number it was tuned against improved.
 //
-// QuadRemesher, for reference: uncovered 0.146 %, deepest hole 0.755 %, >45 2.73 %, >90 0.17 %,
+// The reference: uncovered 0.146 %, deepest hole 0.755 %, >45 2.73 %, >90 0.17 %,
 // minAngle p01 47.1, curled 0.02 %, 99.99 % quads, spacing spread 4.0x.
 
 using System;
@@ -33,8 +33,8 @@ namespace NativeRemesher.Benchmark
         {
             var report = new StringBuilder();
             report.AppendLine();
-            report.AppendLine("=== SizingSweep (character @ QuadRemesher's face count) ===");
-            report.AppendLine("  QuadRemesher: uncovered 0.146 %, deepest 0.755 %, >45 2.73 %, " +
+            report.AppendLine("=== SizingSweep (character @ the reference's face count) ===");
+            report.AppendLine("  Reference: uncovered 0.146 %, deepest 0.755 %, >45 2.73 %, " +
                               ">90 0.17 %, minAngP01 47.1, curled 0.02 %, quads 99.99 %, spread 4.0x");
             report.AppendLine();
             report.AppendLine("  adapt,maxRatio,grade,spread,faces,quad%,UNCOVERED%,deepest%," +
@@ -65,7 +65,7 @@ namespace NativeRemesher.Benchmark
                 {
                     (0f, 0f, 0f),           // uniform: the control
                     (0.25f, 3f, 1.3f),
-                    (0.5f, 3f, 1.3f),       // the first default, and QuadRemesher's equivalent
+                    (0.5f, 3f, 1.3f),       // the first default, and the reference's equivalent
                     (0.75f, 3f, 1.3f),
                     (0.5f, 2f, 1.3f),       // gentler clamp
                     (0.5f, 3f, 1.15f),      // gentler gradation

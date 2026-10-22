@@ -1,4 +1,4 @@
-// Use Materials: the decimator keeps a material border as a chain of the input's own border
+// Material Borders As Loops: the decimator keeps a material border as a chain of the input's own border
 // vertices, and the border edges between labels are found on any mesh made from the input.
 
 using NUnit.Framework;

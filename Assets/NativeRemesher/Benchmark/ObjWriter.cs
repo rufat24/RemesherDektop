@@ -9,7 +9,7 @@
 // scores a third-party reference mesh scores ours. Positions only — the benchmark's geometry
 // metrics run inside Unity, and normals and UVs would just be more surface to be wrong about.
 //
-// Handedness is left alone (unlike QuadRemesher/Editor/ObjExporter.cs, which flips for Exoside).
+// Handedness is left alone (unlike QuadRemesher/Editor/ObjExporter.cs, which flips for the reference engine).
 // A mirrored comparison would show up as a sign error in nothing we measure here, so the
 // no-op is the honest choice rather than a convenient one.
 

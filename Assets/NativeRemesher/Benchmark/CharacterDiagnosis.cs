@@ -3,7 +3,7 @@
 // SCOPE IS DELIBERATE. Earlier work in this project tuned against a torus, an icosphere and a bumpy
 // sphere and shipped two architectures whose failure mode could not appear on any of them. The only
 // input here is `20260515221044_54b8f8f4` (as `Benchmarks/reference/ref_high.obj`), scored against
-// the QuadRemesher output the user actually looked at.
+// the reference output the user actually looked at.
 //
 // THE SYMPTOMS THIS MEASURES, in the words they were reported in:
 //
@@ -38,7 +38,7 @@ namespace NativeRemesher.Benchmark
         const string k_Original = "Benchmarks/reference/ref_high.obj";
         const string k_Competitor = "Benchmarks/reference/qr-character.obj";
 
-        /// <summary>QuadRemesher's own face count on this asset, so the arms are comparable.</summary>
+        /// <summary>The reference's own face count on this asset, so the arms are comparable.</summary>
         const int k_Target = 21_780;
 
         public static void Run()
@@ -89,12 +89,12 @@ namespace NativeRemesher.Benchmark
 
                 report.AppendLine();
 
-                // --- 2. QuadRemesher, as the reference ---
+                // --- 2. the reference ---
                 var competitorFaces = ObjReader.ReadPolygons(k_Competitor,
                     out var competitorRaw);
                 Align(competitorRaw, originalPositions, out var competitorPositions);
 
-                report.AppendLine("  --- QuadRemesher (the reference) ---");
+                report.AppendLine("  --- reference ---");
                 Score(report, competitorPositions, competitorFaces, grid, originalPositions,
                     originalTriangles, diagonal, spacing);
 
@@ -327,7 +327,7 @@ namespace NativeRemesher.Benchmark
 
         static void Align(Vector3[] source, Vector3[] reference, out Vector3[] aligned)
         {
-            // QuadRemesher's FBX is in centimetres, so its exported OBJ is 100x smaller. Left
+            // The reference's FBX is in centimetres, so its exported OBJ is 100x smaller. Left
             // uncorrected this reads as a constant 4.5 % deviation, which looks like a catastrophic
             // fidelity failure and is only the gap between two separated objects.
             Bounds(source, out var sourceMin, out var sourceMax);

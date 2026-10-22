@@ -307,7 +307,7 @@ namespace NativeRemesher.Benchmark
         }
 
         /// <summary>
-        /// Scores a hand-baked Exoside QuadRemesher result for the same mesh, if one is present at
+        /// Scores a hand-baked reference result for the same mesh, if one is present at
         /// <c>Assets/QuadRemesher/Output/&lt;name&gt;*.fbx</c>. Read-only: the bridge is never driven
         /// programmatically. Every type in QuadRemesher.Editor is internal with an empty asmdef
         /// reference list, so calling it would need reflection plus its EditorApplication.update

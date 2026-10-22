@@ -49,7 +49,7 @@ namespace NativeRemesher.Extraction
         /// </summary>
         /// <remarks>
         /// 0.7, not the reference's 0.5. Every stage after this scales with the refined face count,
-        /// and at 0.7 there are about half as many. Means over 4600/5000/5400 with Adapt Quad Count,
+        /// and at 0.7 there are about half as many. Means over 4600/5000/5400 with Curves Add Quads,
         /// irregular / Hausdorff / open edges, against 0.5: body 1.84 % / 0.0093 / 0 vs 1.96 % /
         /// 0.0093 / 13 at 4600; head 4.31 % / 0.0150 / 0 vs 4.59 % / 0.0196 / 13 -- and run time
         /// 55 vs 115 s (body), 165 vs 316 s (head), measured six runs at a time.

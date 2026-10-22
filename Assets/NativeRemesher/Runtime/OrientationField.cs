@@ -1,4 +1,4 @@
-// Native quad remesher for Unity — Stage 2: the orientation field.
+// Native Remesher for Unity — Stage 2: the orientation field.
 //
 // From Jakob et al., "Instant Field-Aligned Meshes" (SIGGRAPH Asia 2015), §3.
 //

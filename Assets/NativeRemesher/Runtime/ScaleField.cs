@@ -5,14 +5,11 @@
 //
 //   * the thumb tip is not represented at 21,780 faces, because a uniform quad edge of 0.006 cannot
 //     resolve a tip of that radius (Benchmark/CoverageAudit.cs);
-//   * our worst interior angles are 28 degrees at p01 against QuadRemesher's 47, which is what a
+//   * our worst interior angles are 28 degrees at p01 against a reference retopology's 47, which is what a
 //     quad forced to follow curvature it cannot resolve has to do;
 //   * their edge lengths vary 4.0x across the model and ours vary 1.6x.
 //
-// And QuadRemesher's own bridge sends `CurvatureAdaptivness=50` by default, with `ExactQuadCount=0`
-// so it is allowed to exceed the requested count to fit curvature. Read it in
-// QuadRemesher/Editor/QuadRemesherBridge.cs. Uniform sizing is the assumption we hold that they do
-// not, and it is the last structural difference between the two pipelines.
+// Uniform sizing was the assumption that held it back.
 //
 // THE SIZING LAW is chord error, not curvature directly. A chord of length h across a circle of
 // radius R sits h^2/(8R) below the arc, so holding that sagitta constant gives h proportional to
@@ -49,7 +46,7 @@ namespace NativeRemesher
         public float minSpacing;
         public float maxSpacing;
 
-        /// <summary>Coarsest spacing over finest. QuadRemesher's is about 4 on the character.</summary>
+        /// <summary>Coarsest spacing over finest. The reference's is about 4 on the character.</summary>
         public float spread => minSpacing > 0f ? maxSpacing / minSpacing : 1f;
 
         public int vertexCount => spacing?.Length ?? 0;
@@ -60,8 +57,7 @@ namespace NativeRemesher
         /// law.
         /// </summary>
         /// <remarks>
-        /// A QUARTER, which is well below the 0.5 QuadRemesher's bridge sends, and the reason is
-        /// that the two numbers are not measuring the same solver. Swept on the character against
+        /// A QUARTER. Swept on the character against
         /// coverage and smoothness together (uncovered surface / deepest hole / edges past 45
         /// degrees): uniform 0.113 / 1.000 / 3.65; 0.25 gives 0.036 / 0.448 / 4.55; 0.5 gives
         /// 0.116 / 0.436 / 5.17; 0.75 gives 0.142 / 0.457 / 7.00; 1.0 gives 0.210 / 0.548 / 8.08.
@@ -71,7 +67,7 @@ namespace NativeRemesher
         /// consistent — two neighbouring cells of very different sizes cannot agree, so edges
         /// misclassify — and the extra resolution spent on the detail is lost again to a noisier
         /// extraction. At 0.25 the deepest hole is already less than half the uniform one and less
-        /// than QuadRemesher's, and uncovered surface is a third of uniform and a quarter of theirs.
+        /// than the reference's, and uncovered surface is a third of uniform and a quarter of theirs.
         /// </remarks>
         public const float defaultAdaptivity = 0.25f;
 
@@ -825,7 +821,7 @@ namespace NativeRemesher
         /// </summary>
         /// <remarks>
         /// Why not more curvature grading: the chord-error law's ratio is powered by the adaptivity
-        /// (0.25 at Adaptive Size 50), so a finger whose radius is under one cell is given about 0.8
+        /// (0.25 at Curve Detail 50), so a finger whose radius is under one cell is given about 0.8
         /// of the median spacing, where eight segments round it need about 0.45. Raising the power
         /// regrades the whole model; this touches only what is thin. Creases are not thin, so a
         /// building's edge or a panel's fold is not refined by it.
@@ -1026,11 +1022,11 @@ namespace NativeRemesher
         /// cancels a wrinkle's alternating bends and keeps a finger's consistent one.
         ///
         /// OFF by default all the same. Relative to the body the hands do come out finer (0.0102
-        /// against a 0.0111 mean), but the same estimate flattens the Adapt Quad Count factor
+        /// against a 0.0111 mean), but the same estimate flattens the Curves Add Quads factor
         /// (body 1.96 -> 1.54), so in absolute terms the hands get FEWER quads than under the
         /// per-edge estimate (0.0102 against 0.0089), and over 4600/5000/5400 the metrics are a
         /// wash (body 1.86 / 1.97 % irregular, head 5.06 / 4.80 %). What separates the fingers is
-        /// a loop in each groove -- IntegerGridMap.coherentCreases -- not the sizing.
+        /// a loop in each groove -- IntegerGridMap.longCreaseLoops -- not the sizing.
         /// </remarks>
         public static bool tensorCurvature = false;
 
@@ -1141,12 +1137,12 @@ namespace NativeRemesher
         /// the parametrisation folds (2,400-5,750 flipped faces before repair against 1,700-2,100
         /// uniform) and the greedy flip repair leaves bands of sheared quads behind it. Measured
         /// as the 5th percentile of each quad's smallest corner angle, the body went from 63.5
-        /// degrees uniform -- QuadRemesher's own output on it is 62.9 -- to 54.1 graded.
-        /// Measured as a default and REFUTED at fixed density (Adapt Quad Count off, mean of three
+        /// degrees uniform -- the reference's on it is 62.9 -- to 54.1 graded.
+        /// Measured as a default and REFUTED at fixed density (Curves Add Quads off, mean of three
         /// counts per model, 5th-percentile corner angle): body 60.6 -> 57.1, head 35.6 -> 41.0,
-        /// ccnb 32.5 -> 34.7. The body's apparent gain came from Adapt Quad Count reading the
+        /// ccnb 32.5 -> 34.7. The body's apparent gain came from Curves Add Quads reading the
         /// stricter field as needing fewer quads. Off by default; lower adaptivity
-        /// (IntegerGridMap.adaptiveSizeScale) is what measured better on all three.
+        /// (IntegerGridMap.curveDetailScale) is what measured better on all three.
         /// </remarks>
         public static float gradationPerCell = 0f;
 

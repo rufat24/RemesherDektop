@@ -1,8 +1,8 @@
-// Ours against QuadRemesher's, on the metrics a person actually SEES.
+// Ours against the reference's, on the metrics a person actually SEES.
 //
 // WHY THIS FILE AND NOT THE IRREGULARITY COUNT. Every measurement in this project so far has scored
 // irregular vertices, and the reported complaints about the output are different things: "looks a
-// bit distorted", "lighting works weird", "a lot of small spots are weird", "QuadRemesher is very
+// bit distorted", "lighting works weird", "a lot of small spots are weird", "Reference is very
 // clean and precise compared to the original high poly". None of those is a valence count. They are:
 //
 //   distorted / not precise   -> the output surface does not sit on the input surface
@@ -11,7 +11,7 @@
 //
 // So this measures deviation from the ORIGINAL high-poly, normal agreement, planarity and quad
 // shape, reports the tail rather than only the average, and runs the identical code over
-// QuadRemesher's own output so every number has a reference value beside it.
+// The reference's own output so every number has a reference value beside it.
 //
 // THE SIGNED DEVIATION IS THE ONE TO READ FIRST. v1's output vertices are weighted averages of the
 // input vertices that collapsed onto each lattice point, and an average of points on a curved
@@ -37,7 +37,7 @@ namespace NativeRemesher.Benchmark
         {
             var report = new StringBuilder();
             report.AppendLine();
-            report.AppendLine("=== FidelityComparison (ours vs QuadRemesher, against the original) ===");
+            report.AppendLine("=== FidelityComparison (ours vs the reference, against the original) ===");
 
             Mesh original = null;
             Mesh competitor = null;
@@ -67,7 +67,7 @@ namespace NativeRemesher.Benchmark
                                   $"bbox diagonal {diagonal:F4}");
                 report.AppendLine();
 
-                // --- QuadRemesher ---
+                // --- the reference ---
                 // Positions and faces from ONE read, so their indices agree. Reading positions
                 // from a Mesh instead put raw OBJ face indices against a re-indexed vertex array,
                 // and reported perfectly planar quads and a 90-degree normal error - both pure
@@ -84,7 +84,7 @@ namespace NativeRemesher.Benchmark
                 // comparison if it differs by more than that.
                 Align(report, competitorPositions, originalPositions, out var aligned);
 
-                Score(report, "QuadRemesher", aligned, competitorFaces,
+                Score(report, "Reference", aligned, competitorFaces,
                     grid, originalPositions, originalTriangles, diagonal);
 
                 // --- ours, at the same face count ---

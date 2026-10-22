@@ -7,7 +7,7 @@
 //
 // Note this is NOT the inverse of QuadRemesher/Editor/ObjExporter.cs and must not be used as one:
 // that exporter flips handedness on the way out (ToObjSpace), which is correct for feeding the
-// Exoside engine and wrong for reading a third-party mesh back into Unity space.
+// reference engine and wrong for reading a third-party mesh back into Unity space.
 
 using System;
 using System.Collections.Generic;

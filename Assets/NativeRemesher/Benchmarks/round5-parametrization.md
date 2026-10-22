@@ -2,7 +2,7 @@
 
 The old lattice comes from a local position field. Each edge offset is rounded on its own, and a
 min-cost flow repairs the contradictions. That repair is what leaves shear bands, wobble along
-creases, and straps that fall between cells. This round adds the method FreeRemesher is built on: one
+creases, and straps that fall between cells. This round adds one
 mixed-integer parametrization solved for the whole surface (Bommes et al. 2009, "MIQ").
 
 Code: `Runtime/Extraction/Parametrization/`
@@ -209,8 +209,8 @@ Still open:
     untangled map, loop rows and released creases, in layout mode only (head 5k: 18 s -> 1.6 s).
   - The position field's sweeps are skipped in layout mode, since only its spacing is read.
   - The crease check runs before untangling, so the map is untangled once.
-- **Window.** The main section holds QuadRemesher's settings: target count, adaptive size, adapt
-  count, detect hard edges, and Quad Layout, which is on. The rest (step-by-step field, profile,
+- **Window.** The main section holds the quad settings: target count, adaptive size, adapt
+  count, loops along creases, and Quad Layout, which is on. The rest (step-by-step field, profile,
   extractor, Global Parametrization, curvature alignment, patch curves) moved under a collapsed
   Advanced foldout. Nothing was removed.
 
@@ -227,7 +227,7 @@ Single runs. Each cell shows Hausdorff / p05 / irregular vertices, then run time
 
 Renders: `shots_final/r9_layout_head_3500.png`, `shots_final/r9_layout_rim.png`.
 
-QuadRemesher's add-on exposes, through its settings file, what our window does not yet have:
+Settings the window does not yet have:
 symmetry (X/Y/Z), material borders as edge loops, split normals as edge loops, and a painted
 vertex-colour density map.
 
@@ -280,9 +280,9 @@ decimation, mirror, weld the seam. head 3.5k: 3.72 % / p05 51.7 / 12.9 s (full 3
 Renders: shots_final/r10_scan_before_after.png, r10_symmetry_head.png, r10_symmetry_body.png.
 Tests 188: 186 pass, 2 skipped (Headless/tests10.xml).
 
-## Round 11 (2026-10-14): Use Materials, scan speed
+## Round 11 (2026-10-14): Material Borders As Loops, scan speed
 
-**Use Materials** (`RemeshSettings.useMaterials`, window toggle; QuadRemesher's option): per-triangle
+**Material Borders As Loops** (`RemeshSettings.materialBorders`, window toggle): per-triangle
 submesh index read with the mesh (`RemeshTopology.ReadMesh(..., out triangleSubmesh)`); `MaterialLabels`
 labels any derived mesh by the nearest input triangle. The decimator keeps label borders
 (`DecimateOptions.labels`): border vertices locked in the parallel stage, in the serial stage moved
@@ -338,7 +338,7 @@ Scan geometry, measured this round (not changed): the parametrization keeps the 
 grid lines (`shots_final/r12_scan_bends.png`, edges by bend angle), singularities sit at crease
 ends and clutter. Left off: global smooth field (p05 49.1 -> 51.3, same singularities), 30 field
 sweeps (51.1), relaxation drift 2 (mean move 0.009 cells: the grid is already relaxed),
-normal-only Taubin (median bend 1.82 -> 1.57 deg), Adaptive Size 0 at equal faces (p05 57.0,
+normal-only Taubin (median bend 1.82 -> 1.57 deg), Curve Detail 0 at equal faces (p05 57.0,
 irregular 4.53 %, but the border loses 1.4 % of the area and the run takes 168 s).
 
 ## Round 13 — scan hard edges and border notches (2026-10-14)
@@ -997,7 +997,7 @@ None is dead -- each changes something -- but Collapse and Detail Quads are wors
 Layout and Global Parametrization are better on and fall back on their own (layout coverage),
 Curvature Alignment and Patch Curves are mixed, and the strap finder is Model Type's business
 (Character only). The window now shows only what a user decides: Parts (Combine Parts, Fewer Quads
-On Hidden Parts), Model Type, Quads (QuadRemesher's six), Output (Bake Texture, Bake Normal Map,
+On Hidden Parts), Model Type, Quads (six settings), Output (Bake Texture, Bake Normal Map,
 Texture Size for both bakes with the size Auto resolves to, Save As Asset, Quad Topology In Asset),
 Fix Areas, and a folded "Last Run Details". The Profile list and Auto Profile went with it (Model
 Type's Auto is that selection). All the methods stay in Runtime behind their statics.
@@ -1018,7 +1018,7 @@ outline test (`HoleFiller.OutlineTest`, `IntegerGridMap.closeKeepsOutline`). Rim
 Surface keeps its 20-degree creases only where, within a cell, there is less than 4.5 cells of crease
 -- one crease reads ~2, a corner ~3, a tread or grille a dozen. Wheel: 27,162 tread crease edges
 dropped, irregular 7.8 -> 4.5-6.5 %. Taking Hard Surface's creases by chains instead
-(`hardSurfaceCoherentCreases`, as Detect Hard Edges on the other types) helped the wheel and hurt
+(`hardSurfaceCoherentCreases`, as Loops Along Creases on the other types) helped the wheel and hurt
 the panels (roof Hausdorff 0.029 -> 0.062, bumper irregular 4.0 -> 8.5 %) -- off.
 
 **The decimation cut across the shape** (`decimateMaxErrorCells` 0.1, `DecimateOptions.maxDistance`).

@@ -1,10 +1,8 @@
 // The integer grid map: the stage between the two fields and the quads.
 //
 // This is QuadriFlow's ComputeIndexMap (Huang et al. 2018, BSD-3), ported rather than re-derived.
-// It is also, at the level of the mathematics, what Exoside's engine does — its own strings name
-// integer u/v variables, seam-variable substitution and pinned "GridPole" singularities solved by a
-// direct Cholesky factorisation — and it is exactly the stage this project's v3 attempt lacked when
-// it tried to read quads off a least-squares (u,v) map and got folds everywhere.
+// It is exactly the stage this project's v3 attempt lacked when it tried to read quads off a
+// least-squares (u,v) map and got folds everywhere.
 //
 // WHAT IT HOLDS. One integer offset per undirected input edge: how many lattice cells apart its two
 // endpoints' lattice points are, stated in the frame of the lower-indexed endpoint. Each face carries,
@@ -659,7 +657,7 @@ namespace NativeRemesher.Extraction
         /// Curvature adaptivity the integer path uses wherever the chosen profile grades at all.
         /// </summary>
         /// <remarks>
-        /// Half, which is also what QuadRemesher's own Blender bridge sends by default. The profiles'
+        /// Half. The profiles'
         /// quarter was swept on the COLLAPSE extractor, where past a quarter neighbouring cells stop
         /// agreeing and the extraction tears; the integer map pairs cells through the flow instead
         /// and holds together further. Swept on the head: 0.25 gives Hausdorff 0.0217 in 5 pieces,
@@ -754,40 +752,40 @@ namespace NativeRemesher.Extraction
         public static bool closeHoles = true;
 
         /// <summary>
-        /// QuadRemesher's "Adapt Quad Count": the target sizes the quads on flat areas, and curved
+        /// "Curves Add Quads": the target sizes the quads on flat areas, and curved
         /// areas get smaller quads ON TOP, so the result may carry more than the target. Off holds
         /// the count exactly, taking curved areas' extra quads from flat ones. See RemeshPipeline.
         /// </summary>
-        public static bool adaptiveQuadCount = true;
+        public static bool curvesAddQuads = true;
 
         /// <summary>
-        /// QuadRemesher's "Adaptive Size", 0..1: how strongly quad size follows curvature on the
+        /// "Curve Detail", 0..1: how strongly quad size follows curvature on the
         /// integer path. Negative leaves the profile's own value (raised to
         /// <see cref="gradedAdaptivity"/>). 0.5 is the same as that default; 0 is a uniform grid.
         /// </summary>
-        public static float adaptiveSize = -1f;
+        public static float curveDetail = -1f;
 
         /// <summary>
-        /// What <see cref="adaptiveSize"/> is multiplied by before it becomes the curvature
-        /// adaptivity: the window's slider reads like QuadRemesher's (50 % by default) and lands at
+        /// What <see cref="curveDetail"/> is multiplied by before it becomes the curvature
+        /// adaptivity: the window's slider reads 50 % by default and lands at
         /// half that here.
         /// </summary>
         /// <remarks>
         /// The two scales are not the same quantity. At 0.5 our spacing spread on the body is 4.0,
-        /// about QuadRemesher's own, but our lattice does not grade that steeply without shearing:
-        /// measured through the window's path (target 5,000, Adapt Quad Count on, mean of
+        /// but our lattice does not grade that steeply without shearing:
+        /// measured through the window's path (target 5,000, Curves Add Quads on, mean of
         /// 4,600/5,000/5,400), 0.25 against 0.5 takes the 5th-percentile quad corner from 58.5 to
         /// 60.4 degrees on the body, 45.9 to 49.3 on the head and 31.9 to 37.5 on ccnb, with
         /// irregular vertices 7.09 -> 6.47 % (head) and 9.49 -> 8.63 % (ccnb) and Hausdorff
         /// 0.0189 -> 0.0162 on ccnb. 1 restores the literal mapping.
         /// </remarks>
-        public static float adaptiveSizeScale = 0.5f;
+        public static float curveDetailScale = 0.5f;
 
         /// <summary>
-        /// Adapt Quad Count sizes its extra quads from the slider value itself rather than the
+        /// Curves Add Quads sizes its extra quads from the slider value itself rather than the
         /// softened adaptivity, so softening the grading does not also cut the face count.
         /// </summary>
-        public static bool adaptiveQuadCountFromSlider = true;
+        public static bool countGrowthFromDetail = true;
 
         /// <summary>
         /// Solve the position field and extract in full on every face-count attempt and keep the
@@ -801,16 +799,16 @@ namespace NativeRemesher.Extraction
         /// profile picks for sculpts too): detect creases anyway, and keep only the chains that run
         /// straight for <see cref="coherentCreaseMinCells"/> cells. See RemeshPipeline.
         /// </summary>
-        public static bool coherentCreases = true;
+        public static bool longCreaseLoops = true;
 
         /// <summary>
         /// Also cut the lattice along the coherent creases (sharp offsets, crease resampling,
         /// vertex placement), not only steer the cross field by them. See RemeshPipeline.
         /// </summary>
-        public static bool coherentCreasesCut = false;
+        public static bool longCreaseLoopsCut = false;
 
         /// <summary>
-        /// With <see cref="coherentCreasesCut"/>, cut only creases at least this many cells end to
+        /// With <see cref="longCreaseLoopsCut"/>, cut only creases at least this many cells end to
         /// end; shorter coherent creases still steer the field. At or below
         /// <see cref="coherentCreaseMinCells"/> every kept crease is cut.
         /// </summary>
@@ -852,7 +850,7 @@ namespace NativeRemesher.Extraction
         /// taken from. Zero keeps the one-ring chord. See FeatureGraph.SmoothedTangents.
         /// </summary>
         /// <remarks>
-        /// Half a cell. Measured through the window's path (target 5,000, Adapt Quad Count on, mean
+        /// Half a cell. Measured through the window's path (target 5,000, Curves Add Quads on, mean
         /// of 4,600/5,000/5,400), one-ring -> 0.5: ccnb's open edges 674 -> 510, its cut border
         /// now one clean edge loop where it was a staircase of slivers; 5th-percentile quad corner
         /// 56.2 -> 61.0 degrees on the body and 49.7 -> 51.9 on the head, irregular 2.27 -> 2.12 %
@@ -861,11 +859,11 @@ namespace NativeRemesher.Extraction
         /// </remarks>
         public static float featureTangentRadiusCells = 0.5f;
 
-        /// <summary>Most the target may be multiplied by under <see cref="adaptiveQuadCount"/>.</summary>
-        public static float adaptiveQuadCountMaxGrowth = 3f;
+        /// <summary>Most the target may be multiplied by under <see cref="curvesAddQuads"/>.</summary>
+        public static float countMaxGrowth = 3f;
 
-        /// <summary>Area percentile of the graded spacing taken as "flat" for <see cref="adaptiveQuadCount"/>.</summary>
-        public static float adaptiveFlatPercentile = 0.9f;
+        /// <summary>Area percentile of the graded spacing taken as "flat" for <see cref="curvesAddQuads"/>.</summary>
+        public static float flatPercentile = 0.9f;
 
         /// <summary>
         /// Fold-back tolerance, in degrees, for a second triangle-pairing pass over what the first
@@ -1069,8 +1067,8 @@ namespace NativeRemesher.Extraction
         /// hard lines shade as lines instead of a staircase across a quad row. See CreaseLoopSnap.
         /// </summary>
         /// <remarks>
-        /// ON, measured through the window's path (target 4600/5000/5400, Adapt Quad Count, Adaptive
-        /// Size 50, Detect Hard Edges), means. The topology is untouched -- irregular count and face
+        /// ON, measured through the window's path (target 4600/5000/5400, Curves Add Quads, Adaptive
+        /// Size 50, Loops Along Creases), means. The topology is untouched -- irregular count and face
         /// count identical -- so the whole effect is where the vertices sit. Mean distance from the
         /// input surface to the output, in cells (lower keeps more detail): body 0.098 -> 0.095,
         /// helmet head 0.152 -> 0.136, ccnb 0.137 -> 0.119. Hausdorff unchanged (0.0089 -> 0.0090,
@@ -1580,7 +1578,7 @@ namespace NativeRemesher.Extraction
         // ------------------------------------------------------------------
 
         /// <summary>
-        /// OFF: measured on the head at 4,600 with Adapt Quad Count, routing on ANY contracted
+        /// OFF: measured on the head at 4,600 with Curves Add Quads, routing on ANY contracted
         /// level -- the top, or level 1 at 298k of 475k faces -- left 15-36 needle quads (>4x the
         /// median edge, Hausdorff 0.04-0.06) against 2 (0.019) for the fine solve; RouteOnce on
         /// level 0 reproduces the fine solve exactly, so the coarse SOLUTION is the problem, not the

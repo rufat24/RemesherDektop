@@ -17,7 +17,7 @@
 //
 //   decimated input     - QEM collapsed the thumb before the solver ever saw it
 //   our output          - the lattice did, or extraction did
-//   QuadRemesher        - the control: if theirs keeps it from the same original, it is ours to fix
+//   reference           - the control: if theirs keeps it from the same original, it is ours to fix
 //
 // Worst samples are clustered and printed with coordinates, because "max 4 %" is not actionable and
 // "a 0.03-wide blob at (0.42, 0.71, -0.05) holding 900 samples" is.
@@ -114,7 +114,7 @@ namespace NativeRemesher.Benchmark
                     var competitorFaces = ObjReader.ReadPolygons(k_Competitor, out var competitorPositions);
                     Align(competitorPositions, originalPositions, out var aligned);
                     Triangulate(competitorFaces, out var competitorIndices);
-                    Score(report, $"QuadRemesher ({competitorFaces.Count:N0} faces)",
+                    Score(report, $"Reference ({competitorFaces.Count:N0} faces)",
                         aligned, competitorIndices, samples, diagonal);
                 }
                 else
@@ -283,7 +283,7 @@ namespace NativeRemesher.Benchmark
         }
 
         /// <summary>
-        /// QuadRemesher's FBX is in centimetres, so its exported OBJ is 100x smaller. Aligned by
+        /// The reference's FBX is in centimetres, so its exported OBJ is 100x smaller. Aligned by
         /// uniform scale about the centroid; the bbox side ratios are printed nowhere here because
         /// FidelityComparison already verified they match to 0.0007.
         /// </summary>

@@ -1,4 +1,4 @@
-// Native quad remesher for Unity — Stage 1: topology.
+// Native Remesher for Unity — Stage 1: topology.
 //
 // Implemented from the published method:
 //   Jakob, Tarini, Panozzo, Sorkine-Hornung, "Instant Field-Aligned Meshes", SIGGRAPH Asia 2015
@@ -227,7 +227,7 @@ namespace NativeRemesher
 
         /// <summary>
         /// As above, and per triangle the submesh it came from -- the material slot, which
-        /// <see cref="RemeshSettings.useMaterials"/> keeps.
+        /// <see cref="RemeshSettings.materialBorders"/> keeps.
         /// </summary>
         public static void ReadMesh(Mesh mesh, out Vector3[] positions, out int[] triangles,
             out Vector2[] uvs, out int[] triangleSubmesh)

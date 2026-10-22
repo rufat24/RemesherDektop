@@ -1,6 +1,6 @@
 // Pass I: smooth the output vertices across the surface, then put them back on it.
 //
-// WHAT THIS FIXES, measured rather than assumed. At QuadRemesher's own face count on the character,
+// WHAT THIS FIXES, measured rather than assumed. At a reference retopology's face count on the character,
 // our output and theirs have the same mean edge length (0.452 % of the bbox diagonal against
 // 0.449 %) and our MEDIAN dihedral angle between neighbouring faces is the better of the two —
 // 7.7 degrees against 8.6. The bulk of the surface is not the problem, and that is why the shape
@@ -8,7 +8,7 @@
 //
 // The tail is the problem:
 //
-//     angle between neighbours   ours     QuadRemesher
+//     angle between neighbours   ours     reference
 //     > 45 deg                   8.37 %   2.73 %
 //     > 60 deg                   6.00 %   1.12 %
 //     > 90 deg                   2.05 %   0.17 %       <- 925 edges folded past perpendicular
@@ -107,7 +107,7 @@ namespace NativeRemesher.Extraction
         /// <remarks>
         /// Half, and 1 is the stability limit of the operator rather than a value to use. Swept on
         /// the character at 24 sweeps: 0.8 is the better row on the headline number (2.42 % of edges
-        /// past 45 degrees against 0.5's 2.94 %, which beats QuadRemesher's 2.73 %) but it starts
+        /// past 45 degrees against 0.5's 2.94 %, which beats the reference's 2.73 %) but it starts
         /// bouncing vertices off the surface — `rejProj` goes from 0 to 74 — and 1.0 is worse on
         /// every column at once (curled 0.59 % against 0.39 %, min angle p01 26.9 against 28.5,
         /// `rejProj` 459). Overshoot shows up as rejections before it shows up as damage, so 0.5 is
@@ -201,7 +201,7 @@ namespace NativeRemesher.Extraction
         /// Nor can deviation, which measures our vertices to the input surface and is near zero by
         /// construction. Only coverage — the input surface to OUR mesh — sees it, and measured that
         /// way relaxation took the character from 0.049 % of the surface uncovered to 0.898 %, an
-        /// eighteen-fold regression against QuadRemesher's 0.146 %, concentrated in a symmetric pair
+        /// eighteen-fold regression against the reference's 0.146 %, concentrated in a symmetric pair
         /// of blobs at the hands. See Benchmark/CoverageAudit.cs.
         ///
         /// A cap is the right shape of fix because the defect this pass removes is LOCAL: a folded
@@ -224,7 +224,7 @@ namespace NativeRemesher.Extraction
         /// The knee is still sharp and still at 0.5: uncovered surface falls thirteen-fold from
         /// 1.0 to 0.5 for 0.4 points of smoothness, and tightening past 0.5 costs smoothness fast
         /// for hundredths of a point of coverage. At 0.5 we lose a quarter as much geometry as
-        /// QuadRemesher (0.036 %% against 0.146 %%) and the deepest hole is 0.448 %% against 0.755 %%.
+        /// the reference (0.036 %% against 0.146 %%) and the deepest hole is 0.448 %% against 0.755 %%.
         ///
         /// REFUTED, and worth recording because the argument for it is good: measuring the cap in
         /// each vertex's OWN cell, taken from the output edges meeting it, rather than in the mean

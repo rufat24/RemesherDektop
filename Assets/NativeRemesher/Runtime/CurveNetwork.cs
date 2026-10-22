@@ -1,11 +1,9 @@
 // A curve network traced along the surface's ridges and valleys, for the lattice to follow.
 //
-// WHY. Exoside's QuadRemesher (the "FreeRemesher" the user supplied) does not solve its field over the
-// raw surface. Its strings name the stages: MXAutoRetopoCurv, CutFaces, AfterCutByCurves. It finds
-// curves first -- hard edges (AutoDetectHardEdges is on by default) and the shape's own ridge lines --
-// cuts the surface into patches along them, and only then solves, with every cut an edge loop of the
-// result. That is why a brim or a rail comes out as a crisp loop in its output where a smooth field
-// wanders across it.
+// WHY. A field solved over the raw surface does not know where the shape's lines are. So curves are
+// found first -- hard edges and the shape's own ridge lines -- the surface is cut into patches along
+// them, and only then solved, with every cut an edge loop of the result. A brim or a rail then
+// comes out as a crisp loop where a smooth field wanders across it.
 //
 // This pipeline already has the machinery to honour a cut: a FeatureGraph crease is a hard
 // orientation constraint, an iso-line of the integer map (IntegerGridMap.ApplySharpEdgeConstraints),

@@ -1,4 +1,4 @@
-// Sweeps the relaxation pass on the character, at QuadRemesher's face count.
+// Sweeps the relaxation pass on the character, at the reference's face count.
 //
 // WHAT TO READ, AND WHY THE COLUMN ORDER CHANGED. This sweep originally reported smoothness and
 // deviation, both improved with every extra sweep, and on that evidence the pass shipped at 24
@@ -18,7 +18,7 @@
 // fraction, so a hole the size of a fingertip moves it by thousandths and reads as noise, while
 // deepest is a single worst case and says a thumb is gone rather than that the surface is loose.
 //
-// QuadRemesher, for reference: uncovered 0.146 %, deepest 0.755 %, >45 2.73 %, >90 0.17 %,
+// The reference: uncovered 0.146 %, deepest 0.755 %, >45 2.73 %, >90 0.17 %,
 // minAngP01 47.1, curled 0.02 %, flipped 0.12 %. Relaxation off, under graded sizing:
 // uncovered 0.007 %, deepest 0.326 %, >45 11.09 % — which is this pass's whole reason to exist and
 // its whole risk in two numbers.
@@ -42,8 +42,8 @@ namespace NativeRemesher.Benchmark
         {
             var report = new StringBuilder();
             report.AppendLine();
-            report.AppendLine("=== RelaxSweep (character @ QuadRemesher's face count) ===");
-            report.AppendLine("  QuadRemesher: uncovered 0.146 %, >45 2.73 %, >90 0.17 %, " +
+            report.AppendLine("=== RelaxSweep (character @ the reference's face count) ===");
+            report.AppendLine("  Reference: uncovered 0.146 %, >45 2.73 %, >90 0.17 %, " +
                               "minAngP01 47.1, curled 0.02 %, flipped 0.12 %");
             report.AppendLine();
             report.AppendLine("  iters,strength,drift,UNCOVERED%,deepest%,>45%,>90%,maxDihedral," +

@@ -58,7 +58,7 @@ namespace NativeRemesher.Benchmark
             var report = new StringBuilder();
             report.AppendLine();
             report.AppendLine("=== OrientationHierarchySweep ===");
-            report.AppendLine("  QuadRemesher on the character at this density: 4,954 faces, " +
+            report.AppendLine("  Reference on the character at this density: 4,954 faces, " +
                               "4.12 % irregular, 0 triangles.");
             report.AppendLine();
 

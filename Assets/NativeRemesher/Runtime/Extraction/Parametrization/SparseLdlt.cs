@@ -2,8 +2,8 @@
 //
 // Jacobi-preconditioned CG needed ~17,000 iterations (60 s) on the helmet head's 290k-triangle
 // solve: the system is a vector Laplacian over a surface hundreds of edges across, so its condition
-// number grows with the square of that and CG with it. FreeRemesher ships CHOLMOD for the same
-// system. This is the textbook route at a fraction of CHOLMOD's size:
+// number grows with the square of that and CG with it. A direct sparse Cholesky is the standard
+// answer (CHOLMOD); this is the textbook route at a fraction of its size:
 //
 //   ordering   geometric nested dissection -- split the vertices at the median of the longest
 //              axis, number the separator last, recurse. On a surface mesh that keeps fill near

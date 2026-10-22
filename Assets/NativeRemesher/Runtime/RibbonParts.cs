@@ -14,8 +14,8 @@ namespace NativeRemesher
     /// The helmet head's chin straps are bands about two cells wide and a quarter of a cell thick,
     /// standing off the cheek. The decimated mesh keeps them as tubes, but the quad layout cuts
     /// across them -- an isotropic lattice has no row a quarter of a cell wide for the rims -- and
-    /// the strap comes out a sliver melted into the face (2026-10-17). QuadRemesher's output of the
-    /// same head meshes each one as a rectangle swept along it: four corners round, long quads.
+    /// the strap comes out a sliver melted into the face (2026-10-17). A strap wants a rectangle
+    /// swept along it: four corners round, long quads.
     ///
     /// Recognised from the shape itself, as a thickness map would show it: every input vertex casts
     /// inward along its normal; where the far side of the part is within maxThicknessCells, the
@@ -43,8 +43,8 @@ namespace NativeRemesher
     ///   ray finds no far side; only where one bridged a step was it thin, so it came out a 5-cell
     ///   piece with torn ends. Now a band's top is found by rays going out sideways just under it
     ///   (walls near both ways, square to the ray, long the other way) with ground beside it; its
-    ///   height stands for the thickness. Plane sections show QuadRemesher's output does the
-    ///   same: a closed rectangular tube lying on an unbroken helmet surface.
+    ///   height stands for the thickness: a closed rectangular tube lying on an unbroken helmet
+    ///   surface.
     /// - Runs against their own median width, and no cut where a strap folds over a rim.
     /// - Forks (splitForks): two straps leaving a buckle side by side fill one distance bin, and
     ///   one line through them read 6 cells wide; the plate is cut at the first fork that lasts

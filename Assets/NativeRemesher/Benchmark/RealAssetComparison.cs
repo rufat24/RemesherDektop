@@ -9,7 +9,7 @@
 //   * Blender's QuadriFlow REFUSES it outright, silently, returning the input unchanged. It also
 //     refuses the character scan until the winding is made consistent. So the method measured as
 //     the best available in `how-to-match-quadremesher.md` cannot even be run on this asset.
-//   * QuadRemesher does produce output, but its own result carries 1,513 boundary edges, 377
+//   * The reference does produce output, but its own result carries 1,513 boundary edges, 377
 //     valence-1 vertices and 6 non-manifold edges — so it is not solving it either, just not
 //     refusing.
 //
@@ -19,8 +19,8 @@
 //
 // Face counts are chosen to match what exists to compare against, not round numbers:
 //   character  5,474  the retopology reference (Assets/ccnb/20260515221800_2ef3dacc.fbx)
-//   character 12,451  QuadRemesher's run
-//   ccnb       9,451  QuadRemesher's run (Output/default_Retopo.fbx)
+//   character 12,451  the reference's run
+//   ccnb       9,451  the reference's run (Output/default_Retopo.fbx)
 
 using System;
 using System.Text;
@@ -59,13 +59,13 @@ namespace NativeRemesher.Benchmark
                 {
                     asset = "character", target = 12451,
                     load = () => PerfProbe.LoadReferenceHigh(out _),
-                    reference = "QuadRemesher 341 (2.7%), QuadriFlow 222 (1.8%)",
+                    reference = "Reference 341 (2.7%), QuadriFlow 222 (1.8%)",
                 },
                 new Job
                 {
                     asset = "ccnb", target = 9451,
                     load = LoadScan,
-                    reference = "QuadRemesher 1352 interior irregular (15.6%), QuadriFlow REFUSED",
+                    reference = "Reference 1352 interior irregular (15.6%), QuadriFlow REFUSED",
                 },
             };
 

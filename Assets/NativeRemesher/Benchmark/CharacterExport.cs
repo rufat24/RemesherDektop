@@ -1,13 +1,13 @@
-// Writes our character output to OBJ so the SAME external script scores ours and QuadRemesher's.
+// Writes our character output to OBJ so the SAME external script scores ours and the reference's.
 //
-// WHY THIS EXISTS. The asset the user compared against QuadRemesher has 5,215 faces; QuadRemesher's
+// WHY THIS EXISTS. The asset the user compared against the reference has 5,215 faces; the reference's
 // has 21,780. That is a 4.2x density difference, and every shading and smoothness judgement is
 // sensitive to it - a coarser mesh has larger dihedral angles between neighbours for no reason
 // other than being coarser. So a side-by-side of those two files cannot separate "our algorithm is
 // worse" from "our mesh is coarser", and until they are at the same count no conclusion drawn from
 // looking at them is safe.
 //
-// This emits ours at QuadRemesher's own face count, and at the delivered count as a control, in the
+// This emits ours at the reference's own face count, and at the delivered count as a control, in the
 // one format that survives the trip (see ObjWriter's header for why every other route destroys the
 // quads being measured).
 
@@ -21,7 +21,7 @@ namespace NativeRemesher.Benchmark
     {
         const string k_Original = "Benchmarks/reference/ref_high.obj";
 
-        /// <summary>QuadRemesher's own face count on this asset.</summary>
+        /// <summary>The reference's own face count on this asset.</summary>
         const int k_Matched = 21_780;
 
         /// <summary>The count the delivered asset actually has, kept as the control arm.</summary>

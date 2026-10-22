@@ -46,8 +46,8 @@ namespace NativeRemesher.Extraction
         /// merges on quality and took only 199, which looked like the right caution: a merge that
         /// produces a badly shaped quad is a real cost.
         ///
-        /// The competitor comparison showed the caution was backwards. The visible defect in our
-        /// output is needle faces, and 88 % of ours touch a leftover non-quad against QuadRemesher's
+        /// The reference comparison showed the caution was backwards. The visible defect in our
+        /// output is needle faces, and 88 % of ours touch a leftover non-quad against the reference's
         /// 2 % - so a surviving triangle costs far more than a mediocre quad does. Relaxing to 0.03
         /// takes 347 merges instead of 199 and, decisively, the minimum-angle percentiles went UP
         /// rather than down (p01 3.6 -> 4.2, p05 20.4 -> 21.7) with non-manifold edges still zero.

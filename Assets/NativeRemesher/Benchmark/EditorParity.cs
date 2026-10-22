@@ -141,9 +141,9 @@ namespace NativeRemesher.Benchmark
                 Extraction.IntegerGridMap.curveNetwork = true;
             if (float.TryParse(Arg("-lenientPair"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var lp)) Extraction.IntegerGridMap.lenientPairingReflexDegrees = lp;
             if (Array.IndexOf(Environment.GetCommandLineArgs(), "-exactCount") >= 0)
-                Extraction.IntegerGridMap.adaptiveQuadCount = false;
-            if (float.TryParse(Arg("-aqcGrowth"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var aqg)) Extraction.IntegerGridMap.adaptiveQuadCountMaxGrowth = aqg;
-            if (float.TryParse(Arg("-aqcFlat"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var aqf)) Extraction.IntegerGridMap.adaptiveFlatPercentile = aqf;
+                Extraction.IntegerGridMap.curvesAddQuads = false;
+            if (float.TryParse(Arg("-aqcGrowth"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var aqg)) Extraction.IntegerGridMap.countMaxGrowth = aqg;
+            if (float.TryParse(Arg("-aqcFlat"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var aqf)) Extraction.IntegerGridMap.flatPercentile = aqf;
             if (Array.IndexOf(Environment.GetCommandLineArgs(), "-noCloseHoles") >= 0)
                 Extraction.IntegerGridMap.closeHoles = false;
             if (Array.IndexOf(Environment.GetCommandLineArgs(), "-placeCluster") >= 0)
@@ -241,7 +241,7 @@ namespace NativeRemesher.Benchmark
                         report.AppendLine($"      {result.refineStats} ({result.refineMs} ms)");
                         if (result.requestedQuadCount > 0)
                             report.AppendLine($"      adaptive quad count: {result.requestedQuadCount} -> " +
-                                              $"{result.effectiveTargetQuadCount} (x{result.adaptiveQuadCountFactor:F2})");
+                                              $"{result.effectiveTargetQuadCount} (x{result.curveCountFactor:F2})");
                         if (result.curvatureGuideStats != null)
                             report.AppendLine($"      {result.curvatureGuideStats}");
                         if (result.curveNetworkStats != null)

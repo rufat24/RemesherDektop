@@ -4,9 +4,8 @@
 // round an arm, round the helmet's dome, along a strap. The cross field this pipeline solves has no
 // term for that -- it is the smoothest field the normals allow, anchored only by creases -- so on a
 // smooth organic surface its orientation is whatever the smoothing happened to settle on, and it is
-// free to twist across a cylinder where the shape plainly asks for rings. Exoside's QuadRemesher
-// (the "FreeRemesher" the user supplied) carries a class named MXCurvatureDirAlgo for exactly this,
-// alongside the smoothing (SmoothVF) and the integer parametrisation this repo already ports.
+// free to twist across a cylinder where the shape plainly asks for rings. Curvature directions give
+// the field those rings, alongside the smoothing and the integer parametrisation this repo has.
 //
 // HOW. Rusinkiewicz's estimator (2004): per triangle, the 2x2 shape operator that best maps each of
 // its three edges to the change in vertex normal along that edge, fitted by least squares in the

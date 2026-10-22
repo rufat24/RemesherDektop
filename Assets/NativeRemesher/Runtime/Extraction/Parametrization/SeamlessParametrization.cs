@@ -1,8 +1,7 @@
 // A global seamless parametrisation: the integer grid solved for the whole surface at once.
 //
-// From Bommes, Zimmer and Kobbelt, "Mixed-Integer Quadrangulation" (SIGGRAPH 2009), the method
-// FreeRemesher's engine is built on (its strings name "U+V integer", "GridPole" and a CHOLMOD
-// solver). Nothing of that binary is used; this is written from the paper.
+// From Bommes, Zimmer and Kobbelt, "Mixed-Integer Quadrangulation" (SIGGRAPH 2009), written from
+// the paper.
 //
 // WHY. The QuadriFlow port places the lattice by local smoothing of per-vertex lattice origins
 // (Instant Meshes' position field), then rounds every edge's offset to an integer on its own. On the
@@ -2682,7 +2681,7 @@ namespace NativeRemesher.Extraction
             // A singularity whose (u, v) is not an integer sits inside a cell -- often its centre,
             // where the quarter-turn round it maps the lattice onto itself -- and the cells round it
             // fold to make room. Rounded first, the translations of the cuts that end there then
-            // round to values consistent with it. (FreeRemesher's own flag for this is "GridPole".)
+            // round to values consistent with it.
             if (roundSingularities)
             {
                 var any = false;

@@ -1,4 +1,4 @@
-// Native quad remesher for Unity — editor front end.
+// Native Remesher for Unity — editor front end.
 //
 // Stages 1 and 2 are implemented; the window is built so each later stage slots in as its own
 // step with its own visualisation, because a field solver that is subtly wrong looks fine in
@@ -38,14 +38,13 @@ namespace NativeRemesher
         [SerializeField] bool m_HardShapeRegions = true;        // kinematicRegionsHardSurface
         [SerializeField] bool m_ScanShapeRegions = true;        // kinematicRegionsScan
 
-        // QuadRemesher's own settings, with its add-on's defaults. See the matching statics on
-        // Extraction.IntegerGridMap.
+        // The quad settings. See the matching statics on Extraction.IntegerGridMap.
         [SerializeField] int m_TargetQuadCount = 2000;
-        [SerializeField] float m_AdaptiveSize = 50f;
-        [SerializeField] bool m_AdaptQuadCount = true;
-        [SerializeField] bool m_DetectHardEdges = true;
+        [SerializeField] float m_CurveDetail = 50f;
+        [SerializeField] bool m_CurvesAddQuads = true;
+        [SerializeField] bool m_LongCreaseLoops = true;
         [SerializeField] SymmetryAxis m_Symmetry = SymmetryAxis.None;
-        [SerializeField] bool m_UseMaterials;
+        [SerializeField] bool m_MaterialBorders;
 
         // A model in parts. Off: each part is remeshed on its own (see RunParts).
         [SerializeField] bool m_CombineParts;
@@ -108,7 +107,7 @@ namespace NativeRemesher
 
         void OnGUI()
         {
-            EditorGUILayout.LabelField("Native Quad Remesher", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Native Remesher", EditorStyles.boldLabel);
             EditorGUILayout.Space();
 
             var mesh = GetSelectedMesh(out var selected, out var error);
@@ -159,45 +158,44 @@ namespace NativeRemesher
                 EditorGUILayout.LabelField(" ", m_TypeNote, EditorStyles.wordWrappedMiniLabel);
             DrawTypeSettings();
 
-            // ---- the quads: QuadRemesher's own settings, in its order
+            // ---- the quads
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Quads", EditorStyles.boldLabel);
             m_TargetQuadCount = Mathf.Max(4, EditorGUILayout.IntField(
-                new GUIContent("Target Quad Count",
-                    "The number of quads wanted. With Adapt Quad Count on, curved areas get extra " +
-                    "quads on top of it, as in QuadRemesher."),
+                new GUIContent("Quad Count",
+                    "The number of quads wanted. With Curves Add Quads on, this sizes the quads on " +
+                    "flat ground and curved areas add theirs on top."),
                 m_TargetQuadCount));
-            m_AdaptiveSize = EditorGUILayout.Slider(
-                new GUIContent("Adaptive Size %",
-                    "How much smaller quads get where the surface curves, as in QuadRemesher " +
-                    "(default 50). 0 is an even grid everywhere; higher spends more of the " +
-                    "budget on fingers, rims and folds."),
-                m_AdaptiveSize, 0f, 100f);
-            m_AdaptQuadCount = EditorGUILayout.Toggle(
-                new GUIContent("Adapt Quad Count",
-                    "As QuadRemesher's option of the same name (on by default there): the " +
-                    "target sizes the quads on flat areas and curved areas get extra quads on " +
-                    "top, so the result can have up to 3x the target. Off holds the count."),
-                m_AdaptQuadCount);
-            m_DetectHardEdges = EditorGUILayout.Toggle(
-                new GUIContent("Detect Hard Edges",
-                    "Find creases that run as long clean lines - grooves between fingers, " +
-                    "seams, pocket and panel edges - and lay edge loops along them, as " +
-                    "QuadRemesher's hard-edge detection does. Short creases from scan noise " +
-                    "are ignored."),
-                m_DetectHardEdges);
+            m_CurveDetail = EditorGUILayout.Slider(
+                new GUIContent("Curve Detail %",
+                    "How much smaller quads get where the surface curves, and (with Curves Add Quads) " +
+                    "how many extra quads curved areas get. 0 is an even grid everywhere; higher " +
+                    "spends more on fingers, rims and folds."),
+                m_CurveDetail, 0f, 100f);
+            m_CurvesAddQuads = EditorGUILayout.Toggle(
+                new GUIContent("Curves Add Quads",
+                    "Curved areas get their smaller quads on top of Quad Count, up to 3x it (5000 " +
+                    "asked gives 11,000-14,000 on a character). Off holds the count: curved areas " +
+                    "take their quads from flat ones."),
+                m_CurvesAddQuads);
+            m_LongCreaseLoops = EditorGUILayout.Toggle(
+                new GUIContent("Loops Along Creases",
+                    "Creases that run as long clean lines (grooves, seams) get edge loops along " +
+                    "them; short creases from scan noise are ignored. Matters on scans; Hard Surface " +
+                    "finds its creases either way."),
+                m_LongCreaseLoops);
             m_Symmetry = (SymmetryAxis)EditorGUILayout.EnumPopup(
-                new GUIContent("Symmetry",
-                    "As QuadRemesher's Symmetry X / Y / Z: one half is remeshed and mirrored, welded " +
-                    "along the plane, so both sides get the same edge loops. The plane is the " +
-                    "object's local origin when the mesh straddles it, else the middle of its bounds."),
+                new GUIContent("Mirror",
+                    "One half is remeshed and mirrored in X, Y or Z, welded along the plane, so both " +
+                    "sides get the same edge loops. The plane is the object's local origin when the " +
+                    "mesh straddles it, else the middle of its bounds. Clean-quad models are then " +
+                    "remeshed rather than reduced by their own loops."),
                 m_Symmetry);
-            m_UseMaterials = EditorGUILayout.Toggle(
-                new GUIContent("Use Materials",
-                    "As QuadRemesher's option of the same name: the borders between the mesh's " +
-                    "materials (submeshes) become edge loops, and the result keeps one submesh per " +
-                    "material, with the source's materials on it."),
-                m_UseMaterials);
+            m_MaterialBorders = EditorGUILayout.Toggle(
+                new GUIContent("Material Borders As Loops",
+                    "The borders between the mesh's materials (submeshes) become edge loops, and the " +
+                    "result keeps one submesh per material, with the source's materials on it."),
+                m_MaterialBorders);
 
             // ---- what is written out
             EditorGUILayout.Space();
@@ -518,9 +516,8 @@ namespace NativeRemesher
         //
         // The solve used to run inside the button's OnGUI call, so the editor was frozen for its
         // whole duration: Unity's UI and the solve shared one thread, and DisplayProgressBar only
-        // ever repaints when the caller yields, which a tight numeric loop never does. QuadRemesher
-        // stays responsive because its solver is native code on its own thread — there is no reason
-        // a managed one cannot do the same.
+        // ever repaints when the caller yields, which a tight numeric loop never does. A solver on its
+        // own thread keeps the editor responsive.
         //
         // Only the two ends touch Unity objects: reading the input mesh, and writing the output.
         // Both stay on the main thread here. RemeshPipeline.Solve in between takes plain arrays.
@@ -647,7 +644,7 @@ namespace NativeRemesher
             var settings = RemeshSettings.Default;
             settings.targetQuadCount = m_TargetQuadCount;
             settings.symmetry = m_Symmetry;
-            settings.useMaterials = m_UseMaterials;
+            settings.materialBorders = m_MaterialBorders;
             settings.modelType = m_ModelType;
 
             // Auto profile selection, seeded with GameAsset, on the integer grid: Model Type picks
@@ -675,10 +672,10 @@ namespace NativeRemesher
             RemeshPipeline.kinematicGuides = m_RoundParts;
             RemeshPipeline.kinematicRegionsHardSurface = m_HardShapeRegions;
             RemeshPipeline.kinematicRegionsScan = m_ScanShapeRegions;
-            // QuadRemesher's settings.
-            Extraction.IntegerGridMap.adaptiveQuadCount = m_AdaptQuadCount;
-            Extraction.IntegerGridMap.adaptiveSize = m_AdaptiveSize / 100f;
-            Extraction.IntegerGridMap.coherentCreases = m_DetectHardEdges;
+            // The quad settings.
+            Extraction.IntegerGridMap.curvesAddQuads = m_CurvesAddQuads;
+            Extraction.IntegerGridMap.curveDetail = m_CurveDetail / 100f;
+            Extraction.IntegerGridMap.longCreaseLoops = m_LongCreaseLoops;
             return settings;
         }
 

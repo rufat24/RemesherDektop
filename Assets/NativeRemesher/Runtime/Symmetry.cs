@@ -1,4 +1,4 @@
-// Mirror symmetry, as QuadRemesher's Symmetry X / Y / Z: the input is cut at the plane, one half
+// Mirror symmetry in X, Y or Z: the input is cut at the plane, one half
 // is remeshed with the cut as an open border, and the result is mirrored and welded along it.
 //
 // The quad layout lays an open border as a patch side (QuantizedLayout.borderLayout), so the cut

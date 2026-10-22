@@ -1,6 +1,6 @@
 // WHERE v1's irregular vertices actually come from, on the real assets.
 //
-// WHY THIS EXISTS. v1 produces 2,149 irregular vertices on the character where QuadRemesher produces
+// WHY THIS EXISTS. v1 produces 2,149 irregular vertices on the character where the reference produces
 // 341. That is the whole quality gap in one number, and "2,149" says nothing about what to fix. This
 // attributes each one to a cause, so effort goes where the count is instead of where the last idea
 // was.
@@ -36,8 +36,8 @@ namespace NativeRemesher.Benchmark
 
         // The competitors' own face counts on these assets, so the comparison is like-for-like.
         //   character  5,474   the retopology reference
-        //   character 12,451   QuadRemesher's run
-        //   ccnb       9,451   QuadRemesher's run
+        //   character 12,451   the reference's run
+        //   ccnb       9,451   the reference's run
         static Job[] Jobs() => new[]
         {
             new Job
@@ -62,7 +62,7 @@ namespace NativeRemesher.Benchmark
             var report = new StringBuilder();
             report.AppendLine();
             report.AppendLine("=== DefectBreakdown (where v1's irregular vertices come from) ===");
-            report.AppendLine("QuadRemesher's own numbers, for the target:");
+            report.AppendLine("Reference's own numbers, for the target:");
             report.AppendLine("  character @12,451: 341 irregular (2.7 %), 99.97 % quads, 4 tris");
             report.AppendLine("  ccnb      @ 9,451: 25.7 % irregular, 95.3 % quads");
             report.AppendLine();

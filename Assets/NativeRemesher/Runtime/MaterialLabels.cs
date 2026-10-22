@@ -1,4 +1,4 @@
-// Materials, as QuadRemesher's "Use Materials": the borders between the input's submeshes are
+// Materials ("Material Borders As Loops"): the borders between the input's submeshes are
 // laid as edge loops, and every output face keeps the material it lies on.
 //
 // The label of any triangle or face derived from the input -- decimated, refined, remeshed -- is

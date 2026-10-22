@@ -1,4 +1,4 @@
-// The hands, which is where our output and QuadRemesher's now differ most.
+// The hands, which is where our output and the reference's now differ most.
 //
 // After triangle pairing was fixed, the defect audit (Benchmarks/reference/defects.py) on the
 // character at the delivered density puts the remaining difference in one place:
@@ -11,7 +11,7 @@
 // A finger is a tube a few quads around. Where the quads are too big to wrap it, the lattice has to
 // fold to get round, and no amount of relaxation fixes that because the mesh has nowhere smaller to
 // put a vertex. The fix, if there is one, is to spend more of the budget there - which is what
-// curvature adaptivity does, and QuadRemesher ships at twice ours (CurvatureAdaptivness 50 against
+// curvature adaptivity does, and the reference ships at twice ours (CurvatureAdaptivness 50 against
 // our 0.25) with a target it is allowed to exceed.
 //
 // So this writes the same model at the same face count with the sizing turned up, for the audit

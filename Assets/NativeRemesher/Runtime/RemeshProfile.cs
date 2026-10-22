@@ -51,8 +51,7 @@ namespace NativeRemesher
         /// then read one quad per lattice cell.
         /// </summary>
         /// <remarks>
-        /// This is the family Exoside's engine is in — its own binary names integer u/v variables,
-        /// pinned grid poles and a Cholesky factorisation — reached here by the published,
+        /// Integer u/v variables, pinned grid poles and a Cholesky factorisation, by the published,
         /// permissively licensed route (QuadriFlow, Huang et al. 2018). A cell is a face by
         /// construction, so a vertex has four neighbours unless the field is singular there.
         /// Measured: the same torus comes out at 0 irregular vertices and 100 % quads.

@@ -106,15 +106,15 @@ namespace NativeRemesher.Tests
         [Test]
         public void LessDetailOnALargeAreaLowersTheCountAndKeepsTheRest()
         {
-            // A quarter of the sphere painted for fewer quads. Adapt Quad Count used to read the
+            // A quarter of the sphere painted for fewer quads. Curves Add Quads used to read the
             // painted coarse cap as "flat" and triple the target: 826 -> 2,160 faces.
             Sphere(32, out var positions, out var triangles);
             var settings = RemeshSettings.Default;
             settings.targetQuadCount = 800;
             var profile = RemeshProfile.For(RemeshProfileKind.GameAsset);
             profile.extractor = RemeshExtractor.IntegerGrid;
-            var adaptiveSize = Extraction.IntegerGridMap.adaptiveSize;
-            Extraction.IntegerGridMap.adaptiveSize = 0.5f;
+            var curveDetail = Extraction.IntegerGridMap.curveDetail;
+            Extraction.IntegerGridMap.curveDetail = 0.5f;
             try
             {
                 var plain = RemeshPipeline.Solve(positions, triangles, settings, profile);
@@ -135,7 +135,7 @@ namespace NativeRemesher.Tests
             }
             finally
             {
-                Extraction.IntegerGridMap.adaptiveSize = adaptiveSize;
+                Extraction.IntegerGridMap.curveDetail = curveDetail;
             }
         }
 

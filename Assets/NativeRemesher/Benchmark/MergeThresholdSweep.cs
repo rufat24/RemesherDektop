@@ -1,4 +1,4 @@
-// Sweeps the two merge thresholds together, on the character, at QuadRemesher's face count.
+// Sweeps the two merge thresholds together, on the character, at the reference's face count.
 //
 // WHY BOTH AT ONCE. `QuadRegularizer` refuses 60 merges on quality and 25 on convexity out of 156
 // candidates, and `TrianglePairing` has its own threshold. Relaxing either trades one defect for
@@ -11,7 +11,7 @@
 // rises while p01 falls, the relaxation is manufacturing bad quads rather than removing bad
 // triangles, and it is the wrong trade. Both columns are here so that cannot be misread.
 //
-// QuadRemesher, for reference: 99.99 % quads, min angle p01 47.1, p05 63.4, worst 15.3.
+// The reference: 99.99 % quads, min angle p01 47.1, p05 63.4, worst 15.3.
 
 using System;
 using System.Collections.Generic;
@@ -27,8 +27,8 @@ namespace NativeRemesher.Benchmark
         {
             var report = new StringBuilder();
             report.AppendLine();
-            report.AppendLine("=== MergeThresholdSweep (character @ QuadRemesher's face count) ===");
-            report.AppendLine("QuadRemesher: 99.99 % quads, minAngle p01 47.1, p05 63.4, worst 15.3");
+            report.AppendLine("=== MergeThresholdSweep (character @ the reference's face count) ===");
+            report.AppendLine("Reference: 99.99 % quads, minAngle p01 47.1, p05 63.4, worst 15.3");
             report.AppendLine();
             report.AppendLine("  regQual,pairQual,chain,faces,quadPct,tris,ngons,minAngP01," +
                               "minAngP05,minAngWorst,nonManifold,components,ms");

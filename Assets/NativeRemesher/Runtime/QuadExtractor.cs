@@ -1,4 +1,4 @@
-// Native quad remesher for Unity — Stage 5: extraction.
+// Native Remesher for Unity — Stage 5: extraction.
 //
 // After stage 4, many input vertices have been pulled onto the same lattice point. Each distinct
 // lattice point becomes one output vertex, and the quads are recovered as the faces of the graph
@@ -14,7 +14,7 @@
 //   FaceTracer       E/F    degree-ordered passes with 4 before 3, and non-destructive walks
 //   QuadRegularizer  G      merge leftover triangle pairs back into quads
 //   SurfaceRelaxation I     rearrange the output vertices across the input surface, which is what
-//                           closed the shading gap against QuadRemesher - see Benchmarks/shading-tail.md
+//                           closed the shading gap - see Benchmarks/shading-tail.md
 //
 // See Benchmarks/README.md for the measured before/after and the reference diff those changes came
 // from.
@@ -101,7 +101,7 @@ namespace NativeRemesher
 
         /// <summary>
         /// Per face, the input material (submesh) it lies on, when materials were kept (see
-        /// <see cref="RemeshSettings.useMaterials"/>); null otherwise. <see cref="materialSlots"/>
+        /// <see cref="RemeshSettings.materialBorders"/>); null otherwise. <see cref="materialSlots"/>
         /// is the number of submeshes the mesh gets then.
         /// </summary>
         public int[] faceMaterials;
@@ -332,7 +332,7 @@ namespace NativeRemesher
         /// Rearrange the output vertices across the input surface once the faces are final.
         /// </summary>
         /// <remarks>
-        /// This is the pass that closes the shading gap against QuadRemesher; see
+        /// This is the pass that closes the shading gap; see
         /// <see cref="SurfaceRelaxation"/> for the measurement that identified it. It needs the
         /// input surface to project back onto, so it is skipped when
         /// <see cref="ExtractionOptions.surface"/> is null rather than degrading to a plain
@@ -868,7 +868,7 @@ namespace NativeRemesher
                 if (outlineTest != null) onOutline = loop => outlineTest(loop, positions);
                 igStats.smallLoopsCapped = CapSmallLoopsUndirected(faces, 8, null, onOutline);
                 // Longer rims the directed walk abandoned at a fold -- up to 51 edges, 66 open edges
-                // on the head at 4,600 with Adapt Quad Count -- zipped shut with a ladder of quads.
+                // on the head at 4,600 with Curves Add Quads -- zipped shut with a ladder of quads.
                 if (Extraction.IntegerGridMap.ladderCapMaxEdges > 8)
                     igStats.smallLoopsCapped += CapSmallLoopsUndirected(faces,
                         Extraction.IntegerGridMap.ladderCapMaxEdges, positions, onOutline);

@@ -1,13 +1,13 @@
 // Pass K: put an edge loop ON each crease the cross field was steered along.
 //
-// THE DEFECT. With Detect Hard Edges the coherent creases steer the cross field, so the quads run
+// THE DEFECT. With Loops Along Creases the coherent creases steer the cross field, so the quads run
 // parallel to a panel edge, a fold, a strap -- but nothing decides where across the crease the loops
 // fall. The crease lands anywhere inside a quad row, and the row straddling it is bent through the
 // middle: on the helmet's plate edges and the balaclava's folds that reads as a staircase of dark
-// and light quads along every hard line, the "wobble" FreeRemesher does not have. A strap narrower
+// and light quads along every hard line, the "wobble". A strap narrower
 // than a quad whose two edges both fall mid-row is not represented at all.
 //
-// Cutting the lattice along the creases (IntegerGridMap.coherentCreasesCut) fixes the hard lines and
+// Cutting the lattice along the creases (IntegerGridMap.longCreaseLoopsCut) fixes the hard lines and
 // wrecks everything else on a scan: needles and torn strips wherever creases are doubled or noisy.
 // This takes the finished, stable steer-only mesh instead and slides the loop already running
 // alongside each crease onto it. Because the field was aligned to the crease, that loop is never

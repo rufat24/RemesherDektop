@@ -1,6 +1,6 @@
 // Why 437 triangles survive on the delivered asset, and what moves that number.
 //
-// THE MEASUREMENT THAT PROMPTED THIS. On the delivered 5,399-face output, against QuadRemesher's
+// THE MEASUREMENT THAT PROMPTED THIS. On the delivered 5,399-face output, against the reference's
 // 4,954-face one at the same density (Benchmarks/reference/defects.py, triangles.py):
 //
 //   ours    13.47 % of faces flagged - 437 triangles, 283 in folds, 41 curled, 17 on open edges
@@ -34,7 +34,7 @@ namespace NativeRemesher.Benchmark
             var report = new StringBuilder();
             report.AppendLine();
             report.AppendLine("=== TriangleSweep (character @ the delivered face count) ===");
-            report.AppendLine("  QuadRemesher at this density: 4,954 faces, 0 triangles, 0 open edges,");
+            report.AppendLine("  Reference at this density: 4,954 faces, 0 triangles, 0 open edges,");
             report.AppendLine("  7 curled, 2 slivers, 214 faces in folds.");
             report.AppendLine();
             report.AppendLine("  reflex,faces,quad%,tris,ngons,minAngP01,>45%,curled%,ms");

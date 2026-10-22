@@ -1,9 +1,9 @@
 // Remove triangles in PAIRS by re-tiling the patch between them.
 //
-// WHAT IT BUYS, measured against QuadRemesher on the character at 21,780 faces. The visible defect
-// in our output is needle faces - worst corner 0.2 degrees against QuadRemesher's 15.3, p01 6.3
-// against 47.1 - and 88 % of ours sit against a leftover triangle or n-gon, where QuadRemesher's
-// figure is 2 %. Geometric fidelity, normals and median planarity are all already better than
+// WHAT IT BUYS, measured against a reference retopology on the character at 21,780 faces. The
+// visible defect in our output is needle faces - worst corner 0.2 degrees against the reference's
+// 15.3, p01 6.3 against 47.1 - and 88 % of ours sit against a leftover triangle or n-gon, where the
+// reference's figure is 2 %. Geometric fidelity, normals and median planarity are all already better than
 // theirs. So quad fraction is the one number that moves the visible quality: 92.8 % against 99.99 %,
 // about 1,650 non-quads against 2.
 //
@@ -149,9 +149,9 @@ namespace NativeRemesher.Extraction
         /// Deliberately LOW, and the measurement says how low is right. `QuadRegularizer` chooses
         /// between "merge these triangles" and "leave two triangles", where a bad quad is a real
         /// cost, so its 0.15 is defensible. Here the choice is between quads and "two triangles plus
-        /// the quads between them", and the competitor comparison showed a leftover non-quad costs
+        /// the quads between them", and the reference comparison showed a leftover non-quad costs
         /// far more visually than a mediocre quad: 88 % of our worst-angle faces touch a non-quad
-        /// against QuadRemesher's 2 %. Refusing a merge to protect quad quality protects the wrong
+        /// against the reference's 2 %. Refusing a merge to protect quad quality protects the wrong
         /// thing.
         /// </remarks>
         public const float defaultQualityThreshold = 0.02f;
@@ -695,7 +695,7 @@ namespace NativeRemesher.Extraction
         /// <remarks>
         /// `QuadRegularizer` already refuses a non-convex merge and this pass did not, which is
         /// most of why it tripled the curled-quad count: 822 against 276 with it off, where
-        /// QuadRemesher produces 5. A folded quad cannot be drawn flat, so it is split into two
+        /// the reference has 5. A folded quad cannot be drawn flat, so it is split into two
         /// triangles meeting at a crease, and that crease shades as a hard edge with no geometry
         /// behind it - which is exactly the "curled" and "slimed" appearance being reported.
         /// </remarks>
@@ -861,8 +861,8 @@ namespace NativeRemesher.Extraction
         /// <remarks>
         /// The same measure <see cref="QuadRegularizer"/> scores merges by, so the two passes'
         /// thresholds are on one scale. Minimum angle rather than an average because the defect that
-        /// matters is the needle - and the competitor comparison put a number on that: our worst
-        /// corner is 0.2 degrees against QuadRemesher's 15.3.
+        /// matters is the needle - and the reference comparison put a number on that: our worst
+        /// corner is 0.2 degrees against the reference's 15.3.
         /// </remarks>
         static float Quality(Vector3[] positions, int[] quad)
         {

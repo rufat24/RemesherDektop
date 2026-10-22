@@ -1,4 +1,4 @@
-// Native quad remesher for Unity — Stage 4: the position field.
+// Native Remesher for Unity — Stage 4: the position field.
 //
 // From Jakob et al., "Instant Field-Aligned Meshes" (SIGGRAPH Asia 2015), §4.
 //

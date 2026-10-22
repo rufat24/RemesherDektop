@@ -1,4 +1,4 @@
-// Native quad remesher for Unity — the whole pipeline in one call.
+// Native Remesher for Unity — the whole pipeline in one call.
 
 using System;
 using System.Collections.Generic;
@@ -29,15 +29,15 @@ namespace NativeRemesher
         [Tooltip("Relative face-count error that ends the correction early.")]
         public float faceCountTolerance;
 
-        [Tooltip("Mirror symmetry, as QuadRemesher's Symmetry X / Y / Z: one half is remeshed and " +
+        [Tooltip("Mirror symmetry in X, Y or Z: one half is remeshed and " +
                  "mirrored, welded along the plane. The plane is the local origin when the mesh " +
                  "straddles it, else the middle of the bounds.")]
         public SymmetryAxis symmetry;
 
-        [Tooltip("As QuadRemesher's Use Materials: the borders between the input's materials " +
+        [Tooltip("The borders between the input's materials " +
                  "(submeshes) become edge loops, and every face keeps its material - the result " +
                  "has one submesh per input material.")]
-        public bool useMaterials;
+        public bool materialBorders;
 
         /// <summary>
         /// Areas painted for more or fewer quads, in the input's space (the window's Paint Fix
@@ -77,7 +77,7 @@ namespace NativeRemesher
                 faceCountIterations = Mathf.Clamp(faceCountIterations, 1, 8),
                 faceCountTolerance = Mathf.Clamp(faceCountTolerance, 0.01f, 0.5f),
                 symmetry = symmetry,
-                useMaterials = useMaterials,
+                materialBorders = materialBorders,
                 densityPaint = densityPaint,
                 modelType = modelType,
                 shapeSignals = shapeSignals
@@ -198,7 +198,7 @@ namespace NativeRemesher
         public float scale;
         /// <summary>How many correction passes ran. 1 means the first attempt was close enough.</summary>
         /// <summary>Crease chains kept and dropped by the coherent-crease filter; zero when it did not run.</summary>
-        public int coherentCreasesKept, coherentCreasesDropped, coherentCreasesThinned;
+        public int creaseLoopsKept, creaseLoopsDropped, creaseLoopsThinned;
 
         /// <summary>The global cross-field solve, when IntegerGridMap.globalField ran it.</summary>
         public GlobalFieldStats globalFieldStats;
@@ -232,7 +232,7 @@ namespace NativeRemesher
         /// <summary>Border ears removed from the decimated mesh for the quad layout.</summary>
         public int trimmedEars, splitBowties;
 
-        /// <summary>Material borders kept as edge loops (see <see cref="RemeshSettings.useMaterials"/>).</summary>
+        /// <summary>Material borders kept as edge loops (see <see cref="RemeshSettings.materialBorders"/>).</summary>
         [NonSerialized] public MaterialLabels materials;
         public int materialBorderEdges, decimatedMaterialBorderEdges;
 
@@ -249,12 +249,12 @@ namespace NativeRemesher
 
         /// <summary>
         /// The count asked for, before Adaptive Quad Count raised it; see
-        /// IntegerGridMap.adaptiveQuadCount. Zero when the mode did not run.
+        /// IntegerGridMap.curvesAddQuads. Zero when the mode did not run.
         /// </summary>
         public int requestedQuadCount;
 
         /// <summary>How far Adaptive Quad Count multiplied the target; 1 when off.</summary>
-        public float adaptiveQuadCountFactor = 1f;
+        public float curveCountFactor = 1f;
 
         /// <summary>The solver's mesh was held to RemeshPipeline.maxSolveTriangles.</summary>
         public bool solveTrianglesCapped;
@@ -347,7 +347,7 @@ namespace NativeRemesher
         /// Cap on the fine-level orientation sweeps after they are scaled up for refinement. Was
         /// 600, set when the integer path's orientation solve was flat; it is hierarchical now
         /// (IntegerGridMap.orientationHierarchyLevelIterations), and on the head at 5,000 with
-        /// Adapt Quad Count 600 sweeps over 517k faces took 42 s where 150 took 6.5 s for the same
+        /// Curves Add Quads 600 sweeps over 517k faces took 42 s where 150 took 6.5 s for the same
         /// result (irregular 4.41 / 4.64 %, Hausdorff 0.0103 / 0.0095).
         /// </summary>
         public static int maxOrientationSweeps = 200;
@@ -626,7 +626,7 @@ namespace NativeRemesher
 
         /// <summary>
         /// As above, with each triangle's material (submesh), which
-        /// <see cref="RemeshSettings.useMaterials"/> keeps.
+        /// <see cref="RemeshSettings.materialBorders"/> keeps.
         /// </summary>
         public static RemeshResult Solve(Vector3[] positions, int[] triangles,
             RemeshSettings settings, RemeshProfile profile, Action<string, float> onProgress,
@@ -755,7 +755,7 @@ namespace NativeRemesher
             };
             if (settings.densityPaint != null && !settings.densityPaint.isEmpty)
                 result.densityPaint = settings.densityPaint;
-            if (settings.useMaterials && triangleMaterials != null && triangleMaterials.Length == triangles.Length / 3)
+            if (settings.materialBorders && triangleMaterials != null && triangleMaterials.Length == triangles.Length / 3)
             {
                 var labels = new MaterialLabels(positions, triangles, triangleMaterials);
                 if (labels.labelCount > 1) result.materials = labels;
@@ -867,7 +867,7 @@ namespace NativeRemesher
                             positions[triangles[t + 2]] - positions[triangles[t]]).magnitude * 0.5;
                     var inputCell = (float)Math.Sqrt(inputArea / Math.Max(1, settings.targetQuadCount));
                     if (decimateMaxErrorCells > 0f) decimateOptions.maxDistance = decimateMaxErrorCells * inputCell;
-                    if (decimateKeepsCreases && Extraction.IntegerGridMap.coherentCreases)
+                    if (decimateKeepsCreases && Extraction.IntegerGridMap.longCreaseLoops)
                     {
                         var cell = inputCell;
                         decimateOptions.creaseAngle = Extraction.IntegerGridMap.coherentCreaseAngle;
@@ -991,7 +991,7 @@ namespace NativeRemesher
                 profile = profile, modelType = settings.modelType, shapeSignals = settings.shapeSignals,
                 quadReductionStats = stats
             };
-            if (settings.useMaterials && triangleMaterials != null && triangleMaterials.Length == triangles.Length / 3)
+            if (settings.materialBorders && triangleMaterials != null && triangleMaterials.Length == triangles.Length / 3)
             {
                 var labels = new MaterialLabels(positions, triangles, triangleMaterials);
                 if (labels.labelCount > 1) result.materials = labels;
@@ -1036,7 +1036,7 @@ namespace NativeRemesher
         /// welded. See <see cref="Symmetry"/>.
         /// </summary>
         /// <summary>
-        /// With Detect Hard Edges, pre-decimation keeps the long straight creases as edge chains
+        /// With Loops Along Creases, pre-decimation keeps the long straight creases as edge chains
         /// (DecimateOptions.creaseAngle): the ones at least this many cells of the requested count
         /// long. Off (false): decimation as before, and a scan's wall foot comes out as slivers.
         /// </summary>
@@ -1441,7 +1441,7 @@ namespace NativeRemesher
                 cross = OrientationField.Solve(topology, Extraction.IntegerGridMap.parametrizationFieldSweeps,
                     null, -1, null, null, cross).directions;
 
-            // The lines the grid must follow: the open border always, and with Detect Hard Edges
+            // The lines the grid must follow: the open border always, and with Loops Along Creases
             // the coherent creases, found again on this mesh.
             var featureEdges = Extraction.IntegerGridMap.parametrizationFeatures
                 ? result.decimatedFeatureEdges ??= DecimatedFeatureEdges(result, topology)
@@ -1561,7 +1561,7 @@ namespace NativeRemesher
         }
 
         /// <summary>
-        /// On a scan (the Photogrammetry profile), Detect Hard Edges keeps only creases at least
+        /// On a scan (the Photogrammetry profile), Loops Along Creases keeps only creases at least
         /// this many cells long, end to end through the junctions they run straight through.
         /// </summary>
         /// <remarks>
@@ -1578,7 +1578,7 @@ namespace NativeRemesher
         public static float scanCreaseStraightness = 0.85f;
 
         /// <summary>
-        /// Detect Hard Edges measures each edge's bend between the faces within this many cells
+        /// Loops Along Creases measures each edge's bend between the faces within this many cells
         /// either side of it (FeatureGraph.DetectAtScale), so a decimated corner rounded into a
         /// chamfer still reads as the corner it is. 0: edge by edge (FeatureGraph.Detect).
         /// </summary>
@@ -1599,7 +1599,7 @@ namespace NativeRemesher
 
         /// <summary>
         /// OFF, measured worse (see hardSurfaceSparseCreases for what replaced it). Hard Surface
-        /// finds its creases the way Detect Hard Edges does on the other types -- whole
+        /// finds its creases the way Loops Along Creases does on the other types -- whole
         /// chains, kept when they run long and straight -- instead of by the profile's plain 20
         /// degree test, which marks every edge of a tire's tread and of a decimated grille as a
         /// crease and pins the grid to all of them. Off: the profile's own test (the old behaviour).
@@ -1734,7 +1734,7 @@ namespace NativeRemesher
         /// </summary>
         /// <remarks>
         /// main1 at 5000: the fingers came out torn and broken -- each about one cell thick, where
-        /// the curvature law (its ratio powered by 0.25 at Adaptive Size 50) gave them 0.8 of the
+        /// the curvature law (its ratio powered by 0.25 at Curve Detail 50) gave them 0.8 of the
         /// median cell. With the cap: faces 7,557 -> 9,939, Hausdorff 0.0086 -> 0.0057,
         /// input-to-output p99 0.51 -> 0.21 cells, irregular 1.43 -> 1.12 %, fingers whole. The
         /// body: 10,530 -> 10,979 faces, Hausdorff 0.0091 -> 0.0079. On models that are mostly thin
@@ -1907,7 +1907,7 @@ namespace NativeRemesher
         }
 
         /// <summary>
-        /// Adapt Quad Count reads the flat spacing off the field without the paint (the paint's
+        /// Curves Add Quads reads the flat spacing off the field without the paint (the paint's
         /// quads are counted separately, paintCountRatio). False: off the painted field, as before,
         /// where painting Less Detail on more than a tenth of the surface raised the count.
         /// </summary>
@@ -2063,7 +2063,7 @@ namespace NativeRemesher
                     var budget = Mathf.Max(64, Mathf.RoundToInt(
                         decimationSizingTrianglesPerQuad * Mathf.Max(1, result.requestedQuadCount > 0 ? result.requestedQuadCount : target)));
                     var options = DecimateOptions.ForTriangleCount(budget);
-                    if (decimateKeepsCreases && Extraction.IntegerGridMap.coherentCreases)
+                    if (decimateKeepsCreases && Extraction.IntegerGridMap.longCreaseLoops)
                     {
                         double area = 0;
                         var op = result.originalPositions; var ot = result.originalTriangles;
@@ -2096,7 +2096,7 @@ namespace NativeRemesher
             }
             // Boundaries, and the profile's own creases where it has any.
             Add(ProfileFeatures(result, topology, result.effectiveTargetQuadCount));
-            // Material borders (Use Materials): the decimator kept them as edge chains.
+            // Material borders (Material Borders As Loops): the decimator kept them as edge chains.
             if (result.materials != null)
             {
                 var materialEdges = MaterialLabels.BorderEdges(topology.triangles,
@@ -2104,7 +2104,7 @@ namespace NativeRemesher
                 result.decimatedMaterialBorderEdges = materialEdges.Count;
                 edges.AddRange(materialEdges);
             }
-            if (Extraction.IntegerGridMap.coherentCreases && result.profile.featureAngleDegrees <= 0f)
+            if (Extraction.IntegerGridMap.longCreaseLoops && result.profile.featureAngleDegrees <= 0f)
             {
                 var cell = topology.EdgeLengthForQuadCount(Mathf.Max(1, result.effectiveTargetQuadCount));
                 var detected = DetectCreases(result, topology, cell);
@@ -2209,10 +2209,10 @@ namespace NativeRemesher
                 result.profile.curvatureAdaptivity = Mathf.Max(result.profile.curvatureAdaptivity,
                     Extraction.IntegerGridMap.gradedAdaptivity);
 
-            // The window's "Adaptive Size", when set, replaces both.
-            if (result.profile.integerGridMap && Extraction.IntegerGridMap.adaptiveSize >= 0f)
-                result.profile.curvatureAdaptivity = Mathf.Clamp01(Extraction.IntegerGridMap.adaptiveSize
-                                                                   * Extraction.IntegerGridMap.adaptiveSizeScale);
+            // The window's "Curve Detail", when set, replaces both.
+            if (result.profile.integerGridMap && Extraction.IntegerGridMap.curveDetail >= 0f)
+                result.profile.curvatureAdaptivity = Mathf.Clamp01(Extraction.IntegerGridMap.curveDetail
+                                                                   * Extraction.IntegerGridMap.curveDetailScale);
 
             // And turns the orientation hierarchy on, which every shipped profile has off for a
             // reason that only held for the collapse extractor; see
@@ -2258,24 +2258,22 @@ namespace NativeRemesher
 
             // --- Adaptive Quad Count (integer grid map) ---
             //
-            // QuadRemesher's own default, and a different reading of the target: it sizes the quads
+            // A different reading of the target: it sizes the quads
             // on FLAT ground as a uniform mesh of the requested count would, and lets curved areas
-            // take smaller quads on top -- so the result can carry more quads than were asked for
-            // (its documentation's example asks for 100 and gets about 600). The add-on the user
-            // runs ships with it on (adapt_quad_count = True -> ExactQuadCount=0). Held to the
-            // exact count instead, every quad a finger gains is taken from somewhere flat, and on
+            // take smaller quads on top -- so the result can carry more quads than were asked for.
+            // Held to the exact count instead, every quad a finger gains is taken from somewhere flat, and on
             // the body at 5000 the four pressed-together fingers of the glove came out as one
             // paddle three quads wide. So the target is raised here, before anything is sized, by
             // how much a field whose flat spacing is the uniform one would need.
-            if (result.profile.integerGridMap && Extraction.IntegerGridMap.adaptiveQuadCount
+            if (result.profile.integerGridMap && Extraction.IntegerGridMap.curvesAddQuads
                 && result.profile.curvatureAdaptivity > 0f && settings.targetQuadCount > 0)
             {
                 var requested = settings.targetQuadCount;
-                // Counted at the slider's own value: adaptiveSizeScale softens how steeply the
+                // Counted at the slider's own value: curveDetailScale softens how steeply the
                 // lattice grades, not how many quads the user asked curved areas to gain.
-                var countAdaptivity = Extraction.IntegerGridMap.adaptiveQuadCountFromSlider
-                                      && Extraction.IntegerGridMap.adaptiveSize >= 0f
-                    ? Mathf.Clamp01(Extraction.IntegerGridMap.adaptiveSize)
+                var countAdaptivity = Extraction.IntegerGridMap.countGrowthFromDetail
+                                      && Extraction.IntegerGridMap.curveDetail >= 0f
+                    ? Mathf.Clamp01(Extraction.IntegerGridMap.curveDetail)
                     : result.profile.curvatureAdaptivity;
                 // The flat spacing is read off the UNPAINTED field: a large area painted for Less
                 // Detail is coarse, and read as "flat" it raised the count -- on a sphere with a
@@ -2289,9 +2287,9 @@ namespace NativeRemesher
                 // "Flat" is the spacing most of the surface is at the coarse end of -- a high
                 // percentile rather than the maximum, which one flat vertex could set.
                 var flat = AreaPercentile(shape.spacing, result.topology.areas,
-                    Extraction.IntegerGridMap.adaptiveFlatPercentile);
+                    Extraction.IntegerGridMap.flatPercentile);
                 var factor = uniform > 0f && flat > 0f ? (flat / uniform) * (flat / uniform) : 1f;
-                factor = Mathf.Clamp(factor, 1f, Extraction.IntegerGridMap.adaptiveQuadCountMaxGrowth);
+                factor = Mathf.Clamp(factor, 1f, Extraction.IntegerGridMap.countMaxGrowth);
                 // Under the solve-mesh cap, no more quads than the capped mesh can carry.
                 if (result.solveTrianglesCapped && result.decimatedTriangles != null && minSolveTrianglesPerQuad > 0f)
                 {
@@ -2299,7 +2297,7 @@ namespace NativeRemesher
                     factor = Mathf.Max(1f, Mathf.Min(factor, carried / requested));
                 }
                 result.requestedQuadCount = requested;
-                result.adaptiveQuadCountFactor = factor;
+                result.curveCountFactor = factor;
                 settings.targetQuadCount = Mathf.RoundToInt(requested * factor);
             }
 
@@ -2308,7 +2306,7 @@ namespace NativeRemesher
             // As the paint: the field is sized for the target and then capped where the model is
             // thin, and the target is raised by what the cap adds, so a finger's quads are not taken
             // back from the flat ground by the count control. The target is raised only under
-            // Adapt Quad Count, which is the setting that allows the result past it; off, the count
+            // Curves Add Quads, which is the setting that allows the result past it; off, the count
             // holds and the finger's quads come from everywhere else.
             result.thinCountRatio = 0f;
             if ((thicknessSizing && ThicknessCapFor(result.modelType) || ridgeGapSizing
@@ -2330,8 +2328,8 @@ namespace NativeRemesher
                     result.thicknessSkipped = ratio;
                     ratio = 1f;
                 }
-                ratio = Mathf.Clamp(ratio, 1f, Extraction.IntegerGridMap.adaptiveQuadCountMaxGrowth);
-                if (ratio > 1.001f && Extraction.IntegerGridMap.adaptiveQuadCount)
+                ratio = Mathf.Clamp(ratio, 1f, Extraction.IntegerGridMap.countMaxGrowth);
+                if (ratio > 1.001f && Extraction.IntegerGridMap.curvesAddQuads)
                 {
                     result.thinCountRatio = ratio;
                     settings.targetQuadCount = Mathf.RoundToInt(settings.targetQuadCount * ratio);
@@ -2442,47 +2440,46 @@ namespace NativeRemesher
             // detector. The scan profiles turn that detector off because on a scan or a detailed
             // sculpt it fires on noise -- and so lose every real crease with it, the grooves between
             // pressed-together fingers among them, which no lattice density follows unless something
-            // places loops in them. QuadRemesher's "detect hard edges" is on by default and finds
-            // them. Here only the crease chains that run straight for more than a cell or so are
+            // places loops in them. Loops Along Creases finds them: only the crease chains that run straight for more than a cell or so are
             // kept, which is what separates a groove, seam or panel line from noise fragments. See
             // FeatureGraph.KeepCoherentCurves.
-            FeatureGraph coherentCreases = null;
-            if (result.profile.integerGridMap && Extraction.IntegerGridMap.coherentCreases
+            FeatureGraph longCreaseLoops = null;
+            if (result.profile.integerGridMap && Extraction.IntegerGridMap.longCreaseLoops
                 && result.profile.featureAngleDegrees <= 0f)
             {
                 var creaseCell = result.topology.EdgeLengthForQuadCount(Mathf.Max(1, settings.targetQuadCount));
-                coherentCreases = DetectCreases(result, result.topology, creaseCell)
+                longCreaseLoops = DetectCreases(result, result.topology, creaseCell)
                     .KeepCoherentCurves(result.topology,
                         CreaseMinCells(result, Extraction.IntegerGridMap.coherentCreaseMinCells) * creaseCell,
                         CreaseStraightness(result), AttachedMinCells(result) * creaseCell,
-                        out result.coherentCreasesKept, out result.coherentCreasesDropped);
+                        out result.creaseLoopsKept, out result.creaseLoopsDropped);
                 // Cutting along them as well -- sharp offsets, crease resampling, vertex placement
                 // -- glues long strips of the lattice into single cells wherever a crease is doubled
                 // or noisy: on the body, needle quads up to 11x the median edge across the thighs,
                 // and 1.89 -> 3.26 % irregular. Steering the cross field alone puts a loop in the
                 // finger grooves with neither (Hausdorff 0.0093 -> 0.0090).
-                if (Extraction.IntegerGridMap.coherentCreasesCut)
+                if (Extraction.IntegerGridMap.longCreaseLoopsCut)
                 {
                     // Only the long creases are cut when coherentCreaseCutMinCells asks for it: a
                     // long clean panel edge becomes an exact iso-line, while the short dense ones
                     // (velcro, stitching) that tear a cut lattice keep steering only.
                     var toCut = Extraction.IntegerGridMap.coherentCreaseCutMinCells
                                 > Extraction.IntegerGridMap.coherentCreaseMinCells
-                        ? coherentCreases.KeepCoherentCurves(result.topology,
+                        ? longCreaseLoops.KeepCoherentCurves(result.topology,
                             Extraction.IntegerGridMap.coherentCreaseCutMinCells * creaseCell,
                             Mathf.Max(Extraction.IntegerGridMap.coherentCreaseStraightness,
                                 Extraction.IntegerGridMap.coherentCreaseCutStraightness), out _, out _)
-                        : coherentCreases;
+                        : longCreaseLoops;
                     result.features = Extraction.IntegerGridMap.coherentCreaseMinSeparationCells > 0f
                         ? toCut.KeepSeparatedCurves(result.topology,
                             Extraction.IntegerGridMap.coherentCreaseMinSeparationCells * creaseCell,
                             Extraction.IntegerGridMap.coherentCreaseMaxShared,
-                            out result.coherentCreasesThinned)
+                            out result.creaseLoopsThinned)
                         : toCut;
                 }
             }
 
-            // --- material borders, as edge loops (Use Materials) ---
+            // --- material borders, as edge loops (Material Borders As Loops) ---
             if (result.materials != null)
             {
                 var materialEdges = MaterialLabels.BorderEdges(result.topology.triangles,
@@ -2491,7 +2488,7 @@ namespace NativeRemesher
                 if (materialEdges.Count > 0)
                 {
                     result.features = result.features.WithEdges(result.topology, materialEdges);
-                    if (coherentCreases != null) coherentCreases = coherentCreases.WithEdges(result.topology, materialEdges);
+                    if (longCreaseLoops != null) longCreaseLoops = longCreaseLoops.WithEdges(result.topology, materialEdges);
                 }
             }
 
@@ -2502,7 +2499,7 @@ namespace NativeRemesher
             // (hysteresis, a minimum length, one curve per bevel). See CurveNetwork.
             // What the cross field is constrained by: the features, or with align-only curves,
             // the features plus the curves.
-            var constraintGraph = coherentCreases ?? result.features;
+            var constraintGraph = longCreaseLoops ?? result.features;
             var featuresBeforeCurves = result.features;
             Vector3[] curveTangents = null;
             if (result.profile.integerGridMap && Extraction.IntegerGridMap.curveNetwork)
@@ -2790,8 +2787,8 @@ namespace NativeRemesher
             extractionOptions.featurePositions = result.topology.positions;
             // Every coherent crease, cut or not: a vertex already on a cut crease is at distance
             // zero and stays, the creases left uncut get their nearest loop.
-            if (Extraction.IntegerGridMap.creaseLoopSnap && coherentCreases != null)
-                extractionOptions.creaseLoops = coherentCreases;
+            if (Extraction.IntegerGridMap.creaseLoopSnap && longCreaseLoops != null)
+                extractionOptions.creaseLoops = longCreaseLoops;
             extractionOptions.mergeTrianglePairs = result.profile.mergeTrianglePairs;
             extractionOptions.cornerHeight = result.profile.cornerHeight;
             extractionOptions.maxClusterSpread = result.profile.clusterSpread;
