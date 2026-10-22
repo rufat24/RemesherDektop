@@ -68,8 +68,8 @@ namespace NativeRemesher
 
         void DrawPaintGUI(GameObject source)
         {
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Fix Areas", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Brush over what came out wrong, then remesh again: painted areas get " +
+                                       "smaller quads.", EditorStyles.wordWrappedMiniLabel);
             var comp = source != null ? source.GetComponent<RemeshPaint>() : null;
             var dabs = comp != null && comp.paint != null ? comp.paint.dabs.Count : 0;
 

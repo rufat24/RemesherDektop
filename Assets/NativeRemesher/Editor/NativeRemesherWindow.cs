@@ -105,147 +105,341 @@ namespace NativeRemesher
             m_Cancel?.Cancel();
         }
 
+        // Which sections are open, and where the window is scrolled.
+        [SerializeField] bool m_OpenModel = true, m_OpenCount = true, m_OpenLoops = true, m_OpenFix, m_OpenResult = true;
+        Vector2 m_Scroll;
+
+        static readonly ModelType[] k_Types = { ModelType.Auto, ModelType.Character, ModelType.HardSurface, ModelType.Scan };
+        static readonly string[] k_TypeNames = { "Auto", "Character", "Hard Surface", "Scan" };
+        static readonly string[] k_TypeNotes =
+        {
+            "Each part is read on its own, from its shape: sculpted, modelled or scanned.",
+            "Sculpted or organic: fingers and toes get rows of quads, straps and belts become tubes.",
+            "Modelled: clean-quad parts keep their own loops, panel lines become loops, tread and " +
+            "grilles go to the normal map.",
+            "Photogrammetry or a laser scan: noise is not taken for edges, walls and columns get rows " +
+            "along them.",
+        };
+
         void OnGUI()
         {
-            EditorGUILayout.LabelField("Native Remesher", EditorStyles.boldLabel);
-            EditorGUILayout.Space();
-
             var mesh = GetSelectedMesh(out var selected, out var error);
             // A model in parts: every part under the selection, not the first one found.
             var parts = GetSelectedParts(out var partsRoot, out var partsError);
             var multi = parts.Count > 1;
             if (multi) error = partsError;
+
+            DrawTitle(multi ? PartsSummary(partsRoot, parts) : mesh != null ? MeshSummary(selected, mesh) : null);
             if (error != null)
                 EditorGUILayout.HelpBox(error, MessageType.Info);
 
-            // ---- the model
+            m_Scroll = EditorGUILayout.BeginScrollView(m_Scroll);
+            DrawModelSection(multi);
+            DrawCountSection();
+            DrawLoopsSection();
+            if (Section(4, "Fix Areas", FixAreasSummary(mesh != null ? selected : null), ref m_OpenFix))
+                DrawPaintGUI(mesh != null ? selected : null);
+            DrawResultSection(multi ? partsRoot : selected);
+            EditorGUILayout.EndScrollView();
+
+            EditorGUILayout.Space(6);
+            DrawRunControls(mesh, selected, multi, parts, partsRoot, partsError);
+        }
+
+        // ------------------------------------------------------------------ layout
+
+        static GUIStyle s_Title, s_Subtitle, s_SectionTitle, s_SectionSummary;
+
+        static void Styles()
+        {
+            if (s_Title != null) return;
+            s_Title = new GUIStyle(EditorStyles.boldLabel) { fontSize = 15 };
+            s_Subtitle = new GUIStyle(EditorStyles.miniLabel) { wordWrap = true };
+            s_SectionTitle = new GUIStyle(EditorStyles.boldLabel) { fontSize = 12, alignment = TextAnchor.MiddleLeft };
+            s_SectionSummary = new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.MiddleRight, clipping = TextClipping.Clip };
+        }
+
+        static Color Accent => new Color(0.31f, 0.66f, 0.58f);
+
+        void DrawTitle(string subject)
+        {
+            Styles();
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField("Native Remesher", s_Title, GUILayout.Height(22));
+            EditorGUILayout.LabelField(subject ?? "Nothing selected", s_Subtitle);
+            var line = GUILayoutUtility.GetRect(0f, 2f, GUILayout.ExpandWidth(true));
+            EditorGUI.DrawRect(line, Accent);
+        }
+
+        // A section's header bar: its number and name, what it is set to (so a folded section still
+        // reads), and a click anywhere on it to fold.
+        static bool Section(int number, string title, string summary, ref bool open)
+        {
+            Styles();
+            EditorGUILayout.Space(8);
+            var rect = GUILayoutUtility.GetRect(0f, 24f, GUILayout.ExpandWidth(true));
+            var dark = EditorGUIUtility.isProSkin;
+            EditorGUI.DrawRect(rect, dark ? new Color(0.20f, 0.22f, 0.24f) : new Color(0.80f, 0.82f, 0.84f));
+            EditorGUI.DrawRect(new Rect(rect.x, rect.y, 3f, rect.height), Accent);
+            var arrow = open ? "\u25BE" : "\u25B8";
+            GUI.Label(new Rect(rect.x + 10f, rect.y, rect.width * 0.55f, rect.height), $"{arrow}  {number}  {title}", s_SectionTitle);
+            if (!string.IsNullOrEmpty(summary))
+                GUI.Label(new Rect(rect.x + rect.width * 0.45f, rect.y, rect.width * 0.55f - 8f, rect.height), summary, s_SectionSummary);
+            var e = Event.current;
+            if (e.type == EventType.MouseDown && e.button == 0 && rect.Contains(e.mousePosition))
+            {
+                open = !open;
+                e.Use();
+            }
+            if (open) EditorGUILayout.Space(4);
+            return open;
+        }
+
+        static string MeshSummary(GameObject selected, Mesh mesh)
+        {
+            long triangles = 0;
+            if (mesh.isReadable) for (var i = 0; i < mesh.subMeshCount; i++) triangles += mesh.GetIndexCount(i) / 3;
+            return $"'{selected.name}', {triangles:N0} triangles";
+        }
+
+        // ---- 1. what the model is, and what that kind of model gets
+        void DrawModelSection(bool multi)
+        {
+            var index = System.Array.IndexOf(k_Types, m_ModelType);
+            if (index < 0) { index = 0; m_ModelType = ModelType.Auto; }
+            if (!Section(1, "The Model", k_TypeNames[index], ref m_OpenModel)) return;
+
+            index = GUILayout.Toolbar(index, k_TypeNames, GUILayout.Height(22));
+            m_ModelType = k_Types[index];
+            EditorGUILayout.LabelField(k_TypeNotes[index], EditorStyles.wordWrappedMiniLabel);
+            if (!string.IsNullOrEmpty(m_TypeNote))
+                EditorGUILayout.LabelField(m_TypeNote, EditorStyles.wordWrappedMiniLabel);
+
             if (multi)
             {
-                EditorGUILayout.HelpBox(PartsSummary(partsRoot, parts), MessageType.None);
-                m_CombineParts = EditorGUILayout.Toggle(
-                    new GUIContent("Combine Parts",
-                        "Join the parts into one mesh and remesh that, as one object. Off: each part is " +
-                        "remeshed on its own and the result keeps the model's hierarchy -- the quad budget " +
-                        "split over the parts, and one shared texture and normal map for the whole model."),
+                EditorGUILayout.Space(4);
+                m_CombineParts = EditorGUILayout.ToggleLeft(
+                    new GUIContent("Join the parts into one mesh",
+                        "Remesh the parts as one object. Off: each part is remeshed on its own and the result " +
+                        "keeps the model's hierarchy -- the quads split over the parts, one shared texture and " +
+                        "normal map for the whole model."),
                     m_CombineParts);
                 using (new EditorGUI.DisabledScope(m_CombineParts))
-                    m_HiddenPartsFewer = EditorGUILayout.Toggle(
-                        new GUIContent("Fewer Quads On Hidden Parts",
+                    m_HiddenPartsFewer = EditorGUILayout.ToggleLeft(
+                        new GUIContent("Fewer quads on parts that cannot be seen",
                             "Split the quads by how much of each part can be seen from outside, not by area " +
                             "alone: a car's cabin, seats, door insides and underfloor tunnel give quads to its " +
                             "body panels. Glass (transparent materials, or named glass or window) does not " +
-                            "hide what is behind it. A part nobody can see keeps 15 % of its share."),
+                            "hide what is behind it."),
                         m_HiddenPartsFewer);
             }
 
-            // The model's kind picks the profile and every setting measured best for it.
-            m_ModelType = (ModelType)EditorGUILayout.IntPopup(
-                new GUIContent("Model Type",
-                    "What kind of model this is; it picks the settings that measured best for that kind.\n\n" +
-                    "Auto: read off the mesh (each part of a model in parts on its own).\n" +
-                    "Character: sculpted or organic -- fingers and toes get rows of quads across them, " +
-                    "thin straps and belts become clean tubes.\n" +
-                    "Hard Surface: modelled in a modelling tool -- vehicles, props, machines; sharp edges " +
-                    "become edge loops where they stand apart, dense ones (tread, grilles) are left to " +
-                    "the normal map.\n" +
-                    "Scan: photogrammetry or a laser scan -- noise is not taken for edges, short building " +
-                    "edges are kept."),
-                (int)m_ModelType,
-                new[] { new GUIContent("Auto"), new GUIContent("Character"), new GUIContent("Hard Surface"), new GUIContent("Scan") },
-                new[] { (int)ModelType.Auto, (int)ModelType.Character, (int)ModelType.HardSurface, (int)ModelType.Scan });
-            if (m_ModelType == ModelType.General) m_ModelType = ModelType.Auto;
-            if (!string.IsNullOrEmpty(m_TypeNote))
-                EditorGUILayout.LabelField(" ", m_TypeNote, EditorStyles.wordWrappedMiniLabel);
+            EditorGUILayout.Space(4);
             DrawTypeSettings();
+        }
 
-            // ---- the quads
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Quads", EditorStyles.boldLabel);
-            m_TargetQuadCount = Mathf.Max(4, EditorGUILayout.IntField(
-                new GUIContent("Quad Count",
-                    "The number of quads wanted. With Curves Add Quads on, this sizes the quads on " +
-                    "flat ground and curved areas add theirs on top."),
-                m_TargetQuadCount));
-            m_CurveDetail = EditorGUILayout.Slider(
-                new GUIContent("Curve Detail %",
-                    "How much smaller quads get where the surface curves, and (with Curves Add Quads) " +
-                    "how many extra quads curved areas get. 0 is an even grid everywhere; higher " +
-                    "spends more on fingers, rims and folds."),
-                m_CurveDetail, 0f, 100f);
-            m_CurvesAddQuads = EditorGUILayout.Toggle(
-                new GUIContent("Curves Add Quads",
-                    "Curved areas get their smaller quads on top of Quad Count, up to 3x it (5000 " +
-                    "asked gives 11,000-14,000 on a character). Off holds the count: curved areas " +
-                    "take their quads from flat ones."),
-                m_CurvesAddQuads);
-            m_LongCreaseLoops = EditorGUILayout.Toggle(
-                new GUIContent("Loops Along Creases",
-                    "Creases that run as long clean lines (grooves, seams) get edge loops along " +
-                    "them; short creases from scan noise are ignored. Matters on scans; Hard Surface " +
-                    "finds its creases either way."),
-                m_LongCreaseLoops);
-            m_Symmetry = (SymmetryAxis)EditorGUILayout.EnumPopup(
-                new GUIContent("Mirror",
-                    "One half is remeshed and mirrored in X, Y or Z, welded along the plane, so both " +
-                    "sides get the same edge loops. The plane is the object's local origin when the " +
-                    "mesh straddles it, else the middle of its bounds. Clean-quad models are then " +
-                    "remeshed rather than reduced by their own loops."),
-                m_Symmetry);
-            m_MaterialBorders = EditorGUILayout.Toggle(
-                new GUIContent("Material Borders As Loops",
-                    "The borders between the mesh's materials (submeshes) become edge loops, and the " +
-                    "result keeps one submesh per material, with the source's materials on it."),
-                m_MaterialBorders);
-
-            // ---- what is written out
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Output", EditorStyles.boldLabel);
-            m_BakeTexture = EditorGUILayout.Toggle(
-                new GUIContent("Bake Texture",
-                    "Give the result its own UV layout and bake the source's texture into it, with a " +
-                    "material using it. The source's own UVs would otherwise be carried over, and on a " +
-                    "scan, whose texture atlas is cut into thousands of pieces, about half the quads " +
-                    "straddle a cut and show a smeared strip. Reads the texture file at full size."),
-                m_BakeTexture);
-            m_BakeNormalMap = EditorGUILayout.Toggle(
-                new GUIContent("Bake Normal Map",
-                    "Bake the source's surface detail into a tangent-space normal map over the result's " +
-                    "own UV layout, with a material using it: what the quads are too coarse to carry -- " +
-                    "slots, screws, seams, folds, a tire's tread -- comes back as shading, the way game " +
-                    "assets are made. Needs no source texture."),
-                m_BakeNormalMap);
-            using (new EditorGUI.DisabledScope(!m_BakeTexture && !m_BakeNormalMap))
+        // The selected type's own options, as part of the type: under Auto all three kinds' (each part
+        // is read on its own), folded since they are many.
+        void DrawTypeSettings()
+        {
+            var auto = m_ModelType == ModelType.Auto;
+            if (auto)
             {
-                // Its own row, not under Bake Normal Map: it is the size of both bakes, and drawn
-                // indented under the normal map it read as the normal map's alone.
-                m_TextureSize = EditorGUILayout.IntPopup(
-                    new GUIContent("Texture Size",
-                        "Width and height of both baked textures, the colour texture and the normal map. " +
-                        "Auto: the source texture's own size, read from its file (the largest, with " +
-                        "several), so an 8K scan bakes at 8K; 4096 when there is no source texture."),
-                    m_TextureSize, new[] { new GUIContent("Auto"), new GUIContent("1024"), new GUIContent("2048"), new GUIContent("4096"), new GUIContent("8192") },
-                    new[] { 0, 1024, 2048, 4096, 8192 });
-                if (m_TextureSize == 0)
-                    EditorGUILayout.LabelField(" ", AutoTextureSizeNote(multi ? partsRoot : selected),
-                        EditorStyles.wordWrappedMiniLabel);
+                m_ShowTypeSettings = EditorGUILayout.Foldout(m_ShowTypeSettings, "What each kind gets", true);
+                if (!m_ShowTypeSettings) return;
             }
-            m_SaveAsAsset = EditorGUILayout.Toggle(
-                new GUIContent("Save As Asset",
-                    "Write the result to a .asset file (and an .fbx with the quads). Without this the mesh " +
-                    "lives only in memory and does not survive a domain reload or a scene save."),
-                m_SaveAsAsset);
-            m_QuadTopology = EditorGUILayout.Toggle(
-                new GUIContent("Quad Topology In Asset",
-                    "Keep the quads as quad topology in the Unity mesh. That needs a second " +
-                    "submesh for the faces which are not quads, so the object asks for two " +
-                    "materials. Off gives one triangle submesh and one material; the exported " +
-                    ".fbx keeps the quads either way."),
-                m_QuadTopology);
+            else EditorGUILayout.LabelField($"What a {k_TypeNames[System.Array.IndexOf(k_Types, m_ModelType)]} model gets",
+                EditorStyles.miniBoldLabel);
+            using (new EditorGUI.IndentLevelScope())
+            {
+                m_RoundParts = EditorGUILayout.ToggleLeft(
+                    new GUIContent("Rings on turned parts, rows on extruded ones",
+                        "Any kind. A piece a rotation sweeps -- a tyre, a rim, a disc, a bottle, a knob -- " +
+                        "gets its quads in rings round its axis and rows along it; one an extrusion sweeps, in " +
+                        "rows along it. Found by fitting the motion that slides the piece along itself."),
+                    m_RoundParts);
+                if (auto || m_ModelType == ModelType.Character)
+                {
+                    if (auto) EditorGUILayout.LabelField("Character", EditorStyles.miniBoldLabel);
+                    m_CharacterSourceLoops = EditorGUILayout.ToggleLeft(
+                        new GUIContent("Clean quads keep their own loops",
+                            "A model that already is clean quads (retopologised, modelled) is reduced by taking " +
+                            "out whole edge rings, so its own loops and poles stay, instead of being remeshed."),
+                        m_CharacterSourceLoops);
+                    m_CharacterStraps = EditorGUILayout.ToggleLeft(
+                        new GUIContent("Straps and belts as tubes",
+                            "Thin straps, belts and cords get clean tubes of quads round them."),
+                        m_CharacterStraps);
+                    m_CharacterThinRows = EditorGUILayout.ToggleLeft(
+                        new GUIContent("Rows across fingers and toes",
+                            "Parts thinner than a few quads (fingers, toes, ears' rims) get quads across them, " +
+                            "with the count raised to pay for it, instead of being flattened."),
+                        m_CharacterThinRows);
+                }
+                if (auto || m_ModelType == ModelType.HardSurface)
+                {
+                    if (auto) EditorGUILayout.LabelField("Hard Surface", EditorStyles.miniBoldLabel);
+                    m_HardSourceLoops = EditorGUILayout.ToggleLeft(
+                        new GUIContent("Clean quads keep their own loops",
+                            "A modelled part that already is clean quads (a car's panels) is reduced by taking out " +
+                            "whole edge rings: its lips, flanges and panel edges stay its own. Parts that will " +
+                            "not reduce cleanly (a tyre's tread at a few hundred quads) are remeshed."),
+                        m_HardSourceLoops);
+                    m_HardDenseToNormalMap = EditorGUILayout.ToggleLeft(
+                        new GUIContent("Dense edges to the normal map",
+                            "Sharp edges packed close (tread, grilles, vents) are left to the normal map; " +
+                            "edges standing apart (panel lines) become edge loops."),
+                        m_HardDenseToNormalMap);
+                    m_HardThinStrips = EditorGUILayout.ToggleLeft(
+                        new GUIContent("Two quads across thin strips",
+                            "Open strips narrower than a quad (pillar trims, flanges) get two quads across."),
+                        m_HardThinStrips);
+                    m_HardShapeRegions = EditorGUILayout.ToggleLeft(
+                        new GUIContent("Rings and rows inside parts too",
+                            "Inside a piece, regions that are round (turned) or straight (extruded) get rings or " +
+                            "rows along their shape."),
+                        m_HardShapeRegions);
+                }
+                if (auto || m_ModelType == ModelType.Scan)
+                {
+                    if (auto) EditorGUILayout.LabelField("Scan", EditorStyles.miniBoldLabel);
+                    m_ScanShapeRegions = EditorGUILayout.ToggleLeft(
+                        new GUIContent("Rows along walls and columns",
+                            "Walls, columns and other straight or turned regions of the scan get rows or rings " +
+                            "along their shape (ccnb at 5000: worst distance 0.0169 -> 0.0135)."),
+                        m_ScanShapeRegions);
+                }
+            }
+        }
 
-            // ---- painted fixes
-            DrawPaintGUI(mesh != null ? selected : null);
-            EditorGUILayout.Space();
+        // ---- 2. how many quads, and where they go
+        void DrawCountSection()
+        {
+            var summary = $"{m_TargetQuadCount:N0}" + (m_CurvesAddQuads ? ", curves add" : ", exact");
+            if (!Section(2, "How Many Quads", summary, ref m_OpenCount)) return;
 
+            m_TargetQuadCount = Mathf.Max(4, EditorGUILayout.IntField(
+                new GUIContent("Quads",
+                    "How many quads to make. With curves adding theirs, this sizes the quads on flat " +
+                    "ground and curved areas add more on top."),
+                m_TargetQuadCount));
+            var mode = GUILayout.Toolbar(m_CurvesAddQuads ? 1 : 0, new[]
+            {
+                new GUIContent("Exact count", "The count holds: curved areas take their smaller quads from flat ones."),
+                new GUIContent("Curves add quads", "Curved areas get their smaller quads on top of the count, up to " +
+                                                   "3x it (5000 asked gives 11,000-14,000 on a character)."),
+            });
+            m_CurvesAddQuads = mode == 1;
+            m_CurveDetail = EditorGUILayout.Slider(
+                new GUIContent("Smaller quads on curves",
+                    "How much smaller quads get where the surface curves, in percent -- and, when curves add " +
+                    "quads, how many they add. 0 is an even grid everywhere; higher spends more on fingers, " +
+                    "rims and folds."),
+                m_CurveDetail, 0f, 100f);
+            EditorGUILayout.LabelField(m_CurvesAddQuads
+                    ? "The result can be up to 3x the count."
+                    : "The result stays near the count.",
+                EditorStyles.wordWrappedMiniLabel);
+        }
+
+        // ---- 3. where edge loops are laid
+        void DrawLoopsSection()
+        {
+            var on = new List<string>();
+            if (m_LongCreaseLoops) on.Add("creases");
+            if (m_MaterialBorders) on.Add("materials");
+            if (m_Symmetry != SymmetryAxis.None) on.Add("mirror " + m_Symmetry);
+            if (!Section(3, "Edge Loops", on.Count > 0 ? string.Join(", ", on) : "shape only", ref m_OpenLoops)) return;
+
+            m_LongCreaseLoops = EditorGUILayout.ToggleLeft(
+                new GUIContent("Along long creases",
+                    "Creases that run as long clean lines (grooves, seams) get edge loops along them; short " +
+                    "creases from scan noise are ignored. Matters on scans; Hard Surface finds its creases " +
+                    "either way."),
+                m_LongCreaseLoops);
+            m_MaterialBorders = EditorGUILayout.ToggleLeft(
+                new GUIContent("On material borders",
+                    "The borders between the mesh's materials (submeshes) become edge loops, and the result " +
+                    "keeps one submesh per material, with the source's materials on it."),
+                m_MaterialBorders);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField(new GUIContent("Mirrored",
+                    "One half is remeshed and mirrored in X, Y or Z, welded along the plane, so both sides " +
+                    "get the same edge loops. The plane is the object's local origin when the mesh straddles " +
+                    "it, else the middle of its bounds. Clean-quad models are then remeshed rather than " +
+                    "reduced by their own loops."), GUILayout.Width(EditorGUIUtility.labelWidth));
+                m_Symmetry = (SymmetryAxis)GUILayout.Toolbar((int)m_Symmetry, new[] { "Off", "X", "Y", "Z" });
+            }
+        }
+
+        string FixAreasSummary(GameObject source)
+        {
+            var comp = source != null ? source.GetComponent<RemeshPaint>() : null;
+            var dabs = comp != null && comp.paint != null ? comp.paint.dabs.Count : 0;
+            return m_Painting ? "painting" : dabs > 0 ? $"{dabs:N0} dabs" : "none";
+        }
+
+        // ---- 5. what comes out
+        void DrawResultSection(GameObject subject)
+        {
+            var bakes = new List<string>();
+            if (m_BakeTexture) bakes.Add("texture");
+            if (m_BakeNormalMap) bakes.Add("normal map");
+            var summary = (bakes.Count > 0 ? string.Join(" + ", bakes) : "no bakes") + (m_SaveAsAsset ? ", saved" : "");
+            if (!Section(5, "Result", summary, ref m_OpenResult)) return;
+
+            EditorGUILayout.LabelField("Bake from the source", EditorStyles.miniBoldLabel);
+            using (new EditorGUI.IndentLevelScope())
+            {
+                m_BakeTexture = EditorGUILayout.ToggleLeft(
+                    new GUIContent("Its texture",
+                        "Give the result its own UV layout and bake the source's texture into it, with a " +
+                        "material using it. The source's own UVs would otherwise be carried over, and on a " +
+                        "scan, whose texture atlas is cut into thousands of pieces, about half the quads " +
+                        "straddle a cut and show a smeared strip. Reads the texture file at full size."),
+                    m_BakeTexture);
+                m_BakeNormalMap = EditorGUILayout.ToggleLeft(
+                    new GUIContent("Its surface detail, as a normal map",
+                        "Bake the source's surface detail into a tangent-space normal map over the result's " +
+                        "own UV layout, with a material using it: what the quads are too coarse to carry -- " +
+                        "slots, screws, seams, folds, a tire's tread -- comes back as shading, the way game " +
+                        "assets are made. Needs no source texture."),
+                    m_BakeNormalMap);
+                using (new EditorGUI.DisabledScope(!m_BakeTexture && !m_BakeNormalMap))
+                {
+                    m_TextureSize = EditorGUILayout.IntPopup(
+                        new GUIContent("Size",
+                            "Width and height of both baked textures. Auto: the source texture's own size, " +
+                            "read from its file (the largest, with several), so an 8K scan bakes at 8K; 4096 " +
+                            "when there is no source texture."),
+                        m_TextureSize, new[] { new GUIContent("Auto"), new GUIContent("1024"), new GUIContent("2048"), new GUIContent("4096"), new GUIContent("8192") },
+                        new[] { 0, 1024, 2048, 4096, 8192 });
+                    if (m_TextureSize == 0 && subject != null)
+                        EditorGUILayout.LabelField(" ", AutoTextureSizeNote(subject), EditorStyles.wordWrappedMiniLabel);
+                }
+            }
+            EditorGUILayout.LabelField("Keep", EditorStyles.miniBoldLabel);
+            using (new EditorGUI.IndentLevelScope())
+            {
+                m_SaveAsAsset = EditorGUILayout.ToggleLeft(
+                    new GUIContent("Save to the project (.asset and .fbx)",
+                        "Write the result to a .asset file and an .fbx with the quads. Without this the mesh " +
+                        "lives only in memory and does not survive a domain reload or a scene save."),
+                    m_SaveAsAsset);
+                m_QuadTopology = EditorGUILayout.ToggleLeft(
+                    new GUIContent("Quads in the Unity mesh",
+                        "Keep the quads as quad topology in the Unity mesh. That needs a second submesh for " +
+                        "the faces which are not quads, so the object asks for two materials. Off gives one " +
+                        "triangle submesh and one material; the .fbx keeps the quads either way."),
+                    m_QuadTopology);
+            }
+        }
+
+        // ---- the run button, its progress, and what the last run said
+        void DrawRunControls(Mesh mesh, GameObject selected, bool multi, List<GameObject> parts, GameObject partsRoot,
+            string partsError)
+        {
             // A run in flight replaces the button with its own progress bar and a cancel control,
             // drawn in this window rather than through EditorUtility.DisplayProgressBar. The modal
             // bar only advances when the caller yields, so during a solve it sat at whatever
@@ -270,10 +464,13 @@ namespace NativeRemesher
                                 && SourceOf(Selection.activeGameObject) == subject
                                 && Selection.activeGameObject != subject;
                     var label = again ? $"Remesh '{subject.name}' Again" : multi ? $"Remesh {parts.Count} Parts" : "Remesh";
+                    var was = GUI.backgroundColor;
+                    GUI.backgroundColor = Accent;
                     if (GUILayout.Button(new GUIContent(label,
                             again ? "Runs the source of the selected result again, with the painted fix areas, " +
-                                    "and hides the old result (Undo brings it back)." : ""), GUILayout.Height(28)))
+                                    "and hides the old result (Undo brings it back)." : ""), GUILayout.Height(32)))
                         RunPipeline();
+                    GUI.backgroundColor = was;
                 }
             }
 
@@ -286,7 +483,7 @@ namespace NativeRemesher
                     $"Feature detection marked {m_LastResult.featureVertexFraction * 100f:F0} % of " +
                     $"the input as creased, at {m_LastResult.profile.featureAngleDegrees:F0} " +
                     "degrees. That is the signature of a scan rather than modelled geometry. Set " +
-                    "Model Type to Auto or Scan.",
+                    "the model to Auto or Scan.",
                     MessageType.Warning);
 
             if (!string.IsNullOrEmpty(m_Status))
@@ -427,7 +624,7 @@ namespace NativeRemesher
                 var m = MeshOn(go);
                 if (m != null && m.isReadable) for (var i = 0; i < m.subMeshCount; i++) triangles += m.GetIndexCount(i) / 3;
             }
-            return $"'{root.name}' is {parts.Count} parts, {triangles:N0} triangles in all.";
+            return $"'{root.name}', {parts.Count} parts, {triangles:N0} triangles";
         }
 
         /// <summary>
@@ -567,75 +764,6 @@ namespace NativeRemesher
                 out var triangleSubmesh);
             QuadSource.Reorder(mesh, ref triangles, ref triangleSubmesh);
             RunSingle(selected, null, positions, triangles, sourceUvs, triangleSubmesh, settings, profile, autoProfile);
-        }
-
-        // The selected Model Type's own settings (all three groups under Auto, since each part is
-        // read on its own then).
-        void DrawTypeSettings()
-        {
-            m_ShowTypeSettings = EditorGUILayout.Foldout(m_ShowTypeSettings, "Settings For This Type", true);
-            if (!m_ShowTypeSettings) return;
-            using (new EditorGUI.IndentLevelScope())
-            {
-                m_RoundParts = EditorGUILayout.Toggle(
-                    new GUIContent("Rings On Round Parts",
-                        "Any type. A piece a rotation sweeps -- a tyre, a rim, a disc, a bottle, a knob -- " +
-                        "gets its quads in rings round its axis and rows along it; one an extrusion sweeps, in " +
-                        "rows along it. Found by fitting the motion that slides the piece along itself."),
-                    m_RoundParts);
-                var auto = m_ModelType == ModelType.Auto;
-                if (auto || m_ModelType == ModelType.Character)
-                {
-                    if (auto) EditorGUILayout.LabelField("Character", EditorStyles.miniBoldLabel);
-                    m_CharacterSourceLoops = EditorGUILayout.Toggle(
-                        new GUIContent("Keep Source Loops",
-                            "A model that already is clean quads (retopologised, modelled) is reduced by taking " +
-                            "out whole edge rings, so its own loops and poles stay, instead of being remeshed."),
-                        m_CharacterSourceLoops);
-                    m_CharacterStraps = EditorGUILayout.Toggle(
-                        new GUIContent("Straps As Tubes",
-                            "Thin straps, belts and cords get clean tubes of quads round them."),
-                        m_CharacterStraps);
-                    m_CharacterThinRows = EditorGUILayout.Toggle(
-                        new GUIContent("Fingers And Toes Get Rows",
-                            "Parts thinner than a few quads (fingers, toes, ears' rims) get quads across them, " +
-                            "with the count raised to pay for it, instead of being flattened."),
-                        m_CharacterThinRows);
-                }
-                if (auto || m_ModelType == ModelType.HardSurface)
-                {
-                    if (auto) EditorGUILayout.LabelField("Hard Surface", EditorStyles.miniBoldLabel);
-                    m_HardSourceLoops = EditorGUILayout.Toggle(
-                        new GUIContent("Keep Source Loops",
-                            "A modelled part that already is clean quads (a car's panels) is reduced by taking out " +
-                            "whole edge rings: its lips, flanges and panel edges stay its own. Parts that will " +
-                            "not reduce cleanly (a tyre's tread at a few hundred quads) are remeshed."),
-                        m_HardSourceLoops);
-                    m_HardDenseToNormalMap = EditorGUILayout.Toggle(
-                        new GUIContent("Dense Edges To Normal Map",
-                            "Sharp edges packed close (tread, grilles, vents) are left to the normal map; " +
-                            "edges standing apart (panel lines) become edge loops."),
-                        m_HardDenseToNormalMap);
-                    m_HardThinStrips = EditorGUILayout.Toggle(
-                        new GUIContent("Thin Strips Get Quads",
-                            "Open strips narrower than a quad (pillar trims, flanges) get two quads across."),
-                        m_HardThinStrips);
-                    m_HardShapeRegions = EditorGUILayout.Toggle(
-                        new GUIContent("Follow Shape Regions",
-                            "Inside a piece, regions that are round (turned) or straight (extruded) get rings or " +
-                            "rows along their shape."),
-                        m_HardShapeRegions);
-                }
-                if (auto || m_ModelType == ModelType.Scan)
-                {
-                    if (auto) EditorGUILayout.LabelField("Scan", EditorStyles.miniBoldLabel);
-                    m_ScanShapeRegions = EditorGUILayout.Toggle(
-                        new GUIContent("Follow Shape Regions",
-                            "Walls, columns and other straight or turned regions of the scan get rows or rings " +
-                            "along their shape (ccnb at 5000: worst distance 0.0169 -> 0.0135)."),
-                        m_ScanShapeRegions);
-                }
-            }
         }
 
         /// <summary>The window's settings onto a run's (and the statics the solve reads), on the main thread.</summary>
