@@ -270,6 +270,10 @@ namespace NativeRemesher
 
         /// <summary>What RemeshPipeline.surfaceCleanIterations did, when on.</summary>
         public SurfaceClean.Stats surfaceCleanStats;
+        public StarFill.Stats starFillStats;
+
+        /// <summary>How the error-driven quads measured against the lattice, when they were tried (detailQuadsTry); null otherwise.</summary>
+        public string detailTry;
 
         /// <summary>What RemeshPipeline.ribbonParts found and meshed, when on.</summary>
         public RibbonParts.Stats ribbonStats;
@@ -1056,6 +1060,106 @@ namespace NativeRemesher
                 onProgress?.Invoke("Recognising the model", 0f);
                 settings.modelType = ShapeRecognition.Classify(positions, triangles, out settings.shapeSignals);
             }
+            var lattice = SolveLattice(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile,
+                triangleMaterials);
+            if (!detailQuadsTry || detailQuads || lattice?.extraction == null || settings.modelType == ModelType.Character
+                || settings.symmetry != SymmetryAxis.None || settings.densityPaint != null
+                || triangles.Length / 3 < detailQuadsTryTriangles
+                || triangles.Length / 3 < detailQuadsTryTrianglesPerQuad * Math.Max(1, settings.targetQuadCount))
+                return lattice;
+            // A dense mesh of flat walls and boxed-in detail (the white house: 1.8 million
+            // triangles, window recesses three cells wide) comes out of the lattice soft-walled and
+            // its recesses as stars of folded faces; the error-driven quads keep its planes, edges
+            // and recesses. Kept when they lie clearly closer to the source.
+            onProgress?.Invoke("Trying error-driven quads", 0f);
+            RemeshResult detail;
+            // At the faces the lattice came out at (Adaptive Quad Count raises them): like for like,
+            // and no more than the lattice would have made. They make about 1.27 faces a quad asked.
+            var detailSettings = settings;
+            detailSettings.targetQuadCount = Math.Max(settings.targetQuadCount, Mathf.RoundToInt(lattice.extraction.faces.Count / 1.27f));
+            detailQuads = true;
+            try
+            {
+                detail = SolveInternal(positions, triangles, detailSettings, profile, onProgress, sourceUvs,
+                    autoSelectProfile, SymmetryAxis.None, 0f, triangleMaterials);
+            }
+            finally { detailQuads = false; }
+            if (detail?.extraction == null || detail.extraction.faces.Count == 0) return lattice;
+            var latticeOff = DistanceOff(positions, triangles, lattice.extraction, out var latticeTurn);
+            var detailOff = DistanceOff(positions, triangles, detail.extraction, out var detailTurn);
+            lattice.detailTry = $"lattice {latticeOff:G3}, {latticeTurn:0.0} deg at {lattice.extraction.faces.Count} faces; " +
+                                $"error-driven {detailOff:G3}, {detailTurn:0.0} deg at {detail.extraction.faces.Count}";
+            if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {lattice.detailTry}");
+            // Clearly closer, and their faces turning from the source's no more.
+            if (!(detailOff < detailQuadsWins * latticeOff && detailTurn <= detailQuadsTurn * latticeTurn)) return lattice;
+            detail.detailTry = lattice.detailTry + ": error-driven kept";
+            return detail;
+        }
+
+        /// <summary>
+        /// Dense meshes that are not characters are also built as error-driven quads (DetailQuads),
+        /// kept when they lie clearly closer to the source (detailQuadsWins); false: the lattice only.
+        /// </summary>
+        public static bool detailQuadsTry = true;
+
+        /// <summary>The error-driven quads are tried on a mesh of at least this many triangles...</summary>
+        public static int detailQuadsTryTriangles = 200000;
+
+        /// <summary>...and this many per quad asked for.</summary>
+        public static int detailQuadsTryTrianglesPerQuad = 20;
+
+        /// <summary>
+        /// Kept when their distance from the source (90th percentile, both ways) is under this share
+        /// of the lattice's at the same faces. White house at 5,000: 7.4e-6 against 1.9e-5.
+        /// </summary>
+        public static float detailQuadsWins = 0.6f;
+
+        /// <summary>...and the angle their faces turn from the source's (mean) at most this many times the lattice's.</summary>
+        public static float detailQuadsTurn = 1.05f;
+
+        /// <summary>
+        /// The 90th percentile of the distances between source and output, sampled both ways, in the
+        /// source's units; and the mean angle between the output's faces and the source's nearest.
+        /// </summary>
+        static float DistanceOff(Vector3[] positions, int[] triangles, QuadExtractionResult extraction, out float turn,
+            int samples = 6000)
+        {
+            turn = 180f;
+            var tris = LodChain.Triangulate(extraction.faces, out _);
+            if (tris.Length < 3) return float.PositiveInfinity;
+            var output = new SpatialGrid(extraction.positions, tris);
+            var source = new SpatialGrid(positions, triangles);
+            var there = SpatialGrid.SampleSurface(positions, triangles, samples, 5);
+            var back = SpatialGrid.SampleSurface(extraction.positions, tris, samples, 6);
+            var d = new float[there.Count + back.Count];
+            System.Threading.Tasks.Parallel.For(0, there.Count, i => d[i] = output.NearestDistance(there[i], out _));
+            System.Threading.Tasks.Parallel.For(0, back.Count, i => d[there.Count + i] = source.NearestDistance(back[i], out _));
+            // The turn: at points of the output, its triangle's normal against the source's nearest one's.
+            var angles = new float[back.Count];
+            System.Threading.Tasks.Parallel.For(0, back.Count, i =>
+            {
+                output.NearestDistance(back[i], out var mine);
+                source.NearestDistance(back[i], out var theirs);
+                if (mine < 0 || theirs < 0) return;
+                output.TriangleCorners(mine, out var a, out var b, out var c);
+                source.TriangleCorners(theirs, out var p, out var q, out var r);
+                var n0 = Vector3.Cross(extraction.positions[b] - extraction.positions[a], extraction.positions[c] - extraction.positions[a]);
+                var n1 = Vector3.Cross(positions[q] - positions[p], positions[r] - positions[p]);
+                // Unoriented: a source wound the other way is no error.
+                var cos = Mathf.Abs(Vector3.Dot(n0, n1)) / Mathf.Max(1e-30f, n0.magnitude * n1.magnitude);
+                angles[i] = Mathf.Acos(Mathf.Clamp01(cos)) * Mathf.Rad2Deg;
+            });
+            double sum = 0;
+            foreach (var a in angles) sum += a;
+            turn = angles.Length > 0 ? (float)(sum / angles.Length) : 180f;
+            Array.Sort(d);
+            return d.Length > 0 ? d[Mathf.Clamp((int)(0.9f * d.Length), 0, d.Length - 1)] : float.PositiveInfinity;
+        }
+
+        static RemeshResult SolveLattice(Vector3[] positions, int[] triangles, RemeshSettings settings,
+            RemeshProfile profile, Action<string, float> onProgress, Vector2[] sourceUvs, bool autoSelectProfile,
+            int[] triangleMaterials)
+        {
             var result = SolveInternal(positions, triangles, settings, profile, onProgress, sourceUvs,
                 autoSelectProfile, SymmetryAxis.None, 0f, triangleMaterials);
             if (!layoutCoverageFallback || !Extraction.IntegerGridMap.parametrization
@@ -1337,6 +1441,23 @@ namespace NativeRemesher
                 onProgress?.Invoke("Fitting features", 0f);
                 result.featureFitStats = FeatureFit.Fit(result.extraction.positions, result.extraction.faces,
                     positions, triangles, featureFitIterations);
+            }
+
+            // Stars (many faces folded round one vertex, where detail a cell or two across was
+            // collapsed) filled flat across their ring. Not with per-face materials, which the
+            // faces' order carries.
+            if (StarFill.enabled && result.extraction?.positions != null && result.extraction.faceMaterials == null)
+            {
+                result.starFillStats = StarFill.Apply(result.extraction.faces, result.extraction.positions);
+                if (result.starFillStats.filled > 0)
+                {
+                    var ex = result.extraction;
+                    ex.quadCount = 0;
+                    foreach (var f in ex.faces) if (f != null && f.Length == 4) ex.quadCount++;
+                    if (ex.shadingNormals != null && ex.shadingNormals.Length == ex.positions.Length)
+                        ex.shadingNormals = Extraction.NormalRecalculator.Compute(ex.faces, ex.positions, ex.normals);
+                }
+                if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {result.starFillStats}");
             }
 
             if (surfaceCleanIterations > 0 && result.extraction?.positions != null)
