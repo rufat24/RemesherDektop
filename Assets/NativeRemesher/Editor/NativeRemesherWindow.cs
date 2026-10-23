@@ -1047,6 +1047,7 @@ namespace NativeRemesher
                 var baked = result.bakedTexture != null ? SaveBakedTexture(result, assetPath, selected.name) : null;
                 var normalMap = result.bakedNormalMap != null ? SaveNormalMap(result, assetPath, selected.name) : null;
                 var layers = SaveLayers(result, assetPath, selected.name);
+                var occlusion = result.bakedOcclusion != null ? SaveOcclusion(result, assetPath, selected.name) : null;
                 var made = new Dictionary<Material, Material>();
                 for (var i = 0; i < slots; i++)
                 {
@@ -1061,6 +1062,7 @@ namespace NativeRemesher
                     else if (mat.HasProperty("_MainTex") || mat.HasProperty("_BaseMap")) mat.mainTexture = null;
                     if (normalMap != null) AssignNormalMap(mat, normalMap);
                     AssignLayers(mat, layers);
+                    AssignOcclusion(mat, occlusion);
                     if (!string.IsNullOrEmpty(assetPath))
                     {
                         var matPath = AssetDatabase.GenerateUniqueAssetPath(
@@ -1550,6 +1552,59 @@ namespace NativeRemesher
 
         // The bump slot of the Built-in Standard shader and of URP / HDRP Lit is _BumpMap (HDRP's
         // is _NormalMap); each needs its keyword.
+        /// <summary>
+        /// The baked cavities as the material's occlusion map, where the shader has one and the
+        /// source's own occlusion was not baked in its place (AssignLayers runs first).
+        /// </summary>
+        static void AssignOcclusion(Material mat, Texture2D occlusion)
+        {
+            if (mat == null || occlusion == null || !mat.HasProperty("_OcclusionMap") || mat.GetTexture("_OcclusionMap") != null) return;
+            mat.SetTexture("_OcclusionMap", occlusion);
+            if (mat.HasProperty("_OcclusionStrength")) mat.SetFloat("_OcclusionStrength", 1f);
+            mat.EnableKeyword("_OCCLUSIONMAP");
+        }
+
+        /// <summary>The baked cavities as a linear grey texture: a PNG beside the mesh asset, or in memory.</summary>
+        static Texture2D SaveOcclusion(RemeshResult result, string assetPath, string sourceName)
+        {
+            var size = result.bakedNormalMapSize;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, true, true)
+            {
+                name = sourceName + "_Quads_Occlusion",
+                wrapMode = TextureWrapMode.Clamp,
+            };
+            texture.SetPixels32(result.bakedOcclusion);
+            texture.Apply(true);
+            if (string.IsNullOrEmpty(assetPath)) return texture;
+            try
+            {
+                var pngPath = AssetDatabase.GenerateUniqueAssetPath(
+                    Path.ChangeExtension(assetPath, null) + "_Occlusion.png");
+                File.WriteAllBytes(pngPath, texture.EncodeToPNG());
+                AssetDatabase.ImportAsset(pngPath, ImportAssetOptions.ForceSynchronousImport);
+                if (AssetImporter.GetAtPath(pngPath) is TextureImporter importer)
+                {
+                    importer.sRGBTexture = false;
+                    importer.maxTextureSize = Mathf.Max(importer.maxTextureSize, size);
+                    importer.textureCompression = TextureImporterCompression.CompressedHQ;
+                    importer.wrapMode = TextureWrapMode.Clamp;
+                    importer.SaveAndReimport();
+                }
+                var saved = AssetDatabase.LoadAssetAtPath<Texture2D>(pngPath);
+                if (saved != null)
+                {
+                    DestroyImmediate(texture);
+                    Debug.Log($"[Native Remesher] Wrote {pngPath} (cavities)");
+                    return saved;
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[Native Remesher] Could not save the occlusion map: {e.Message}. It is in memory only.");
+            }
+            return texture;
+        }
+
         static void AssignNormalMap(Material mat, Texture2D normalMap)
         {
             if (mat.HasProperty("_BumpMap"))

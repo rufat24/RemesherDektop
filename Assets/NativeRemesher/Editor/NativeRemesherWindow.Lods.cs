@@ -435,9 +435,10 @@ namespace NativeRemesher
                 holder.transform.SetParent(target.transform, false);
                 var bake = l - 1 < run.bakes.Count ? run.bakes[l - 1] : null;
                 var levelPath = folder != null ? $"{folder}/{safe}_LOD{l}.asset" : "";
-                Texture2D albedo = null, normals = null;
+                Texture2D albedo = null, normals = null, occlusion = null;
                 if (bake?.bakedTexture != null) albedo = SaveBakedTexture(bake, levelPath, $"{safe}_LOD{l}");
                 if (bake?.bakedNormalMap != null) normals = SaveNormalMap(bake, levelPath, $"{safe}_LOD{l}");
+                if (bake?.bakedOcclusion != null) occlusion = SaveOcclusion(bake, levelPath, $"{safe}_LOD{l}");
                 var madeMaterials = new Dictionary<Material, Material>();
 
                 // Where this level starts: a part smaller than a few pixels there is left out.
@@ -472,7 +473,7 @@ namespace NativeRemesher
                     {
                         var from = part.materials.Length > 0 ? part.materials[Mathf.Min(i, part.materials.Length - 1)] : null;
                         mats[i] = part.sourcePositions != null && bake != null
-                            ? LevelMaterial(from, albedo, normals, folder, $"{safe}_LOD{l}", madeMaterials)
+                            ? LevelMaterial(from, albedo, normals, folder, $"{safe}_LOD{l}", madeMaterials, occlusion)
                             : from;
                     }
                     renderer.sharedMaterials = mats;
@@ -552,7 +553,7 @@ namespace NativeRemesher
         }
 
         static Material LevelMaterial(Material from, Texture2D albedo, Texture2D normals, string folder, string name,
-            Dictionary<Material, Material> made)
+            Dictionary<Material, Material> made, Texture2D occlusion = null)
         {
             if (from != null && made.TryGetValue(from, out var done)) return done;
             var mat = from != null ? new Material(from) : new Material(Shader.Find("Standard"));
@@ -561,6 +562,7 @@ namespace NativeRemesher
             if (normals != null) AssignNormalMap(mat, normals);
             // A level baked over its own atlas: the base's other maps are laid out for the base's UVs.
             if (albedo != null || normals != null) AssignLayers(mat, null);
+            AssignOcclusion(mat, occlusion);
             if (folder != null) AssetDatabase.CreateAsset(mat, AssetDatabase.GenerateUniqueAssetPath($"{folder}/{SafeName(name)}.mat"));
             if (from != null) made[from] = mat;
             return mat;

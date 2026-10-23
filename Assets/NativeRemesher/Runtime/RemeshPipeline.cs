@@ -127,6 +127,9 @@ namespace NativeRemesher
         /// <summary>A tangent-space normal map of the input over the same atlas (BakeNormalMap); null when not baked.</summary>
         public Color32[] bakedNormalMap;
         public int bakedNormalMapSize;
+
+        /// <summary>The source's cavities over the normal map's atlas (TextureBake.bakeCavity), grey; null when not baked.</summary>
+        public Color32[] bakedOcclusion;
         public TextureBake.Stats bakeStats;
         public long refineMs;
         public OrientationField orientation;
@@ -1544,7 +1547,7 @@ namespace NativeRemesher
                 return;
             onProgress?.Invoke("Baking texture", 0f);
             var stats = new TextureBake.Stats();
-            var uvs = TextureBake.Unwrap(extraction.positions, extraction.faces, resolution, stats);
+            var uvs = TextureBake.Unwrap(extraction.positions, extraction.faces, resolution, stats, extraction.faceTexelScale);
             result.bakedTexture = TextureBake.Bake(positions, triangles, sourceUvs, triangleTexture, textures,
                 extraction.positions, extraction.faces, uvs, resolution, stats,
                 p => onProgress?.Invoke("Baking texture", p), layers);
@@ -1572,7 +1575,7 @@ namespace NativeRemesher
             if (stats == null || extraction.faceUvs == null || result.bakedTexture == null || result.bakedTextureSize != resolution)
             {
                 stats = new TextureBake.Stats();
-                extraction.faceUvs = TextureBake.Unwrap(extraction.positions, extraction.faces, resolution, stats);
+                extraction.faceUvs = TextureBake.Unwrap(extraction.positions, extraction.faces, resolution, stats, extraction.faceTexelScale);
                 extraction.uvs = null;
                 result.bakeStats = stats;
             }
@@ -1586,11 +1589,13 @@ namespace NativeRemesher
                 : null;
             extraction.faceTangents = TextureBake.Tangents(extraction.positions, extraction.faces, extraction.faceUvs, normals,
                 extraction.faceNormals);
+            var cavity = TextureBake.bakeCavity ? new Color32[resolution * resolution] : null;
             result.bakedNormalMap = TextureBake.BakeNormals(positions, triangles, extraction.positions, extraction.faces,
                 extraction.faceUvs, normals, extraction.faceTangents, resolution, stats,
                 p => onProgress?.Invoke("Baking normal map", p), extraction.faceNormals,
-                sourceUvs, sourceTriangleNormalMap, sourceNormalMaps);
+                sourceUvs, sourceTriangleNormalMap, sourceNormalMaps, cavity);
             result.bakedNormalMapSize = resolution;
+            result.bakedOcclusion = cavity;
         }
 
         static void TransferUvs(RemeshResult result, Vector3[] positions, int[] triangles, Vector2[] sourceUvs,

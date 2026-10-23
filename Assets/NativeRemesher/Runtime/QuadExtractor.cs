@@ -97,6 +97,12 @@ namespace NativeRemesher
         public Vector2[][] faceUvs;
 
         /// <summary>
+        /// Per face, its texels per unit in a baked atlas as a multiple of the atlas's own (a part
+        /// barely seen gets fewer, PartBake). Null: the same for every face.
+        /// </summary>
+        public float[] faceTexelScale;
+
+        /// <summary>
         /// Per face corner, the tangent a baked normal map was made against (TextureBake.Tangents);
         /// null when there is none. ToMesh writes them as the mesh's tangents.
         /// </summary>

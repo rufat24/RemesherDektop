@@ -74,6 +74,57 @@ namespace NativeRemesher.Tests
             Assert.Less(worst, 3f, stats.ToString());
         }
 
+        [Test]
+        public void ATrenchUnderFlatQuadsIsBakedDarkAndItsWallsShade()
+        {
+            // Low poly: a flat 6 x 6 grid facing +y. Source: the plane a little above it, with a
+            // trench one unit wide and 0.35 deep along z at x 2.5..3.5, which the grid does not have.
+            const int n = 6;
+            var faces = Grid(n, out var positions);
+            var sp = new List<Vector3>();
+            const int m = 160;
+            for (var j = 0; j <= m; j++)
+                for (var i = 0; i <= m; i++)
+                {
+                    var x = -1f + (n + 2f) * i / m;
+                    sp.Add(new Vector3(x, x > 2.5f && x < 3.5f ? -0.3f : 0.05f, -1f + (n + 2f) * j / m));
+                }
+            var st = new List<int>();
+            for (var j = 0; j < m; j++)
+                for (var i = 0; i < m; i++)
+                {
+                    var a = j * (m + 1) + i;
+                    st.AddRange(new[] { a, a + m + 1, a + m + 2, a, a + m + 2, a + 1 });
+                }
+            var normals = new Vector3[positions.Length];
+            for (var i = 0; i < normals.Length; i++) normals[i] = Vector3.up;
+            const int res = 512;
+            var stats = new TextureBake.Stats();
+            var uvs = TextureBake.Unwrap(positions, faces, res, stats);
+            var tangents = TextureBake.Tangents(positions, faces, uvs, normals);
+            var cavity = new Color32[res * res];
+            var map = TextureBake.BakeNormals(sp.ToArray(), st.ToArray(), positions, faces, uvs, normals, tangents,
+                res, stats, cavity: cavity);
+            // Texels by where they lie: in the trench, on the flat away from it, near its walls.
+            float inTrench = 255f, onFlat = 0f, tilt = 0f;
+            for (var f = 0; f < faces.Count; f++)
+                for (var s = 0; s < 64; s++)
+                {
+                    float a = (s % 8 + 0.5f) / 8f, b = (s / 8 + 0.5f) / 8f;
+                    var p = Vector3.Lerp(Vector3.Lerp(positions[faces[f][0]], positions[faces[f][1]], b),
+                        Vector3.Lerp(positions[faces[f][3]], positions[faces[f][2]], b), a);
+                    var uv = Vector2.Lerp(Vector2.Lerp(uvs[f][0], uvs[f][1], b), Vector2.Lerp(uvs[f][3], uvs[f][2], b), a);
+                    var i = Mathf.FloorToInt(uv.y * res) * res + Mathf.FloorToInt(uv.x * res);
+                    if (p.x > 2.8f && p.x < 3.2f) inTrench = Mathf.Min(inTrench, cavity[i].g);
+                    if (p.x < 1.5f || p.x > 4.5f) onFlat = Mathf.Max(onFlat, 255 - cavity[i].g);
+                    if (Mathf.Abs(p.x - 2.5f) < 0.1f || Mathf.Abs(p.x - 3.5f) < 0.1f)
+                        tilt = Mathf.Max(tilt, Mathf.Abs(map[i].r / 127.5f - 1f) + Mathf.Abs(map[i].g / 127.5f - 1f));
+                }
+            Assert.Less(inTrench, 128f, "the trench is dark");
+            Assert.Less(onFlat, 8f, "the flat is left white");
+            Assert.Greater(tilt, 0.3f, "the walls shade");
+        }
+
         // A cube of n x n quads a side, welded, wound outwards.
         static List<int[]> Cube(int n, out Vector3[] positions)
         {

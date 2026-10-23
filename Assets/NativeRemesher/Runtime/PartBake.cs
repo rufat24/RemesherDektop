@@ -33,6 +33,68 @@ namespace NativeRemesher
 
             /// <summary>Per layer passed to Bake, per source triangle, its image in that layer (-1: none); null: none.</summary>
             public int[][] triangleLayers;
+
+            /// <summary>
+            /// An earlier part this one is a moved copy of (RemeshPipeline.Moved), looking the same
+            /// (same UVs, textures, materials): it shares that part's charts in the atlas, baked
+            /// once, instead of taking its own. -1: none.
+            /// </summary>
+            public int sameAs = -1;
+
+            /// <summary>The copy is mirrored (its faces wound back, as Moved winds them).</summary>
+            public bool sameMirrored;
+
+            /// <summary>Its texels per unit as a multiple of the atlas's (1: as every other part).</summary>
+            public float texelScale = 1f;
+        }
+
+        /// <summary>
+        /// Copies of a part (sameAs) share its charts: the Ford's four tyres, baked four times over,
+        /// had 117 texels square each and their tread came out a smear.
+        /// </summary>
+        public static bool sharedCopies = true;
+
+        /// <summary>
+        /// A part's texels per unit scaled by how much of it can be seen (the square root of its
+        /// VisibilityWeight): the Ford's interior, hardly seen, took more texels per unit than its tyres.
+        /// </summary>
+        public static bool texelsBySight = true;
+
+        /// <summary>
+        /// A part's texels per unit also scaled by how finely its source is made (triangles per
+        /// unit area against the model's median, DetailTexelScale): the Ford's tyres, 20,000
+        /// triangles of tread, came out under a texel per unit round, the blocks a few texels each.
+        /// </summary>
+        public static bool texelsByDetail = true;
+
+        /// <summary>The least and most a part's texels per unit are scaled for its detail.</summary>
+        public static float detailTexelMin = 0.5f, detailTexelMax = 2.5f;
+
+        /// <summary>
+        /// Texels per unit for a source this many triangles per unit area, against the model's
+        /// median: the fourth root of the ratio (its atlas area by the square root), clamped.
+        /// </summary>
+        public static float DetailTexelScale(double density, double median)
+        {
+            if (!(density > 0) || !(median > 0)) return 1f;
+            return Mathf.Clamp((float)Math.Pow(density / median, 0.25), detailTexelMin, detailTexelMax);
+        }
+
+        /// <summary>The value half the area lies under (each part's value weighted by its area).</summary>
+        public static double AreaMedian(IList<double> values, IList<double> areas)
+        {
+            var order = new int[values.Count];
+            for (var i = 0; i < order.Length; i++) order[i] = i;
+            Array.Sort(order, (a, b) => values[a].CompareTo(values[b]));
+            double total = 0;
+            foreach (var a in areas) total += a;
+            double run = 0;
+            foreach (var i in order)
+            {
+                run += areas[i];
+                if (run >= 0.5 * total) return values[i];
+            }
+            return order.Length > 0 ? values[order[order.Length - 1]] : 0;
         }
 
         /// <summary>
@@ -361,12 +423,22 @@ namespace NativeRemesher
             var joined = new QuadExtractionResult();
             var positions = new List<Vector3>();
             var normals = new List<Vector3>();
+            var faceScale = new List<float>();
             var firstFace = new int[parts.Count + 1];
+            // A copy shares its original's charts when both have the same faces.
+            bool Shares(int p)
+            {
+                var q = parts[p].sameAs;
+                if (!sharedCopies || q < 0 || q >= p || parts[q].sameAs >= 0) return false;
+                var a = parts[p].result?.extraction;
+                var b = parts[q].result?.extraction;
+                return a?.faces != null && b?.faces != null && a.faces.Count == b.faces.Count && a.positions != null && b.positions != null;
+            }
             for (var p = 0; p < parts.Count; p++)
             {
                 firstFace[p] = joined.faces.Count;
                 var ex = parts[p].result?.extraction;
-                if (ex == null || ex.positions == null) continue;
+                if (ex == null || ex.positions == null || Shares(p)) continue;
                 var m = parts[p].toModel;
                 // Normals by the inverse transpose (right under any scale); transposed by hand.
                 var inv = InverseAffine(m);
@@ -385,12 +457,14 @@ namespace NativeRemesher
                     var g = new int[f.Length];
                     for (var k = 0; k < f.Length; k++) g[k] = f[k] + offset;
                     joined.faces.Add(g);
+                    faceScale.Add(parts[p].texelScale);
                 }
                 joined.quadCount += ex.quadCount;
             }
             firstFace[parts.Count] = joined.faces.Count;
             joined.positions = positions.ToArray();
             joined.normals = normals.ToArray();
+            if (faceScale.Exists(s => s != 1f)) joined.faceTexelScale = faceScale.ToArray();
             if (joined.faces.Count == 0) return null;
 
             // --- the sources joined ---
@@ -500,6 +574,33 @@ namespace NativeRemesher
                         ex.faceNormals[f] = local;
                     }
                 }
+            }
+            // --- the copies: their original's UVs, and tangents of their own over them ---
+            for (var p = 0; p < parts.Count; p++)
+            {
+                if (!Shares(p)) continue;
+                var ex = parts[p].result.extraction;
+                var original = parts[parts[p].sameAs].result.extraction;
+                if (original.faceUvs == null) continue;
+                ex.faceUvs = new Vector2[ex.faces.Count][];
+                for (var f = 0; f < ex.faces.Count; f++)
+                {
+                    var uv = f < original.faceUvs.Length && original.faceUvs[f] != null ? (Vector2[])original.faceUvs[f].Clone() : null;
+                    // Wound back as Moved winds a mirrored copy's faces: first corner kept, the rest reversed.
+                    if (uv != null && parts[p].sameMirrored && uv.Length > 2) Array.Reverse(uv, 1, uv.Length - 1);
+                    ex.faceUvs[f] = uv ?? new Vector2[ex.faces[f]?.Length ?? 0];
+                }
+                ex.uvs = null;
+                ex.faceTangents = null;
+                ex.faceNormals = null;
+                if (joined.faceTangents == null) continue;
+                var n = ex.shadingNormals != null && ex.shadingNormals.Length == ex.positions.Length ? ex.shadingNormals : ex.normals;
+                if (n == null || n.Length != ex.positions.Length)
+                    n = Extraction.NormalRecalculator.Compute(ex.faces, ex.positions, null);
+                ex.faceNormals = TextureBake.hardEdgeAngle > 0f
+                    ? TextureBake.CornerNormals(ex.positions, ex.faces, ex.faceUvs, n, TextureBake.hardEdgeAngle)
+                    : null;
+                ex.faceTangents = TextureBake.Tangents(ex.positions, ex.faces, ex.faceUvs, n, ex.faceNormals);
             }
             return shared;
         }

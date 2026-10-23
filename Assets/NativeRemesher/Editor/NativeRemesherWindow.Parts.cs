@@ -304,6 +304,19 @@ namespace NativeRemesher
                 // the same triangles and one map between their vertices. Solved once, moved into place.
                 var twin = new int[n];
                 var twinMap = new Matrix4x4[n];
+                // A copy looks the same as its original (it can share its baked charts) when it
+                // reads the same textures at the same UVs through the same materials.
+                bool SameLook(int a, int b)
+                {
+                    bool Same<T>(T[] x, T[] y) => x == y || x != null && y != null && x.Length == y.Length
+                        && System.Linq.Enumerable.SequenceEqual(x, y);
+                    if (!Same(materials[a], materials[b]) || !Same(rawUvs[a], rawUvs[b]) || !Same(submeshes[a], submeshes[b])) return false;
+                    if (!Same(inputs[a].triangleTexture, inputs[b].triangleTexture) || !Same(inputs[a].triangleNormalMap, inputs[b].triangleNormalMap)) return false;
+                    var la = inputs[a].triangleLayers; var lb = inputs[b].triangleLayers;
+                    if ((la == null) != (lb == null)) return false;
+                    for (var l = 0; la != null && l < la.Length; l++) if (l >= lb.Length || !Same(la[l], lb[l])) return false;
+                    return true;
+                }
                 for (var p = 0; p < n; p++)
                 {
                     twin[p] = -1;
@@ -339,6 +352,11 @@ namespace NativeRemesher
                         solved = RemeshPipeline.Moved(run.results[q0], twinMap[p]);
                         if (solved?.extraction != null)
                         {
+                            if (SameLook(p, q0))
+                            {
+                                inputs[p].sameAs = q0;
+                                inputs[p].sameMirrored = twinMap[p].determinant < 0f;
+                            }
                             inputs[p].result = solved;
                             run.results.Add(solved);
                             Timing($"part '{names[p]}' (copy of '{names[q0]}', {solved.extraction.faces.Count} faces)");
@@ -498,6 +516,17 @@ namespace NativeRemesher
                            $"{solved?.extraction?.faces.Count ?? 0} faces, visible {(run.visibility != null ? run.visibility[p] : 1f):0.00})");
                 }
                 Timing("parts");
+                if (PartBake.texelsBySight && run.visibility != null)
+                    for (var p = 0; p < n; p++)
+                        inputs[p].texelScale = Mathf.Sqrt(PartBake.VisibilityWeight(run.visibility[p]));
+                if (PartBake.texelsByDetail)
+                {
+                    var density = new double[n];
+                    for (var p = 0; p < n; p++) density[p] = areas[p] > 0 ? inputs[p].triangles.Length / 3 / areas[p] : 0;
+                    var median = PartBake.AreaMedian(density, areas);
+                    for (var p = 0; p < n; p++)
+                        inputs[p].texelScale *= PartBake.DetailTexelScale(density[p], median);
+                }
                 if (bakeTexture && imageArray.Length > 0 || bakeNormals)
                     run.shared = PartBake.Bake(inputs, imageArray, bakeTexture && imageArray.Length > 0, bakeNormals,
                         bakeResolution, (stage, progress) =>
@@ -625,7 +654,7 @@ namespace NativeRemesher
                 return node;
             }
 
-            Texture2D baked = null, normalMap = null;
+            Texture2D baked = null, normalMap = null, occlusion = null;
             Dictionary<string, Texture2D> sharedLayers = null;
             if (run.shared != null)
             {
@@ -633,6 +662,7 @@ namespace NativeRemesher
                 if (run.shared.bakedTexture != null) baked = SaveBakedTexture(run.shared, sharedPath, root.name);
                 if (run.shared.bakedNormalMap != null) normalMap = SaveNormalMap(run.shared, sharedPath, root.name);
                 sharedLayers = SaveLayers(run.shared, sharedPath, root.name);
+                if (run.shared.bakedOcclusion != null) occlusion = SaveOcclusion(run.shared, sharedPath, root.name);
             }
             var made = new Dictionary<Material, Material>();
             Material blank = null;
@@ -647,6 +677,7 @@ namespace NativeRemesher
                 else if (mat.HasProperty("_MainTex") || mat.HasProperty("_BaseMap")) mat.mainTexture = null;
                 if (normalMap != null) AssignNormalMap(mat, normalMap);
                 AssignLayers(mat, sharedLayers);
+                AssignOcclusion(mat, occlusion);
                 if (folder != null)
                 {
                     var matName = string.Join("_", mat.name.Split(Path.GetInvalidFileNameChars()));

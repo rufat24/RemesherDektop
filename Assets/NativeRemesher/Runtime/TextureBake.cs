@@ -214,11 +214,17 @@ namespace NativeRemesher
         /// A UV per face corner: the faces unfolded into lattice charts and packed into a square
         /// atlas of <paramref name="resolution"/> texels.
         /// </summary>
-        public static Vector2[][] Unwrap(Vector3[] positions, IList<int[]> faces, int resolution, Stats stats)
+        public static Vector2[][] Unwrap(Vector3[] positions, IList<int[]> faces, int resolution, Stats stats,
+            float[] faceScale = null)
         {
             var watch = System.Diagnostics.Stopwatch.StartNew();
             stats.resolution = resolution;
             var charts = GrowCharts(positions, faces);
+            // A chart's texels per unit times its faces' scale (a chart lies on one part).
+            if (faceScale != null)
+                foreach (var c in charts)
+                    if (c.faces.Count > 0 && c.faces[0] < faceScale.Length && faceScale[c.faces[0]] > 0f)
+                        c.edge *= faceScale[c.faces[0]];
             stats.charts = charts.Count;
             foreach (var c in charts)
             {
@@ -1030,6 +1036,43 @@ namespace NativeRemesher
         public static float normalReachEdges = 1.5f;
 
         /// <summary>
+        /// With the normal map, an occlusion map of the source's cavities: how far below its
+        /// surroundings the source lies under each texel, darker the deeper. The normal map cannot
+        /// show a tyre's tread: a texel's line meets a block's top or a groove's floor, both facing
+        /// out, and never the groove's walls; the Ford's tyres came out bare.
+        /// </summary>
+        public static bool bakeCavity = true;
+
+        /// <summary>The depth below its surroundings, in mean output edges, at which a texel is darkest.</summary>
+        public static float cavityDepthEdges = 0.08f;
+
+        /// <summary>
+        /// The share of the darkest depth under which a texel is not darkened at all: where two of the
+        /// output's faces meet at an angle the source lies a little below their crease, and a panel's
+        /// quads drew lines over it.
+        /// </summary>
+        public static float cavityKnee = 0.4f;
+
+        /// <summary>How dark the deepest texels go (0: none, 1: black).</summary>
+        public static float cavityStrength = 0.85f;
+
+        /// <summary>
+        /// The source's depth under each texel also bent into the normal map, as a height map's
+        /// slopes: a groove's walls, which no texel's line meets, shade in direct light too (an
+        /// occlusion map darkens only the ambient light). 0: the source's normals only.
+        /// </summary>
+        public static float heightNormals = 1f;
+
+        /// <summary>Slopes under this (rise over run) add nothing, and the rest add this much less.</summary>
+        public static float heightSlopeKnee = 0.25f;
+
+        /// <summary>The steepest slope the height adds (rise over run): a step's wall is no steeper.</summary>
+        public static float heightMaxSlope = 2f;
+
+        /// <summary>The surroundings a texel's depth is measured against: this many mean output edges round it.</summary>
+        public static float cavityRadiusEdges = 1f;
+
+        /// <summary>
         /// Where a UV seam runs along a crease sharper than this (degrees between the sides'
         /// normals), a normal-mapped result's normals split there (CornerNormals); 0 keeps every
         /// vertex smooth, as before.
@@ -1210,9 +1253,15 @@ namespace NativeRemesher
             Vector3[] positions, IList<int[]> faces, Vector2[][] faceUvs, Vector3[] normals,
             Vector4[][] faceTangents, int resolution, Stats stats, Action<float> onProgress = null,
             Vector3[][] faceNormals = null, Vector2[] sourceUvs = null, int[] sourceTriangleNormalMap = null,
-            Image[] sourceNormalMaps = null)
+            Image[] sourceNormalMaps = null, Color32[] cavity = null)
         {
             var watch = System.Diagnostics.Stopwatch.StartNew();
+            // Per texel, the source's mean signed distance along the normal (out positive), where met.
+            var useHeight = heightNormals > 0f;
+            var depth = useHeight || cavity != null && cavity.Length == resolution * resolution ? new float[resolution * resolution] : null;
+            var depthMet = depth != null ? new bool[depth.Length] : null;
+            // World units per texel, per texel: what a texel's step in depth is a slope over.
+            var texelSize = depth != null ? new float[depth.Length] : null;
             var detail = SourceDetail.For(sourcePositions, sourceTriangles, sourceUvs, sourceTriangleNormalMap,
                 sourceNormalMaps, stats);
             // Source normals, smooth across its own seams: welded by position.
@@ -1277,10 +1326,14 @@ namespace NativeRemesher
             var done = 0;
             var ss = Math.Max(1, supersample);
 
-            Vector3 SourceNormal(Vector3 p, Vector3 n)
+            Vector3 SourceNormal(Vector3 p, Vector3 n, out float along, out bool met)
             {
-                if (grid.Raycast(p, n, reach, orientation, out _, out var tri, out var u, out var v))
+                along = 0f;
+                met = false;
+                if (grid.Raycast(p, n, reach, orientation, out var hit, out var tri, out var u, out var v))
                 {
+                    along = hit;
+                    met = true;
                     grid.TriangleCorners(tri, out var ia, out var ib, out var ic);
                     var sn = orientation * (At(tri, 0, ia) * (1f - u - v) + At(tri, 1, ib) * u + At(tri, 2, ic) * v);
                     if (Vector3.Dot(sn, n) > 0f)
@@ -1327,6 +1380,11 @@ namespace NativeRemesher
                             float d2 = sign * Cross(u0 - u2, cc - u2) / L20;
                             if (d0 < -k_Reach || d1 < -k_Reach || d2 < -k_Reach) continue;
                             var sum = Vector3.zero;
+                            var alongSum = 0f;
+                            var perTexel = texelSize != null
+                                ? Mathf.Sqrt(Vector3.Cross(positions[face[c1]] - positions[face[c0]], positions[face[c2]] - positions[face[c0]]).magnitude / Mathf.Abs(area))
+                                : 0f;
+                            var metCount = 0;
                             for (var sy = 0; sy < ss; sy++)
                                 for (var sx = 0; sx < ss; sx++)
                                 {
@@ -1343,7 +1401,8 @@ namespace NativeRemesher
                                     var t = new Vector3(t4.x, t4.y, t4.z);
                                     t = MeshMath.SafeNormalize(t - n * Vector3.Dot(n, t), Vector3.right);
                                     var b = Vector3.Cross(n, t) * (tg[c0].w < 0f ? -1f : 1f);
-                                    var sn = SourceNormal(p, n);
+                                    var sn = SourceNormal(p, n, out var along, out var met);
+                                    if (met) { alongSum += along; metCount++; }
                                     sum += new Vector3(Vector3.Dot(sn, t), Vector3.Dot(sn, b), Vector3.Dot(sn, n));
                                 }
                             var m = MeshMath.SafeNormalize(sum, Vector3.forward);
@@ -1353,11 +1412,28 @@ namespace NativeRemesher
                                 (byte)Mathf.Clamp(Mathf.RoundToInt((m.y * 0.5f + 0.5f) * 255f), 0, 255),
                                 (byte)Mathf.Clamp(Mathf.RoundToInt((m.z * 0.5f + 0.5f) * 255f), 0, 255), 255);
                             written[idx] = true;
+                            if (depth != null && metCount > 0)
+                            {
+                                depth[idx] = alongSum / metCount;
+                                depthMet[idx] = true;
+                                if (texelSize != null) texelSize[idx] = perTexel;
+                            }
                         }
                 }
                 var dn = System.Threading.Interlocked.Increment(ref done);
                 if (onProgress != null && (dn & 1023) == 0) onProgress((float)dn / faces.Count);
             });
+            // The depth's detail: under each texel, the depth less the mean of the texels round it.
+            // The shape the quads miss at a larger scale (a panel's curve between two loops) is in the
+            // source's normals already; added again as slopes, the Ford's body came out in waves.
+            var mean = depth != null
+                ? LocalMean(depth, depthMet, texelSize, cavityRadiusEdges * (float)(edgeSum / Math.Max(1, edgeCount)), resolution)
+                : null;
+            if (useHeight)
+                HeightSlopes(pixels, depth, mean, depthMet, texelSize, resolution, 0.25f * (float)(edgeSum / Math.Max(1, edgeCount)));
+            if (cavity != null && cavity.Length == resolution * resolution)
+                Cavity(depth, mean, depthMet, (bool[])written.Clone(), resolution,
+                    cavityDepthEdges * (float)(edgeSum / Math.Max(1, edgeCount)), cavity);
             // Gutters spread from the charts, as the colour bake's; with that off, flat.
             if (fillGutters) FillOutward(pixels, written, resolution);
             for (var i = 0; i < pixels.Length; i++)
@@ -1368,6 +1444,122 @@ namespace NativeRemesher
             stats.normalReach = reach;
             stats.normalFlipped = orientation < 0f;
             return pixels;
+        }
+
+        // The depth's slopes (central differences over the texels met; a step of more than `jump`,
+        // another surface met, is no slope) added to each texel's normal in tangent space: x along
+        // U, y along V, as the tangents are made.
+        static void HeightSlopes(Color32[] pixels, float[] depth, float[] mean, bool[] met, float[] texelSize, int resolution, float jump)
+        {
+            var n = resolution;
+            var bent = new Color32[pixels.Length];
+            Array.Copy(pixels, bent, pixels.Length);
+            Parallel.For(0, n, BackgroundScheduler.Options, y =>
+            {
+                for (var x = 0; x < n; x++)
+                {
+                    var i = y * n + x;
+                    if (!met[i] || !(texelSize[i] > 0f)) continue;
+                    float D(int k) => depth[k] - mean[k];
+                    float Slope(int a, int b, float span)
+                    {
+                        var ok0 = a >= 0 && met[a] && Mathf.Abs(depth[a] - depth[i]) < jump;
+                        var ok1 = b >= 0 && met[b] && Mathf.Abs(depth[b] - depth[i]) < jump;
+                        if (ok0 && ok1) return (D(b) - D(a)) / (2f * span);
+                        if (ok1) return (D(b) - D(i)) / span;
+                        if (ok0) return (D(i) - D(a)) / span;
+                        return 0f;
+                    }
+                    var s = texelSize[i];
+                    var gx = Mathf.Clamp(Slope(x > 0 ? i - 1 : -1, x + 1 < n ? i + 1 : -1, s), -heightMaxSlope, heightMaxSlope);
+                    var gy = Mathf.Clamp(Slope(y > 0 ? i - n : -1, y + 1 < n ? i + n : -1, s), -heightMaxSlope, heightMaxSlope);
+                    // Gentle slopes left out: they are the output's own faces meeting at an angle over
+                    // a smooth source, which drew bands along a panel's quads.
+                    gx = Mathf.Sign(gx) * Mathf.Max(0f, Mathf.Abs(gx) - heightSlopeKnee);
+                    gy = Mathf.Sign(gy) * Mathf.Max(0f, Mathf.Abs(gy) - heightSlopeKnee);
+                    if (gx == 0f && gy == 0f) continue;
+                    var c = pixels[i];
+                    var m = new Vector3(c.r / 127.5f - 1f, c.g / 127.5f - 1f, c.b / 127.5f - 1f);
+                    // Whiteout blend: the slopes' normal (-gx, -gy, 1) over the baked one.
+                    m = new Vector3(m.x - heightNormals * gx * m.z, m.y - heightNormals * gy * m.z, m.z);
+                    m = MeshMath.SafeNormalize(m, Vector3.forward);
+                    if (m.z < 0.05f) { m.z = 0.05f; m.Normalize(); }
+                    bent[i] = new Color32((byte)Mathf.Clamp(Mathf.RoundToInt((m.x * 0.5f + 0.5f) * 255f), 0, 255),
+                        (byte)Mathf.Clamp(Mathf.RoundToInt((m.y * 0.5f + 0.5f) * 255f), 0, 255),
+                        (byte)Mathf.Clamp(Mathf.RoundToInt((m.z * 0.5f + 0.5f) * 255f), 0, 255), 255);
+                }
+            });
+            Array.Copy(bent, pixels, pixels.Length);
+        }
+
+        // How far each texel's source lies below the mean of the texels round it (those met, within
+        // cavityRadiusEdges), as grey: white level or proud, darkest at `full` below. Gutters filled.
+        static void Cavity(float[] depth, float[] mean, bool[] met, bool[] written, int resolution, float full, Color32[] output)
+        {
+            for (var i = 0; i < output.Length; i++)
+            {
+                if (!met[i]) { output[i] = written[i] ? new Color32(255, 255, 255, 255) : default; continue; }
+                var below = full > 0f ? Mathf.Clamp01(((mean[i] - depth[i]) / full - cavityKnee) / (1f - cavityKnee)) : 0f;
+                var g = (byte)Mathf.RoundToInt(255f * (1f - cavityStrength * below));
+                output[i] = new Color32(g, g, g, 255);
+            }
+            if (fillGutters) FillOutward(output, written, resolution);
+            for (var i = 0; i < output.Length; i++)
+                if (output[i].a == 0) output[i] = new Color32(255, 255, 255, 255);
+        }
+
+        // The mean depth of the texels met within `radius` of each texel: box sums along rows,
+        // then columns, each only over the unbroken run of texels met it lies in -- a chart's,
+        // not its neighbours' in the atlas, which (another part's depths) blotched the Ford's panels.
+        static float[] LocalMean(float[] depth, bool[] met, float[] texelSize, float radius, int resolution)
+        {
+            var n = resolution;
+            // Each texel's radius in texels: `radius` in world units over its texel's size.
+            int R(int i) => texelSize[i] > 0f ? Mathf.Clamp(Mathf.RoundToInt(radius / texelSize[i]), 1, 128) : 1;
+            var rowSum = new float[n * n];
+            var rowCount = new int[n * n];
+            Parallel.For(0, n, BackgroundScheduler.Options, y =>
+            {
+                var prefix = new double[n + 1];
+                for (var x = 0; x < n;)
+                {
+                    if (!met[y * n + x]) { x++; continue; }
+                    var start = x;
+                    while (x < n && met[y * n + x]) { prefix[x + 1 - start] = prefix[x - start] + depth[y * n + x]; x++; }
+                    for (var k = start; k < x; k++)
+                    {
+                        var r = R(y * n + k);
+                        int lo = Math.Max(start, k - r), hi = Math.Min(x - 1, k + r);
+                        rowSum[y * n + k] = (float)(prefix[hi + 1 - start] - prefix[lo - start]);
+                        rowCount[y * n + k] = hi - lo + 1;
+                    }
+                }
+            });
+            var mean = new float[n * n];
+            Parallel.For(0, n, BackgroundScheduler.Options, x =>
+            {
+                var sums = new double[n + 1];
+                var counts = new long[n + 1];
+                for (var y = 0; y < n;)
+                {
+                    if (!met[y * n + x]) { y++; continue; }
+                    var start = y;
+                    while (y < n && met[y * n + x])
+                    {
+                        sums[y + 1 - start] = sums[y - start] + rowSum[y * n + x];
+                        counts[y + 1 - start] = counts[y - start] + rowCount[y * n + x];
+                        y++;
+                    }
+                    for (var k = start; k < y; k++)
+                    {
+                        var r = R(k * n + x);
+                        int lo = Math.Max(start, k - r), hi = Math.Min(y - 1, k + r);
+                        var c = counts[hi + 1 - start] - counts[lo - start];
+                        mean[k * n + x] = c > 0 ? (float)((sums[hi + 1 - start] - sums[lo - start]) / c) : depth[k * n + x];
+                    }
+                }
+            });
+            return mean;
         }
 
         /// <summary>
