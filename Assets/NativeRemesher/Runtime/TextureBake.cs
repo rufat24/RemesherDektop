@@ -68,6 +68,8 @@ namespace NativeRemesher
             public long unwrapMs, bakeMs;
             /// <summary>Normal map: texels whose ray found no source facing their way, and the ray's reach.</summary>
             public int normalMissed;
+            /// <summary>Normal map: samples bent by the source's own normal maps.</summary>
+            public int normalDetail;
             public long normalMs;
             public float normalReach;
             public bool normalFlipped;
@@ -96,6 +98,13 @@ namespace NativeRemesher
         /// chart is left with the ragged remainder of the one before (61 % used, skyline packed).
         /// </summary>
         public static int chartWindow = 0;
+
+        /// <summary>
+        /// A chart does not grow across an edge whose faces turn by more than this (degrees): the
+        /// lattice runs straight round a box's corner, and a chart folded over it leaves no seam
+        /// for the normals to split at (hardEdgeAngle). 0 = charts cross every edge, as before.
+        /// </summary>
+        public static float chartCreaseAngle = 40f;
 
         /// <summary>
         /// Lattice cells per side of the tiles a chart is cut into once grown: aligned to the
@@ -417,6 +426,14 @@ namespace NativeRemesher
                 return e.a == f ? e.b : e.a;
             }
 
+            // A chart stops at a crease: its seam is where a normal-mapped result's normals split.
+            var creaseCos = chartCreaseAngle > 0f ? Mathf.Cos(chartCreaseAngle * Mathf.Deg2Rad) : -2f;
+            var faceNormal = new Vector3[faces.Count];
+            if (chartCreaseAngle > 0f)
+                for (var f = 0; f < faces.Count; f++)
+                    if (faces[f] != null && faces[f].Length >= 3)
+                        faceNormal[f] = MeshMath.SafeNormalize(QuadExtractor.FaceNormal(positions, faces[f]), Vector3.zero);
+
             var taken = new bool[faces.Count];
             var charts = new List<Chart>();
             var place = new Dictionary<int, (int i, int j)>();
@@ -491,6 +508,7 @@ namespace NativeRemesher
                         int a = face[k], b = face[(k + 1) % 4];
                         var g = Across(f, a, b);
                         if (g < 0 || taken[g] || faces[g].Length != 4) continue;
+                        if (Vector3.Dot(faceNormal[f], faceNormal[g]) < creaseCos) continue;
                         var gf = faces[g];
                         // Wound as f, g runs the shared edge b -> a.
                         var m = -1;
@@ -937,13 +955,93 @@ namespace NativeRemesher
         public static float normalReachEdges = 1.5f;
 
         /// <summary>
+        /// Where a UV seam runs along a crease sharper than this (degrees between the sides'
+        /// normals), a normal-mapped result's normals split there (CornerNormals); 0 keeps every
+        /// vertex smooth, as before.
+        /// </summary>
+        /// <remarks>
+        /// Smooth across a box's corners, a vertex normal leans 45 degrees off both faces, and the
+        /// map has to bend every flat panel back over its whole width: the fuse box's door baked to
+        /// a ramp, its texels cast diagonally into the next face, and in URP the door read as a
+        /// lighter patch with a diagonal edge. Split, a flat panel bakes flat. Only at seams: a
+        /// split inside a chart would show as a crease the map cannot cover.
+        /// </remarks>
+        public static float hardEdgeAngle = 40f;
+
+        /// <summary>
+        /// Per face corner, its shading normal: the vertex's own, except at a vertex where the UV
+        /// charts meeting there face apart by more than <paramref name="hardAngle"/> -- then each
+        /// chart's corners take that chart's normal (angle-weighted over its faces at the vertex).
+        /// </summary>
+        public static Vector3[][] CornerNormals(Vector3[] positions, IList<int[]> faces, Vector2[][] faceUvs,
+            Vector3[] normals, float hardAngle)
+        {
+            var index = new Dictionary<(int, Vector2), int>();
+            var sum = new List<Vector3>();
+            var vertexOf = new List<int>();
+            var corner = new int[faces.Count][];
+            for (var f = 0; f < faces.Count; f++)
+            {
+                var face = faces[f];
+                var uv = faceUvs != null && f < faceUvs.Length ? faceUvs[f] : null;
+                if (face == null || face.Length < 3 || uv == null || uv.Length != face.Length) continue;
+                var fn = MeshMath.SafeNormalize(QuadExtractor.FaceNormal(positions, face), Vector3.zero);
+                corner[f] = new int[face.Length];
+                for (var k = 0; k < face.Length; k++)
+                {
+                    var key = (face[k], uv[k]);
+                    if (!index.TryGetValue(key, out var id))
+                    {
+                        id = sum.Count;
+                        index[key] = id;
+                        sum.Add(Vector3.zero);
+                        vertexOf.Add(face[k]);
+                    }
+                    corner[f][k] = id;
+                    var p = positions[face[k]];
+                    var a = positions[face[(k + face.Length - 1) % face.Length]] - p;
+                    var b = positions[face[(k + 1) % face.Length]] - p;
+                    sum[id] += fn * Vector3.Angle(a, b);
+                }
+            }
+            var group = new Vector3[sum.Count];
+            for (var id = 0; id < sum.Count; id++) group[id] = MeshMath.SafeNormalize(sum[id], normals[vertexOf[id]]);
+            // A vertex is hard when two of its charts face apart by more than the angle.
+            var cos = Mathf.Cos(Mathf.Clamp(hardAngle, 0f, 180f) * Mathf.Deg2Rad);
+            var first = new Dictionary<int, List<int>>();
+            for (var id = 0; id < group.Length; id++)
+            {
+                if (!first.TryGetValue(vertexOf[id], out var list)) first[vertexOf[id]] = list = new List<int>(2);
+                list.Add(id);
+            }
+            var hard = new HashSet<int>();
+            foreach (var pair in first)
+            {
+                var ids = pair.Value;
+                for (var i = 0; i < ids.Count && !hard.Contains(pair.Key); i++)
+                    for (var j = i + 1; j < ids.Count; j++)
+                        if (Vector3.Dot(group[ids[i]], group[ids[j]]) < cos) { hard.Add(pair.Key); break; }
+            }
+            var result = new Vector3[faces.Count][];
+            for (var f = 0; f < faces.Count; f++)
+            {
+                var face = faces[f];
+                if (face == null) continue;
+                result[f] = new Vector3[face.Length];
+                for (var k = 0; k < face.Length; k++)
+                    result[f][k] = corner[f] != null && hard.Contains(face[k]) ? group[corner[f][k]] : normals[face[k]];
+            }
+            return result;
+        }
+
+        /// <summary>
         /// Per face corner, the tangent (xyz) and handedness (w) the normal map is baked against:
         /// per (vertex, UV) pair -- a Unity vertex -- the UV-gradient tangents of its faces summed,
         /// made perpendicular to its normal. The mesh must carry exactly these (QuadExtractor.ToMesh
         /// writes them), or the shader decodes the map in another frame.
         /// </summary>
         public static Vector4[][] Tangents(Vector3[] positions, IList<int[]> faces, Vector2[][] faceUvs,
-            Vector3[] normals)
+            Vector3[] normals, Vector3[][] faceNormals = null)
         {
             var index = new Dictionary<(int, Vector2), int>();
             var tan = new List<Vector3>();
@@ -965,7 +1063,7 @@ namespace NativeRemesher
                         index[key] = id;
                         tan.Add(Vector3.zero);
                         bit.Add(Vector3.zero);
-                        nrm.Add(normals[face[k]]);
+                        nrm.Add(faceNormals?[f] != null && k < faceNormals[f].Length ? faceNormals[f][k] : normals[face[k]]);
                     }
                     corner[f][k] = id;
                 }
@@ -1027,11 +1125,21 @@ namespace NativeRemesher
         /// on cells of two -- comes back as shading: the low poly keeps the shape it can, the map
         /// carries the rest, which is how a game asset is made.
         /// </remarks>
+        /// <param name="sourceNormalMaps">
+        /// The source's own normal maps (tangent space, Unity's +Y green), read through
+        /// <paramref name="sourceUvs"/> where <paramref name="sourceTriangleNormalMap"/> gives a
+        /// triangle one: the detail they put on the source's surface is baked in with its shape.
+        /// Null: the source's geometry only.
+        /// </param>
         public static Color32[] BakeNormals(Vector3[] sourcePositions, int[] sourceTriangles,
             Vector3[] positions, IList<int[]> faces, Vector2[][] faceUvs, Vector3[] normals,
-            Vector4[][] faceTangents, int resolution, Stats stats, Action<float> onProgress = null)
+            Vector4[][] faceTangents, int resolution, Stats stats, Action<float> onProgress = null,
+            Vector3[][] faceNormals = null, Vector2[] sourceUvs = null, int[] sourceTriangleNormalMap = null,
+            Image[] sourceNormalMaps = null)
         {
             var watch = System.Diagnostics.Stopwatch.StartNew();
+            var detail = SourceDetail.For(sourcePositions, sourceTriangles, sourceUvs, sourceTriangleNormalMap,
+                sourceNormalMaps, stats);
             // Source normals, smooth across its own seams: welded by position.
             var weld = new Dictionary<Vector3, int>(sourcePositions.Length);
             var of = new int[sourcePositions.Length];
@@ -1048,6 +1156,11 @@ namespace NativeRemesher
                 welded[of[a]] += fn; welded[of[b]] += fn; welded[of[c]] += fn;
             }
             for (var i = 0; i < welded.Length; i++) welded[i] = MeshMath.SafeNormalize(welded[i], Vector3.up);
+            // Per triangle corner: smooth only over the faces round the vertex within hardEdgeAngle of
+            // this one, so a source's hard edges stay hard (welded by position, every box corner of
+            // the source baked as a rounded band). 0: the welded normals, as before.
+            var corners = hardEdgeAngle > 0f ? SourceCornerNormals(sourcePositions, sourceTriangles, of, weld.Count, hardEdgeAngle) : null;
+            Vector3 At(int tri, int k, int vertex) => corners != null ? corners[3 * tri + k] : welded[of[vertex]];
 
             double edgeSum = 0;
             var edgeCount = 0;
@@ -1094,14 +1207,18 @@ namespace NativeRemesher
                 if (grid.Raycast(p, n, reach, orientation, out _, out var tri, out var u, out var v))
                 {
                     grid.TriangleCorners(tri, out var ia, out var ib, out var ic);
-                    var sn = orientation * (welded[of[ia]] * (1f - u - v) + welded[of[ib]] * u + welded[of[ic]] * v);
-                    if (Vector3.Dot(sn, n) > 0f) return sn.normalized;
+                    var sn = orientation * (At(tri, 0, ia) * (1f - u - v) + At(tri, 1, ib) * u + At(tri, 2, ic) * v);
+                    if (Vector3.Dot(sn, n) > 0f)
+                    {
+                        sn = sn.normalized;
+                        return detail != null ? detail.Apply(sn, n, tri, ia, ib, ic, u, v) : sn;
+                    }
                 }
                 System.Threading.Interlocked.Increment(ref missed);
                 grid.NearestDistance(p, out var near);
                 if (near < 0) return n;
                 grid.TriangleCorners(near, out var ja, out var jb, out var jc);
-                var fallback = orientation * (welded[of[ja]] + welded[of[jb]] + welded[of[jc]]).normalized;
+                var fallback = orientation * (At(near, 0, ja) + At(near, 1, jb) + At(near, 2, jc)).normalized;
                 return Vector3.Dot(fallback, n) > 0f ? fallback : n;
             }
 
@@ -1111,6 +1228,8 @@ namespace NativeRemesher
                 var uv = faceUvs[f];
                 var tg = faceTangents[f];
                 if (face == null || uv == null || tg == null || face.Length < 3 || uv.Length != face.Length) return;
+                var cn = faceNormals?[f] != null && faceNormals[f].Length == face.Length ? faceNormals[f] : null;
+                Vector3 N(int k) => cn != null ? cn[k] : normals[face[k]];
                 for (var i = 1; i + 1 < face.Length; i++)
                 {
                     Vector2 u0 = uv[0] * resolution, u1 = uv[i] * resolution, u2 = uv[i + 1] * resolution;
@@ -1144,8 +1263,7 @@ namespace NativeRemesher
                                     var w0 = 1f - w1 - w2;
                                     var p = positions[face[c0]] * w0 + positions[face[c1]] * w1 + positions[face[c2]] * w2;
                                     // As the shader: interpolated, then normalised.
-                                    var n = MeshMath.SafeNormalize(normals[face[c0]] * w0 + normals[face[c1]] * w1
-                                                                   + normals[face[c2]] * w2, Vector3.up);
+                                    var n = MeshMath.SafeNormalize(N(c0) * w0 + N(c1) * w1 + N(c2) * w2, Vector3.up);
                                     var t4 = tg[c0] * w0 + tg[c1] * w1 + tg[c2] * w2;
                                     var t = new Vector3(t4.x, t4.y, t4.z);
                                     t = MeshMath.SafeNormalize(t - n * Vector3.Dot(n, t), Vector3.right);
@@ -1170,10 +1288,129 @@ namespace NativeRemesher
             for (var i = 0; i < pixels.Length; i++)
                 if (!written[i] && pixels[i].a == 0) pixels[i] = new Color32(128, 128, 255, 255);
             stats.normalMissed = missed;
+            stats.normalDetail = detail?.applied ?? 0;
             stats.normalMs = watch.ElapsedMilliseconds;
             stats.normalReach = reach;
             stats.normalFlipped = orientation < 0f;
             return pixels;
+        }
+
+        /// <summary>
+        /// Per corner of each source triangle, the area-weighted normal of the faces round its
+        /// (welded) vertex that turn from this triangle by at most <paramref name="angle"/>.
+        /// </summary>
+        static Vector3[] SourceCornerNormals(Vector3[] positions, int[] triangles, int[] weldOf, int weldCount, float angle)
+        {
+            var count = triangles.Length / 3;
+            var faceNormal = new Vector3[count];
+            for (var t = 0; t < count; t++)
+                faceNormal[t] = Vector3.Cross(positions[triangles[3 * t + 1]] - positions[triangles[3 * t]],
+                    positions[triangles[3 * t + 2]] - positions[triangles[3 * t]]);
+            // Triangles round each welded vertex, as a CSR list.
+            var start = new int[weldCount + 1];
+            foreach (var v in triangles) start[weldOf[v] + 1]++;
+            for (var i = 0; i < weldCount; i++) start[i + 1] += start[i];
+            var fill = (int[])start.Clone();
+            var around = new int[triangles.Length];
+            for (var c = 0; c < triangles.Length; c++) around[fill[weldOf[triangles[c]]]++] = c / 3;
+            var cos = Mathf.Cos(angle * Mathf.Deg2Rad);
+            var result = new Vector3[triangles.Length];
+            Parallel.For(0, count, BackgroundScheduler.Options, t =>
+            {
+                var own = MeshMath.SafeNormalize(faceNormal[t], Vector3.zero);
+                for (var k = 0; k < 3; k++)
+                {
+                    var w = weldOf[triangles[3 * t + k]];
+                    var sum = Vector3.zero;
+                    for (var i = start[w]; i < start[w + 1]; i++)
+                    {
+                        var other = around[i];
+                        var n = faceNormal[other];
+                        var m = n.magnitude;
+                        if (m > 0f && Vector3.Dot(own, n) >= cos * m) sum += n;
+                    }
+                    result[3 * t + k] = MeshMath.SafeNormalize(sum, own);
+                }
+            });
+            return result;
+        }
+
+        /// <summary>
+        /// The source's normal maps, ready to read at a point of a source triangle: per triangle its
+        /// map and the tangent frame its UVs give it, and the mip level matching how many of the
+        /// map's texels fall on one output texel.
+        /// </summary>
+        sealed class SourceDetail
+        {
+            Mips[] maps;
+            int[] triangleMap;
+            Vector2[] uvs;
+            Vector4[] tangent;   // per source triangle: xyz tangent, w handedness
+            float level;
+            public int applied;
+
+            public static SourceDetail For(Vector3[] positions, int[] triangles, Vector2[] uvs, int[] triangleMap,
+                Image[] images, Stats stats)
+            {
+                if (images == null || images.Length == 0 || uvs == null || uvs.Length != positions.Length
+                    || triangleMap == null || triangleMap.Length < triangles.Length / 3)
+                    return null;
+                var d = new SourceDetail { triangleMap = triangleMap, uvs = uvs, maps = new Mips[images.Length] };
+                for (var i = 0; i < images.Length; i++)
+                    if (images[i] != null) d.maps[i] = new Mips(images[i]);
+                var count = triangles.Length / 3;
+                d.tangent = new Vector4[count];
+                double uvArea = 0, worldArea = 0;
+                for (var t = 0; t < count; t++)
+                {
+                    var map = triangleMap[t];
+                    if (map < 0 || map >= images.Length || images[map] == null) continue;
+                    int a = triangles[3 * t], b = triangles[3 * t + 1], c = triangles[3 * t + 2];
+                    Vector3 e1 = positions[b] - positions[a], e2 = positions[c] - positions[a];
+                    Vector2 d1 = uvs[b] - uvs[a], d2 = uvs[c] - uvs[a];
+                    var det = d1.x * d2.y - d2.x * d1.y;
+                    var fn = Vector3.Cross(e1, e2);
+                    worldArea += fn.magnitude * 0.5;
+                    uvArea += Mathf.Abs(det) * 0.5 * images[map].width * images[map].height;
+                    if (Mathf.Abs(det) < 1e-20f) continue;
+                    var r = 1f / det;
+                    var tan = (e1 * d2.y - e2 * d1.y) * r;
+                    var bit = (e2 * d1.x - e1 * d2.x) * r;
+                    var w = Vector3.Dot(Vector3.Cross(fn, tan), bit) < 0f ? -1f : 1f;
+                    var tl = tan.magnitude;
+                    if (tl > 0f) d.tangent[t] = new Vector4(tan.x / tl, tan.y / tl, tan.z / tl, w);
+                }
+                var outputDensity = (double)stats.texelsPerUnit * stats.texelsPerUnit * supersample * supersample;
+                var sourceDensity = worldArea > 0 ? uvArea / worldArea : 0;
+                d.level = outputDensity > 0 && sourceDensity > 0
+                    ? Mathf.Max(0f, 0.5f * Mathf.Log((float)(sourceDensity / outputDensity), 2f))
+                    : 0f;
+                return d;
+            }
+
+            /// <summary>The smooth source normal <paramref name="sn"/> at a point of a triangle, bent by its normal map.</summary>
+            public Vector3 Apply(Vector3 sn, Vector3 facing, int tri, int ia, int ib, int ic, float u, float v)
+            {
+                if (tri < 0 || tri >= tangent.Length) return sn;
+                var map = triangleMap[tri];
+                if (map < 0 || map >= maps.Length || maps[map] == null) return sn;
+                var t4 = tangent[tri];
+                if (t4.w == 0f) return sn;
+                var uv = uvs[ia] * (1f - u - v) + uvs[ib] * u + uvs[ic] * v;
+                var c = maps[map].Sample(uv, level);
+                var tn = new Vector3(c.x / 127.5f - 1f, c.y / 127.5f - 1f, c.z / 127.5f - 1f);
+                if (tn.sqrMagnitude < 1e-6f) return sn;
+                tn.Normalize();
+                var t = new Vector3(t4.x, t4.y, t4.z);
+                t -= sn * Vector3.Dot(sn, t);
+                if (t.sqrMagnitude < 1e-12f) return sn;
+                t.Normalize();
+                var b = Vector3.Cross(sn, t) * t4.w;
+                var bent = (t * tn.x + b * tn.y + sn * tn.z).normalized;
+                if (Vector3.Dot(bent, facing) <= 0f) return sn;
+                System.Threading.Interlocked.Increment(ref applied);
+                return bent;
+            }
         }
 
         // Empty texels take the mean of their written neighbours, ring by ring, until none is

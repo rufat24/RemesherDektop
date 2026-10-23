@@ -29,6 +29,9 @@ namespace NativeRemesher
 {
     public sealed class QuadExtractionResult
     {
+        /// <summary>A copy sharing every field (arrays and the face list included); the caller replaces what it changes.</summary>
+        public QuadExtractionResult ShallowCopy() => (QuadExtractionResult)MemberwiseClone();
+
         /// <summary>Set when the quads were traced off a parametrisation (see ParametrizationTrace).</summary>
         public Extraction.ParametrizationTraceStats parametrizationTraceStats;
 
@@ -98,6 +101,13 @@ namespace NativeRemesher
         /// null when there is none. ToMesh writes them as the mesh's tangents.
         /// </summary>
         public Vector4[][] faceTangents;
+
+        /// <summary>
+        /// Per face corner, the shading normal a baked normal map was made against, split at hard
+        /// edges (TextureBake.CornerNormals); null when the vertices' shading normals are used.
+        /// ToMesh writes them as the mesh's normals.
+        /// </summary>
+        public Vector3[][] faceNormals;
 
         /// <summary>
         /// Per face, the input material (submesh) it lies on, when materials were kept (see
@@ -1614,6 +1624,12 @@ namespace NativeRemesher
             var srcNormals = extraction.normals != null && extraction.normals.Length == source.Length
                 ? extraction.normals
                 : null;
+            // Split at hard edges, the corners' own; they split only where the UVs do, so one
+            // (vertex, UV) pair has one.
+            var corners = extraction.faceNormals != null && extraction.faceNormals.Length == extraction.faces.Count
+                ? extraction.faceNormals
+                : null;
+            if (corners != null && srcShading == null) srcShading = srcNormals ?? new Vector3[source.Length];
 
             var map = new Dictionary<(int, Vector2), int>(source.Length * 5 / 4);
             var outPositions = new List<Vector3>(source.Length);
@@ -1642,7 +1658,7 @@ namespace NativeRemesher
                         map.Add(key, index);
                         outPositions.Add(source[face[k]]);
                         outUvs.Add(faceUv[k]);
-                        outShading?.Add(srcShading[face[k]]);
+                        outShading?.Add(corners?[f] != null && k < corners[f].Length ? corners[f][k] : srcShading[face[k]]);
                         outNormals?.Add(srcNormals[face[k]]);
                         outTangents?.Add(srcTangents[f] != null && k < srcTangents[f].Length ? srcTangents[f][k] : new Vector4(1f, 0f, 0f, 1f));
                     }

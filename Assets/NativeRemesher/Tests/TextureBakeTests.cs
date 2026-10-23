@@ -74,6 +74,135 @@ namespace NativeRemesher.Tests
             Assert.Less(worst, 3f, stats.ToString());
         }
 
+        // A cube of n x n quads a side, welded, wound outwards.
+        static List<int[]> Cube(int n, out Vector3[] positions)
+        {
+            var index = new Dictionary<Vector3Int, int>();
+            var p = new List<Vector3>();
+            var faces = new List<int[]>();
+            int V(Vector3Int k)
+            {
+                if (!index.TryGetValue(k, out var i)) { i = p.Count; index[k] = i; p.Add((Vector3)k / n - Vector3.one * 0.5f); }
+                return i;
+            }
+            for (var axis = 0; axis < 3; axis++)
+                for (var side = 0; side < 2; side++)
+                {
+                    var u = (axis + 1) % 3;
+                    var v = (axis + 2) % 3;
+                    for (var a = 0; a < n; a++)
+                        for (var b = 0; b < n; b++)
+                        {
+                            var q = new Vector3Int[4];
+                            var corners = new[] { (a, b), (a + 1, b), (a + 1, b + 1), (a, b + 1) };
+                            for (var k = 0; k < 4; k++)
+                            {
+                                var c = new int[3];
+                                c[axis] = side * n; c[u] = corners[k].Item1; c[v] = corners[k].Item2;
+                                q[k] = new Vector3Int(c[0], c[1], c[2]);
+                            }
+                            var face = new[] { V(q[0]), V(q[1]), V(q[2]), V(q[3]) };
+                            if (side == 0) System.Array.Reverse(face);
+                            faces.Add(face);
+                        }
+                }
+            positions = p.ToArray();
+            return faces;
+        }
+
+        static float MeanTilt(Color32[] map)
+        {
+            double sum = 0;
+            var count = 0;
+            foreach (var c in map)
+            {
+                var n = new Vector3(c.r / 127.5f - 1f, c.g / 127.5f - 1f, c.b / 127.5f - 1f);
+                sum += Vector3.Angle(n, Vector3.forward);
+                count++;
+            }
+            return (float)(sum / count);
+        }
+
+        [Test]
+        public void ABoxBakesFlatOnceItsEdgesAreHard()
+        {
+            // Smooth across its corners a vertex normal leans 45 degrees off both faces, and the map
+            // bends every panel back over its width (the fuse box's door, which read as a lighter
+            // patch in URP); split where the charts are cut, the panels bake flat.
+            var faces = Cube(4, out var positions);
+            var source = Cube(16, out var sp);
+            var st = new List<int>();
+            foreach (var f in source) st.AddRange(new[] { f[0], f[1], f[2], f[0], f[2], f[3] });
+            float Bake(float angle)
+            {
+                var hardWas = TextureBake.hardEdgeAngle;
+                var creaseWas = TextureBake.chartCreaseAngle;
+                TextureBake.hardEdgeAngle = TextureBake.chartCreaseAngle = angle;
+                try
+                {
+                    var ex = new QuadExtractionResult { positions = positions, faces = faces, quadCount = faces.Count };
+                    ex.shadingNormals = Extraction.NormalRecalculator.Compute(faces, positions, null);
+                    var result = new RemeshResult { extraction = ex };
+                    RemeshPipeline.BakeNormalMap(result, sp, st.ToArray(), 256);
+                    return MeanTilt(result.bakedNormalMap);
+                }
+                finally
+                {
+                    TextureBake.hardEdgeAngle = hardWas;
+                    TextureBake.chartCreaseAngle = creaseWas;
+                }
+            }
+            var smooth = Bake(0f);
+            var hard = Bake(40f);
+            Assert.Greater(smooth, 10f);
+            Assert.Less(hard, 2f, $"smooth {smooth:0.0}");
+        }
+
+        [Test]
+        public void TheSourcesOwnNormalMapIsBakedIn()
+        {
+            // The same flat grid as source and result; the source's map tilts every point 17 degrees
+            // towards its +u, which runs along +x: baked, the result's map decodes to that tilt.
+            const int n = 6;
+            var faces = Grid(n, out var positions);
+            var st = new List<int>();
+            foreach (var f in faces) st.AddRange(new[] { f[0], f[1], f[2], f[0], f[2], f[3] });
+            var suv = new Vector2[positions.Length];
+            for (var i = 0; i < suv.Length; i++) suv[i] = new Vector2(positions[i].x / n, positions[i].z / n);
+            var tilt = new Vector3(0.3f, 0f, 1f).normalized;
+            var px = new Color32[16 * 16];
+            for (var i = 0; i < px.Length; i++)
+                px[i] = new Color32((byte)((tilt.x * 0.5f + 0.5f) * 255f), 128, (byte)((tilt.z * 0.5f + 0.5f) * 255f), 255);
+            var maps = new[] { new TextureBake.Image(px, 16, 16) };
+            var triangleMap = new int[st.Count / 3];
+            var normals = new Vector3[positions.Length];
+            for (var i = 0; i < normals.Length; i++) normals[i] = Vector3.up;
+            const int res = 256;
+            var stats = new TextureBake.Stats();
+            var uvs = TextureBake.Unwrap(positions, faces, res, stats);
+            var tangents = TextureBake.Tangents(positions, faces, uvs, normals);
+            // The source a little above, so every texel's line meets it.
+            var sp = new Vector3[positions.Length];
+            for (var i = 0; i < sp.Length; i++) sp[i] = positions[i] + Vector3.up * 0.05f;
+            var map = TextureBake.BakeNormals(sp, st.ToArray(), positions, faces, uvs, normals, tangents, res, stats,
+                null, null, suv, triangleMap, maps);
+            var expected = new Vector3(tilt.x, tilt.z, 0f).normalized;
+            var worst = 0f;
+            for (var f = 0; f < faces.Count; f++)
+            {
+                var uv = (uvs[f][0] + uvs[f][1] + uvs[f][2] + uvs[f][3]) / 4f;
+                var c = map[Mathf.FloorToInt(uv.y * res) * res + Mathf.FloorToInt(uv.x * res)];
+                var ts = new Vector3(c.r / 127.5f - 1f, c.g / 127.5f - 1f, c.b / 127.5f - 1f);
+                var t4 = (tangents[f][0] + tangents[f][1] + tangents[f][2] + tangents[f][3]) / 4f;
+                var t = new Vector3(t4.x, t4.y, t4.z).normalized;
+                var b = Vector3.Cross(Vector3.up, t) * (tangents[f][0].w < 0f ? -1f : 1f);
+                var world = (t * ts.x + b * ts.y + Vector3.up * ts.z).normalized;
+                worst = Mathf.Max(worst, Vector3.Angle(world, expected));
+            }
+            Assert.Greater(stats.normalDetail, 0);
+            Assert.Less(worst, 3f);
+        }
+
         [Test]
         public void MeshCarriesTheBakedTangents()
         {

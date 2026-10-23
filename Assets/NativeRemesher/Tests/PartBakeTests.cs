@@ -107,5 +107,36 @@ namespace NativeRemesher.Tests
             var perQuadB = AreaOf(1) / b.result.extraction.faces.Count;
             Assert.AreEqual(4f, perQuadB / perQuadA, 0.6f, "texel density alike on both parts");
         }
+
+        [Test]
+        public void ATurnedMirroredCopyOfAPartIsFoundAndItsResultMovedOver()
+        {
+            var random = new System.Random(9);
+            var a = new Vector3[60];
+            for (var i = 0; i < a.Length; i++)
+                a[i] = new Vector3((float)random.NextDouble(), (float)random.NextDouble(), (float)random.NextDouble()) * 40f;
+            var triangles = new int[90];
+            for (var i = 0; i < triangles.Length; i++) triangles[i] = random.Next(a.Length);
+            var map = Matrix4x4.TRS(new Vector3(300f, -20f, 5f), Quaternion.Euler(10f, 170f, -30f), new Vector3(-1f, 1f, 1f));
+            var b = new Vector3[a.Length];
+            for (var i = 0; i < b.Length; i++) b[i] = map.MultiplyPoint3x4(a[i]);
+            Assert.That(RemeshPipeline.SameShape(a, triangles, b, triangles, out var found), Is.True);
+            for (var i = 0; i < a.Length; i++) Assert.That((found.MultiplyPoint3x4(a[i]) - b[i]).magnitude, Is.LessThan(1e-3f));
+
+            // A copy with one vertex out of place is another part.
+            var c = (Vector3[])b.Clone();
+            c[7] += Vector3.up * 0.5f;
+            Assert.That(RemeshPipeline.SameShape(a, triangles, c, triangles, out _), Is.False);
+
+            // Moved over a mirror, a face is wound back, so it still faces out.
+            var ex = new QuadExtractionResult { positions = new[] { Vector3.zero, Vector3.right, Vector3.forward, Vector3.right + Vector3.forward } };
+            ex.faces.Add(new[] { 0, 2, 3, 1 });
+            var moved = RemeshPipeline.Moved(new RemeshResult { extraction = ex }, found);
+            var before = QuadExtractor.FaceNormal(ex.positions, ex.faces[0]).normalized;
+            var after = QuadExtractor.FaceNormal(moved.extraction.positions, moved.extraction.faces[0]).normalized;
+            var expected = found.inverse.transpose.MultiplyVector(before).normalized;
+            Assert.That(Vector3.Dot(after, expected), Is.GreaterThan(0.99f));
+            Assert.That(ex.faces[0], Is.EqualTo(new[] { 0, 2, 3, 1 }), "the original is left as it was");
+        }
     }
 }

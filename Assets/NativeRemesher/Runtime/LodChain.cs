@@ -69,6 +69,7 @@ namespace NativeRemesher
             public List<int[]> faces;
             public Vector2[][] faceUvs;
             public Vector4[][] faceTangents;
+            public Vector3[][] faceNormals;
             public Vector3[] normals;
             public int[] faceMaterials;
             /// <summary>Largest distance between this level and the base (either way), in the input's units; for the base, from the source.</summary>
@@ -375,6 +376,7 @@ namespace NativeRemesher
                 faces = level.faces,
                 faceUvs = level.faceUvs,
                 faceTangents = level.faceTangents,
+                faceNormals = level.faceNormals,
                 normals = level.normals,
                 shadingNormals = level.normals ?? Extraction.NormalRecalculator.Compute(level.faces, level.positions, null),
                 faceMaterials = level.faceMaterials,

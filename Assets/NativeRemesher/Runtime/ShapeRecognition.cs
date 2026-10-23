@@ -19,8 +19,12 @@
 //   open border  boundary length over the square root of the area, welded by position so a UV
 //                seam is not a border.  ccnb 4.5; closed sculpts 0; one open helmet shell 9.5.
 //
+//   flat dirs    share of the area in the 8 fullest of 1,536 normal-direction bins.  White house
+//                0.46, ccnb 0.69; characters, helmet parts, the plant 0.03-0.06.
+//
 // Hard surface needs both of the first two -- quads alone would take a ZRemesher character for a
-// car. A scan is an open, dense, unstructured mesh. Everything else is sculpted or organic.
+// car. A scan is an open, dense, unstructured mesh, or an unstructured one whose surface faces a
+// few ways (a dense building). Everything else is sculpted or organic.
 
 using System;
 using System.Collections.Generic;
@@ -55,12 +59,14 @@ namespace NativeRemesher
         public float elongated;
         /// <summary>Boundary length over the square root of the area.</summary>
         public float openBorder;
+        /// <summary>Share of the area whose normals fall in the 8 fullest of 1,536 direction bins: a building's walls and roof planes.</summary>
+        public float flatDirections;
         public int triangles;
         /// <summary>False when nothing was measured (no mesh, or not asked).</summary>
         public bool measured;
 
         public override string ToString() =>
-            $"quad pairs {quadPairs:P0}, elongated {elongated:P0}, open border {openBorder:F1}";
+            $"quad pairs {quadPairs:P0}, elongated {elongated:P0}, open border {openBorder:F1}, flat directions {flatDirections:P0}";
     }
 
     public static class ShapeRecognition
@@ -71,6 +77,16 @@ namespace NativeRemesher
         public static float elongatedThreshold = 0.12f;
         /// <summary>Open border at or above this makes an unstructured mesh a scan.</summary>
         public static float openBorderThreshold = 2f;
+        /// <summary>
+        /// Flat directions at or above this make an unstructured mesh a scan too: a building or a
+        /// prop sculpted or scanned dense, its walls facing a few ways.
+        /// </summary>
+        /// <remarks>
+        /// The white house (1.8M triangles, closed, 3 % quad pairs) is 46 %; the helmet's head and
+        /// horn 3-6 %, the plant 3 %. Read as a character it came out with rounded walls and
+        /// soft eaves, as hard surface with its lower walls holed; as a scan, flat and sharp.
+        /// </remarks>
+        public static float flatDirectionsThreshold = 0.25f;
 
         /// <summary>Angle from square, in degrees, still read as a quad's corner.</summary>
         const float k_SquareTolerance = 8f;
@@ -82,6 +98,7 @@ namespace NativeRemesher
             if (signals.quadPairs >= quadPairThreshold && signals.elongated >= elongatedThreshold)
                 return ModelType.HardSurface;
             if (signals.openBorder >= openBorderThreshold) return ModelType.Scan;
+            if (flatDirectionsThreshold > 0f && signals.flatDirections >= flatDirectionsThreshold) return ModelType.Scan;
             return ModelType.Character;
         }
 
@@ -163,12 +180,46 @@ namespace NativeRemesher
                 i = j;
             }
 
+            signals.flatDirections = FlatDirections(positions, triangles);
             signals.triangles = triangleCount;
             signals.quadPairs = Mathf.Min(1f, 2f * pairs / triangleCount);
             signals.elongated = pairs > 0 ? elongated / (float)pairs : 0f;
             signals.openBorder = area > 0 ? (float)(border / Math.Sqrt(area)) : 0f;
             signals.measured = true;
             return signals;
+        }
+
+        /// <summary>
+        /// Share of the area in the 8 fullest of 6 x 16 x 16 cube-map bins of face normal.
+        /// </summary>
+        public static float FlatDirections(Vector3[] positions, int[] triangles)
+        {
+            const int n = 16;
+            var bins = new double[6 * n * n];
+            double total = 0;
+            for (var t = 0; t + 2 < triangles.Length; t += 3)
+            {
+                var c = Vector3.Cross(positions[triangles[t + 1]] - positions[triangles[t]],
+                    positions[triangles[t + 2]] - positions[triangles[t]]);
+                var area = c.magnitude;
+                if (!(area > 0f)) continue;
+                var d = c / area;
+                float ax = Mathf.Abs(d.x), ay = Mathf.Abs(d.y), az = Mathf.Abs(d.z);
+                int face;
+                float u, v;
+                if (ax >= ay && ax >= az) { face = d.x > 0 ? 0 : 1; u = d.y / ax; v = d.z / ax; }
+                else if (ay >= az) { face = d.y > 0 ? 2 : 3; u = d.x / ay; v = d.z / ay; }
+                else { face = d.z > 0 ? 4 : 5; u = d.x / az; v = d.y / az; }
+                var i = Mathf.Clamp((int)((u * 0.5f + 0.5f) * n), 0, n - 1);
+                var j = Mathf.Clamp((int)((v * 0.5f + 0.5f) * n), 0, n - 1);
+                bins[(face * n + j) * n + i] += area;
+                total += area;
+            }
+            if (total <= 0) return 0f;
+            Array.Sort(bins);
+            double top = 0;
+            for (var k = 1; k <= 8; k++) top += bins[bins.Length - k];
+            return (float)(top / total);
         }
 
         // The corner at `o` facing the edge p0-p1 is within the tolerance of square.

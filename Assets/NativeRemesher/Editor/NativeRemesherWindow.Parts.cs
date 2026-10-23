@@ -41,6 +41,8 @@ namespace NativeRemesher
             // Main thread: every part's arrays, materials and textures, and where it sits in the root.
             var images = new List<TextureBake.Image>();
             var read = new Dictionary<Texture, int>();
+            var normalImages = new List<TextureBake.Image>();
+            var normalRead = new Dictionary<Texture, int>();
             var inputs = new List<PartBake.Part>();
             var areas = new List<double>();
             var materials = new List<Material[]>();
@@ -48,6 +50,7 @@ namespace NativeRemesher
             var rawUvs = new List<Vector2[]>();
             var paints = new List<DensityPaint>();
             var floors = new List<int>();
+            var pieces = new List<int>();
             var occludes = new List<bool>();
             var toRoot = root.transform.worldToLocalMatrix;
             foreach (var go in parts)
@@ -57,14 +60,24 @@ namespace NativeRemesher
                 var renderer = go.GetComponent<Renderer>();
                 var mats = renderer != null ? renderer.sharedMaterials : new Material[0];
                 var textures = bakeTexture && uvs != null ? ReadTextures(mats, submesh, triangles.Length / 3, images, read) : null;
+                var detail = bakeNormals && uvs != null
+                    ? ReadTextures(mats, submesh, triangles.Length / 3, normalImages, normalRead, normalMaps: true)
+                    : null;
+                // A part with a normal map and no texture still needs its UVs, its triangles reading no colour.
+                if (textures == null && detail != null)
+                {
+                    textures = new int[triangles.Length / 3];
+                    for (var t = 0; t < textures.Length; t++) textures[t] = -1;
+                }
                 var toModel = toRoot * go.transform.localToWorldMatrix;
                 inputs.Add(new PartBake.Part
                 {
                     positions = positions, triangles = triangles, toModel = toModel,
-                    uvs = textures != null ? uvs : null, triangleTexture = textures,
+                    uvs = textures != null ? uvs : null, triangleTexture = textures, triangleNormalMap = detail,
                 });
                 areas.Add(PartBake.Area(positions, triangles, toModel));
-                floors.Add(PartBake.Floor(positions, triangles));
+                pieces.Add(PartBake.Pieces(positions, triangles));
+                floors.Add(PartBake.Floor(pieces[pieces.Count - 1], triangles.Length / 3));
                 materials.Add(mats);
                 occludes.Add(!SeeThrough(mats));
                 submeshes.Add(submesh);
@@ -125,6 +138,7 @@ namespace NativeRemesher
             m_Cancel = new System.Threading.CancellationTokenSource();
             var token = m_Cancel.Token;
             var imageArray = images.ToArray();
+            var normalImageArray = normalImages.ToArray();
 
             s_Scheduler ??= new BackgroundScheduler();
             m_PartsJob = s_Scheduler.Run(() =>
@@ -156,6 +170,18 @@ namespace NativeRemesher
                     if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {stage} by {watch.ElapsedMilliseconds} ms");
                 }
                 Timing("visibility");
+                // The floors together at most a share of the budget: held at 20 quads a piece, the
+                // Ford's grille, licence plates and badges (letters, bars: hundreds of pieces) took
+                // 9,500 of its 26,000 faces and left its body 374.
+                long floorSum = 0;
+                foreach (var f in partFloors) floorSum += f;
+                var floorBudget = (long)(floorShare * settings.targetQuadCount);
+                if (floorShare > 0f && floorSum > floorBudget && floorSum > 16L * n)
+                {
+                    var scale = (double)(floorBudget - 16L * n) / System.Math.Max(1, floorSum - 16L * n);
+                    for (var p = 0; p < n; p++)
+                        partFloors[p] = 16 + (int)System.Math.Round(System.Math.Max(0, partFloors[p] - 16) * System.Math.Max(0.0, scale));
+                }
                 var targets = PartBake.SplitTarget(weighted, settings.targetQuadCount, 16, partFloors);
                 run.targets = targets;
 
@@ -194,6 +220,22 @@ namespace NativeRemesher
                         if (strips[p] != null && QuadReduction.logStats)
                             Debug.Log($"[Native Remesher] {names[p]}: {(strips[p].reduced ? "strips" : "remesher")} {strips[p].stats}");
                 }
+                // Copies of a part (the Ford's four tyres, the Porsche's two 554k-triangle wheels):
+                // the same triangles and one map between their vertices. Solved once, moved into place.
+                var twin = new int[n];
+                var twinMap = new Matrix4x4[n];
+                for (var p = 0; p < n; p++)
+                {
+                    twin[p] = -1;
+                    if (!sameParts) continue;
+                    for (var q = 0; q < p; q++)
+                        if (twin[q] < 0 && RemeshPipeline.SameShape(inputs[q].positions, inputs[q].triangles,
+                                inputs[p].positions, inputs[p].triangles, out twinMap[p]))
+                        {
+                            twin[p] = q;
+                            break;
+                        }
+                }
                 for (var p = 0; p < n; p++)
                 {
                     var index = p;
@@ -209,6 +251,21 @@ namespace NativeRemesher
                     // One part failing (a throw, or nothing out) does not cost the model its other parts:
                     // it is tried again with four times the quads, then left as it was.
                     RemeshResult solved = null;
+                    var q0 = twin[p];
+                    if (q0 >= 0 && q0 < run.results.Count && run.results[q0]?.extraction != null
+                        && !(strips[p] != null && strips[p].reduced) && !(strips[q0] != null && strips[q0].reduced)
+                        && targets[p] <= 2 * targets[q0] && targets[q0] <= 2 * targets[p])
+                    {
+                        solved = RemeshPipeline.Moved(run.results[q0], twinMap[p]);
+                        if (solved?.extraction != null)
+                        {
+                            inputs[p].result = solved;
+                            run.results.Add(solved);
+                            Timing($"part '{names[p]}' (copy of '{names[q0]}', {solved.extraction.faces.Count} faces)");
+                            continue;
+                        }
+                        solved = null;
+                    }
                     if (strips[p] != null && strips[p].reduced)
                     {
                         Progress("Reduced with its quads", 0f);
@@ -219,18 +276,22 @@ namespace NativeRemesher
                         solved = RemeshPipeline.FromQuadReduction(inputs[p].positions, inputs[p].triangles, back,
                             strips[p].outFaces, strips[p].stats, partSettings, profile, rawUvs[p], submeshes[p]);
                     }
-                    // A part that can hardly be seen and whose strips ran out: collapsed and paired,
-                    // in a second, rather than remeshed to a handful of quads.
+                    // A part that can hardly be seen and whose strips ran out, or one of more pieces
+                    // than its quads can close (a licence plate's letters, a grille's bars):
+                    // collapsed and paired, in a second, every piece kept, rather than remeshed to
+                    // a handful of quads.
                     var collapsed = false;
+                    var manyPieces = piecesCollapse > 0 && pieces[p] * piecesCollapse > targets[p];
                     if (solved == null && strips[p] != null && run.visibility != null
-                        && PartBake.VisibilityWeight(run.visibility[p]) < hiddenCollapseWeight)
+                        && PartBake.VisibilityWeight(run.visibility[p]) < hiddenCollapseWeight
+                        || solved == null && manyPieces)
                     {
-                        Progress("Collapsed (hidden)", 0f);
+                        Progress(manyPieces ? "Collapsed (many pieces)" : "Collapsed (hidden)", 0f);
                         RemeshPipeline.CollapseToQuads(inputs[p].positions, inputs[p].triangles, targets[p],
                             out var collapsedPositions, out var collapsedFaces);
                         partSettings.modelType = types[p];
                         solved = RemeshPipeline.FromQuadReduction(inputs[p].positions, inputs[p].triangles,
-                            collapsedPositions, collapsedFaces, strips[p].stats, partSettings, profile, rawUvs[p], submeshes[p]);
+                            collapsedPositions, collapsedFaces, strips[p]?.stats, partSettings, profile, rawUvs[p], submeshes[p]);
                         collapsed = solved?.extraction != null && solved.extraction.faces.Count > 0;
                     }
                     for (var attempt = 0; attempt < 2 && (solved?.extraction == null || solved.extraction.faces.Count == 0); attempt++)
@@ -313,7 +374,7 @@ namespace NativeRemesher
                             token.ThrowIfCancellationRequested();
                             m_JobStage = $"All parts: {stage}";
                             m_JobProgress = (n + Mathf.Clamp01(progress)) / (n + 1);
-                        });
+                        }, normalImageArray.Length > 0 ? normalImageArray : null);
                 Timing("bake");
                 return run;
             }, token);
@@ -369,6 +430,15 @@ namespace NativeRemesher
 
         /// <summary>Only a part with at most this many quads is remeshed again with three times them (a larger one costs too long).</summary>
         public static int retryBudget = 120;
+
+        /// <summary>The parts' floors (PartBake.Floor) together take at most this share of the quads; 0: uncapped, as before.</summary>
+        public static float floorShare = 0.25f;
+
+        /// <summary>A part given fewer than this many quads a piece is collapsed rather than remeshed; 0: never.</summary>
+        public static int piecesCollapse = 4;
+
+        /// <summary>A copy of an earlier part (SameShape) takes that part's result, moved; false: every part solved.</summary>
+        public static bool sameParts = true;
 
         void FinishParts(PartsRun run)
         {

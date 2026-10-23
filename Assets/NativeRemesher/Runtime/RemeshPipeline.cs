@@ -87,6 +87,9 @@ namespace NativeRemesher
 
     public sealed class RemeshResult
     {
+        /// <summary>A copy sharing every field (arrays included); the caller replaces what it changes.</summary>
+        public RemeshResult ShallowCopy() => (RemeshResult)MemberwiseClone();
+
         public RemeshTopology topology;
         public MeshHierarchy hierarchy;
 
@@ -435,6 +438,201 @@ namespace NativeRemesher
         /// distance from points spread over the source to the result's surface, over the square
         /// root of the result's mean face area. Above a couple, a piece is missing or folded.
         /// </summary>
+        /// <summary>
+        /// The affine map taking part <paramref name="a"/>'s vertices onto part <paramref name="b"/>'s
+        /// when b is a copy of a: the same triangles over the same vertex count (or each wound the
+        /// other way, as a mirrored copy is written), every vertex where one map (a move, a turn, a
+        /// mirror, a scale) puts it, to <see cref="sameShapeTolerance"/> of the size.
+        /// </summary>
+        public static bool SameShape(Vector3[] a, int[] aTriangles, Vector3[] b, int[] bTriangles, out Matrix4x4 map)
+        {
+            map = Matrix4x4.identity;
+            if (a == null || b == null || a.Length < 4 || b.Length < 4 || aTriangles.Length != bTriangles.Length) return false;
+            if (a.Length != b.Length || !SameShapeByVertex(a, aTriangles, b, bTriangles, out map))
+                return SameShapeByAxes(a, b, out map);
+            return true;
+        }
+
+        static bool SameShapeByVertex(Vector3[] a, int[] aTriangles, Vector3[] b, int[] bTriangles, out Matrix4x4 map)
+        {
+            map = Matrix4x4.identity;
+            var same = true;
+            for (var i = 0; i < aTriangles.Length && same; i++) same = aTriangles[i] == bTriangles[i];
+            for (var k = 0; k + 2 < aTriangles.Length && !same; k += 3)
+                if (aTriangles[k] != bTriangles[k] || aTriangles[k + 1] != bTriangles[k + 2] || aTriangles[k + 2] != bTriangles[k + 1])
+                    return false;
+            // Least squares on the centred points: M = Cba Caa^-1.
+            var ca = Vector3.zero;
+            var cb = Vector3.zero;
+            for (var i = 0; i < a.Length; i++) { ca += a[i]; cb += b[i]; }
+            ca /= a.Length;
+            cb /= b.Length;
+            double[,] aa = new double[3, 3], ba = new double[3, 3];
+            for (var i = 0; i < a.Length; i++)
+            {
+                var p = a[i] - ca;
+                var q = b[i] - cb;
+                for (var r = 0; r < 3; r++)
+                    for (var c = 0; c < 3; c++)
+                    {
+                        aa[r, c] += p[r] * p[c];
+                        ba[r, c] += q[r] * p[c];
+                    }
+            }
+            var inv = Invert3(aa);
+            if (inv == null) return false;
+            var m = Matrix4x4.identity;
+            for (var r = 0; r < 3; r++)
+                for (var c = 0; c < 3; c++)
+                {
+                    double v = 0;
+                    for (var k = 0; k < 3; k++) v += ba[r, k] * inv[k, c];
+                    m[r, c] = (float)v;
+                }
+            var t = cb - m.MultiplyVector(ca);
+            m.SetColumn(3, new Vector4(t.x, t.y, t.z, 1f));
+            var size = 0f;
+            foreach (var q in b) size = Mathf.Max(size, (q - cb).magnitude);
+            var tolerance = Mathf.Max(sameShapeTolerance * size, 1e-9f);
+            for (var i = 0; i < a.Length; i++)
+                if ((m.MultiplyPoint3x4(a[i]) - b[i]).sqrMagnitude > tolerance * tolerance) return false;
+            map = m;
+            return true;
+        }
+
+        /// <summary>
+        /// A copy with its vertices welded or ordered differently (Unity's import of the Ford's
+        /// tyres: 32,296 and 32,163 vertices, the same 27,520 triangles): moved, mirrored on an axis
+        /// or turned half round one, about its centre -- how a copied wheel is placed. Every sampled
+        /// vertex of each must land on a vertex of the other.
+        /// </summary>
+        static bool SameShapeByAxes(Vector3[] a, Vector3[] b, out Matrix4x4 map)
+        {
+            map = Matrix4x4.identity;
+            if (Math.Abs(a.Length - b.Length) > 0.02 * Math.Max(a.Length, b.Length)) return false;
+            Bounds Box(Vector3[] v)
+            {
+                var box = new Bounds(v[0], Vector3.zero);
+                foreach (var q in v) box.Encapsulate(q);
+                return box;
+            }
+            var ba = Box(a);
+            var bb = Box(b);
+            var size = Mathf.Max(bb.size.x, Mathf.Max(bb.size.y, bb.size.z));
+            var tolerance = Mathf.Max(sameShapeTolerance * size, 1e-9f);
+            if ((ba.size - bb.size).magnitude > 4f * tolerance) return false;
+            var cell = 2f * tolerance;
+            HashSet<(int, int, int)> Hash(Vector3[] v)
+            {
+                var h = new HashSet<(int, int, int)>();
+                foreach (var q in v) h.Add((Mathf.FloorToInt(q.x / cell), Mathf.FloorToInt(q.y / cell), Mathf.FloorToInt(q.z / cell)));
+                return h;
+            }
+            bool Near(HashSet<(int, int, int)> h, Vector3 q)
+            {
+                int x = Mathf.FloorToInt(q.x / cell), y = Mathf.FloorToInt(q.y / cell), z = Mathf.FloorToInt(q.z / cell);
+                for (var dx = -1; dx <= 1; dx++)
+                    for (var dy = -1; dy <= 1; dy++)
+                        for (var dz = -1; dz <= 1; dz++)
+                            if (h.Contains((x + dx, y + dy, z + dz))) return true;
+                return false;
+            }
+            var ha = Hash(a);
+            var hb = Hash(b);
+            var stepA = Math.Max(1, a.Length / 3000);
+            var stepB = Math.Max(1, b.Length / 3000);
+            for (var signs = 0; signs < 8; signs++)
+            {
+                var d = new Vector3((signs & 1) != 0 ? -1f : 1f, (signs & 2) != 0 ? -1f : 1f, (signs & 4) != 0 ? -1f : 1f);
+                var m = Matrix4x4.Scale(d);
+                var t = bb.center - m.MultiplyVector(ba.center);
+                m.SetColumn(3, new Vector4(t.x, t.y, t.z, 1f));
+                var inverse = m.inverse;
+                var ok = true;
+                for (var i = 0; i < a.Length && ok; i += stepA) ok = Near(hb, m.MultiplyPoint3x4(a[i]));
+                for (var i = 0; i < b.Length && ok; i += stepB) ok = Near(ha, inverse.MultiplyPoint3x4(b[i]));
+                if (!ok) continue;
+                map = m;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// How far, as a share of a part's size, a copy's vertex may sit from where the map puts it.
+        /// The Ford's OBJ rounds to 4 decimals: its four rims, exact copies, differ by 7e-5 of their size.
+        /// </summary>
+        public static float sameShapeTolerance = 5e-4f;
+
+        static double[,] Invert3(double[,] m)
+        {
+            var det = m[0, 0] * (m[1, 1] * m[2, 2] - m[1, 2] * m[2, 1])
+                      - m[0, 1] * (m[1, 0] * m[2, 2] - m[1, 2] * m[2, 0])
+                      + m[0, 2] * (m[1, 0] * m[2, 1] - m[1, 1] * m[2, 0]);
+            var scale = Math.Abs(m[0, 0]) + Math.Abs(m[1, 1]) + Math.Abs(m[2, 2]);
+            if (!(Math.Abs(det) > 1e-12 * scale * scale * scale)) return null;
+            var r = new double[3, 3];
+            r[0, 0] = (m[1, 1] * m[2, 2] - m[1, 2] * m[2, 1]) / det;
+            r[0, 1] = (m[0, 2] * m[2, 1] - m[0, 1] * m[2, 2]) / det;
+            r[0, 2] = (m[0, 1] * m[1, 2] - m[0, 2] * m[1, 1]) / det;
+            r[1, 0] = (m[1, 2] * m[2, 0] - m[1, 0] * m[2, 2]) / det;
+            r[1, 1] = (m[0, 0] * m[2, 2] - m[0, 2] * m[2, 0]) / det;
+            r[1, 2] = (m[0, 2] * m[1, 0] - m[0, 0] * m[1, 2]) / det;
+            r[2, 0] = (m[1, 0] * m[2, 1] - m[1, 1] * m[2, 0]) / det;
+            r[2, 1] = (m[0, 1] * m[2, 0] - m[0, 0] * m[2, 1]) / det;
+            r[2, 2] = (m[0, 0] * m[1, 1] - m[0, 1] * m[1, 0]) / det;
+            return r;
+        }
+
+        /// <summary>
+        /// A solved part moved by <paramref name="map"/> onto a copy of its source (SameShape): its
+        /// own positions, normals and faces, wound back under a mirror; per-vertex and per-corner
+        /// UVs carried (the copy's are the same).
+        /// </summary>
+        public static RemeshResult Moved(RemeshResult result, Matrix4x4 map)
+        {
+            var ex = result?.extraction;
+            if (ex == null || ex.positions == null) return null;
+            var copy = result.ShallowCopy();
+            var moved = ex.ShallowCopy();
+            copy.extraction = moved;
+            copy.mesh = null;
+            moved.positions = new Vector3[ex.positions.Length];
+            for (var i = 0; i < moved.positions.Length; i++) moved.positions[i] = map.MultiplyPoint3x4(ex.positions[i]);
+            var normalMap = map.inverse.transpose;
+            Vector3[] Normals(Vector3[] n)
+            {
+                if (n == null) return null;
+                var o = new Vector3[n.Length];
+                for (var i = 0; i < o.Length; i++) o[i] = MeshMath.SafeNormalize(normalMap.MultiplyVector(n[i]), Vector3.up);
+                return o;
+            }
+            moved.normals = Normals(ex.normals);
+            moved.shadingNormals = Normals(ex.shadingNormals);
+            var mirrored = map.determinant < 0f;
+            moved.faces = new List<int[]>(ex.faces.Count);
+            Vector2[][] faceUvs = ex.faceUvs != null ? new Vector2[ex.faceUvs.Length][] : null;
+            for (var f = 0; f < ex.faces.Count; f++)
+            {
+                var face = ex.faces[f];
+                if (face == null) { moved.faces.Add(null); continue; }
+                var g = (int[])face.Clone();
+                var uv = faceUvs != null && f < ex.faceUvs.Length && ex.faceUvs[f] != null ? (Vector2[])ex.faceUvs[f].Clone() : null;
+                if (mirrored)
+                {
+                    // Kept at its first corner, the rest backwards.
+                    Array.Reverse(g, 1, g.Length - 1);
+                    if (uv != null && uv.Length == g.Length) Array.Reverse(uv, 1, uv.Length - 1);
+                }
+                moved.faces.Add(g);
+                if (faceUvs != null && f < faceUvs.Length) faceUvs[f] = uv;
+            }
+            moved.faceUvs = faceUvs;
+            moved.faceTangents = null;
+            moved.faceNormals = null;
+            return copy;
+        }
+
         public static float CellsOff(Vector3[] positions, int[] triangles, QuadExtractionResult extraction, int samples = 4000)
         {
             var tris = LodChain.Triangulate(extraction.faces, out _);
@@ -451,8 +649,22 @@ namespace NativeRemesher
             System.Threading.Tasks.Parallel.For(0, points.Count, i => worst[i] = grid.NearestDistance(points[i], out _));
             var max = 0f;
             foreach (var w in worst) max = Mathf.Max(max, w);
+            if (cellsOffBothWays)
+            {
+                // And from the result to the source: surface the source does not have (the Ford's
+                // tyre, remeshed to 200 quads, closed over its rim as a disc) is as wrong as
+                // surface lost, and no point of the source is far from it.
+                var source = new SpatialGrid(positions, triangles);
+                var mine = SpatialGrid.SampleSurface(extraction.positions, tris, samples, 6);
+                var back = new float[mine.Count];
+                System.Threading.Tasks.Parallel.For(0, mine.Count, i => back[i] = source.NearestDistance(mine[i], out _));
+                foreach (var w in back) max = Mathf.Max(max, w);
+            }
             return max / cell;
         }
+
+        /// <summary>CellsOff measures both ways (false: only from the source to the result, as before).</summary>
+        public static bool cellsOffBothWays = true;
 
         [ThreadStatic] public static DecimateStats lastCollapseStats;
 
@@ -1230,7 +1442,8 @@ namespace NativeRemesher
         /// source UVs or textures.
         /// </summary>
         public static void BakeNormalMap(RemeshResult result, Vector3[] positions, int[] triangles, int resolution,
-            Action<string, float> onProgress = null)
+            Action<string, float> onProgress = null, Vector2[] sourceUvs = null, int[] sourceTriangleNormalMap = null,
+            TextureBake.Image[] sourceNormalMaps = null)
         {
             var extraction = result?.extraction;
             if (extraction == null || extraction.positions == null || positions == null || triangles == null) return;
@@ -1248,10 +1461,15 @@ namespace NativeRemesher
                 : extraction.normals;
             if (normals == null || normals.Length != extraction.positions.Length)
                 normals = Extraction.NormalRecalculator.Compute(extraction.faces, extraction.positions, null);
-            extraction.faceTangents = TextureBake.Tangents(extraction.positions, extraction.faces, extraction.faceUvs, normals);
+            extraction.faceNormals = TextureBake.hardEdgeAngle > 0f
+                ? TextureBake.CornerNormals(extraction.positions, extraction.faces, extraction.faceUvs, normals, TextureBake.hardEdgeAngle)
+                : null;
+            extraction.faceTangents = TextureBake.Tangents(extraction.positions, extraction.faces, extraction.faceUvs, normals,
+                extraction.faceNormals);
             result.bakedNormalMap = TextureBake.BakeNormals(positions, triangles, extraction.positions, extraction.faces,
                 extraction.faceUvs, normals, extraction.faceTangents, resolution, stats,
-                p => onProgress?.Invoke("Baking normal map", p));
+                p => onProgress?.Invoke("Baking normal map", p), extraction.faceNormals,
+                sourceUvs, sourceTriangleNormalMap, sourceNormalMaps);
             result.bakedNormalMapSize = resolution;
         }
 

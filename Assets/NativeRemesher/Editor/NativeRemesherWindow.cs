@@ -830,6 +830,22 @@ namespace NativeRemesher
             TextureBake.Image[] bakeImages = null;
             int[] bakeTriangleTexture = null;
             var bakeNormals = m_BakeNormalMap;
+            // The source's own normal maps, baked in with its shape.
+            TextureBake.Image[] detailMaps = null;
+            int[] detailTriangleMap = null;
+            if (bakeNormals && sourceUvs != null)
+            {
+                if (materials == null) ReadSourceTextures(selected, triangleSubmesh, out detailMaps, out detailTriangleMap, normalMaps: true);
+                else
+                {
+                    var list = new List<TextureBake.Image>();
+                    detailTriangleMap = ReadTextures(materials, triangleSubmesh, triangles.Length / 3, list,
+                        new Dictionary<Texture, int>(), normalMaps: true);
+                    detailMaps = list.Count > 0 ? list.ToArray() : null;
+                }
+                // One map over the whole mesh: every triangle reads it.
+                if (detailMaps != null && detailTriangleMap == null) detailTriangleMap = new int[triangles.Length / 3];
+            }
             // Paint lives on a mesh object, in its space: none for a joined model.
             settings.densityPaint = materials == null ? PaintFor(selected) : null;
             // The result this run replaces, when it was the one selected.
@@ -874,7 +890,8 @@ namespace NativeRemesher
                     RemeshPipeline.BakeTexture(solved, positions, triangles, sourceUvs, bakeTriangleTexture,
                         bakeImages, bakeResolution, Progress);
                 if (bakeNormals)
-                    RemeshPipeline.BakeNormalMap(solved, positions, triangles, bakeResolution, Progress);
+                    RemeshPipeline.BakeNormalMap(solved, positions, triangles, bakeResolution, Progress,
+                        detailMaps != null ? sourceUvs : null, detailTriangleMap, detailMaps);
                 return solved;
             }, token);
 
@@ -1094,7 +1111,7 @@ namespace NativeRemesher
         /// of them it reads. Nothing when no material has a texture.
         /// </summary>
         static void ReadSourceTextures(GameObject selected, int[] triangleSubmesh,
-            out TextureBake.Image[] images, out int[] triangleTexture)
+            out TextureBake.Image[] images, out int[] triangleTexture, bool normalMaps = false)
         {
             images = null;
             triangleTexture = null;
@@ -1107,11 +1124,11 @@ namespace NativeRemesher
             for (var i = 0; i < slotImage.Length; i++)
             {
                 slotImage[i] = -1;
-                var tex = i < materials.Length && materials[i] != null ? materials[i].mainTexture : null;
+                var tex = i < materials.Length ? TextureOf(materials[i], normalMaps) : null;
                 if (tex == null) continue;
                 if (!read.TryGetValue(tex, out var index))
                 {
-                    var image = ReadTexture(tex);
+                    var image = ReadTexture(tex, normalMaps);
                     index = image != null ? list.Count : -1;
                     if (image != null) list.Add(image);
                     read[tex] = index;
@@ -1141,18 +1158,18 @@ namespace NativeRemesher
         /// once each, through <paramref name="read"/>), -1 for none; null when no material has one.
         /// </summary>
         static int[] ReadTextures(Material[] materials, int[] triangleSubmesh, int triangleCount,
-            List<TextureBake.Image> images, Dictionary<Texture, int> read)
+            List<TextureBake.Image> images, Dictionary<Texture, int> read, bool normalMaps = false)
         {
             var slotImage = new int[Mathf.Max(1, materials != null ? materials.Length : 0)];
             var any = false;
             for (var i = 0; i < slotImage.Length; i++)
             {
                 slotImage[i] = -1;
-                var tex = materials != null && i < materials.Length && materials[i] != null ? materials[i].mainTexture : null;
+                var tex = materials != null && i < materials.Length ? TextureOf(materials[i], normalMaps) : null;
                 if (tex == null) continue;
                 if (!read.TryGetValue(tex, out var index))
                 {
-                    var image = ReadTexture(tex);
+                    var image = ReadTexture(tex, normalMaps);
                     index = image != null ? images.Count : -1;
                     if (image != null) images.Add(image);
                     read[tex] = index;
@@ -1238,7 +1255,18 @@ namespace NativeRemesher
         /// A texture's pixels at full size: from its PNG or JPG file when it has one (the importer
         /// may have shrunk it -- ccnb.jpg is 8192 square, imported at 2048), else from the GPU copy.
         /// </summary>
-        static TextureBake.Image ReadTexture(Texture texture)
+        /// <summary>A material's main texture, or with <paramref name="normalMap"/> its normal map.</summary>
+        static Texture TextureOf(Material material, bool normalMap)
+        {
+            if (material == null) return null;
+            if (!normalMap) return material.mainTexture;
+            foreach (var property in new[] { "_BumpMap", "_NormalMap" })
+                if (material.HasProperty(property) && material.GetTexture(property) is Texture t && t != null)
+                    return t;
+            return null;
+        }
+
+        static TextureBake.Image ReadTexture(Texture texture, bool normalMap = false)
         {
             var path = AssetDatabase.GetAssetPath(texture);
             var ext = Path.GetExtension(path).ToLowerInvariant();
@@ -1272,9 +1300,24 @@ namespace NativeRemesher
             copy.Apply(false);
             RenderTexture.active = previous;
             RenderTexture.ReleaseTemporary(rt);
-            var result = new TextureBake.Image(copy.GetPixels32(), w, h);
+            var pixels = copy.GetPixels32();
             DestroyImmediate(copy);
-            return result;
+            if (normalMap && AssetImporter.GetAtPath(path) is TextureImporter importer
+                && importer.textureType == TextureImporterType.NormalMap)
+            {
+                // Imported as a normal map, the GPU copy is packed (x in alpha times red, y in
+                // green, z left out): unpacked to the file's RGB, as UnpackNormal does.
+                for (var i = 0; i < pixels.Length; i++)
+                {
+                    var c = pixels[i];
+                    var x = c.a / 255f * (c.r / 255f) * 2f - 1f;
+                    var y = c.g / 255f * 2f - 1f;
+                    var z = Mathf.Sqrt(Mathf.Max(0f, 1f - x * x - y * y));
+                    pixels[i] = new Color32((byte)Mathf.RoundToInt((x * 0.5f + 0.5f) * 255f),
+                        (byte)Mathf.RoundToInt((y * 0.5f + 0.5f) * 255f), (byte)Mathf.RoundToInt((z * 0.5f + 0.5f) * 255f), 255);
+                }
+            }
+            return new TextureBake.Image(pixels, w, h);
         }
 
         /// <summary>

@@ -374,6 +374,7 @@ namespace NativeRemesher
                         var ex = parts[k++].result.extraction;
                         part.levels[l].faceUvs = ex.faceUvs;
                         part.levels[l].faceTangents = ex.faceTangents;
+                        part.levels[l].faceNormals = ex.faceNormals;
                     }
                 }
             }

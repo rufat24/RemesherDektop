@@ -27,6 +27,9 @@ namespace NativeRemesher
 
             /// <summary>Per source triangle, its texture in the shared list; null with uvs: all the first.</summary>
             public int[] triangleTexture;
+
+            /// <summary>Per source triangle, its normal map in the normal maps passed to Bake (-1: none); null when none has one.</summary>
+            public int[] triangleNormalMap;
         }
 
         /// <summary>
@@ -205,7 +208,15 @@ namespace NativeRemesher
         /// (welded by position, so UV seams do not split them), at most half its triangles. A part of
         /// ten studs given 16 quads came out empty (2026-10-19, the Sketchfab helmet).
         /// </summary>
-        public static int Floor(Vector3[] positions, int[] triangles, int minimum = 16)
+        public static int Floor(Vector3[] positions, int[] triangles, int minimum = 16) =>
+            Floor(Pieces(positions, triangles), triangles.Length / 3, minimum);
+
+        /// <summary>The least a part of this many pieces and triangles may be given (see the other overload).</summary>
+        public static int Floor(int pieces, int triangleCount, int minimum = 16) =>
+            Math.Max(minimum, Math.Min(quadsPerPiece * pieces, triangleCount / 2));
+
+        /// <summary>A part's connected pieces, welded by position (a UV seam does not split one).</summary>
+        public static int Pieces(Vector3[] positions, int[] triangles)
         {
             var weld = new Dictionary<Vector3, int>(positions.Length);
             var of = new int[positions.Length];
@@ -223,9 +234,12 @@ namespace NativeRemesher
                 parent[Root(of[triangles[t + 1]])] = a;
                 parent[Root(of[triangles[t + 2]])] = a;
             }
+            // Only vertices a triangle uses: a stray vertex is no piece.
+            var used = new bool[parent.Length];
+            foreach (var v in triangles) used[of[v]] = true;
             var pieces = 0;
-            for (var i = 0; i < parent.Length; i++) if (Root(i) == i) pieces++;
-            return Math.Max(minimum, Math.Min(quadsPerPiece * pieces, triangles.Length / 6));
+            for (var i = 0; i < parent.Length; i++) if (used[i] && Root(i) == i) pieces++;
+            return pieces;
         }
 
         /// <summary>Surface area of triangles under a transform.</summary>
@@ -248,7 +262,8 @@ namespace NativeRemesher
         /// with a normal map, tangents, in its own space. Null when there is nothing to bake.
         /// </summary>
         public static RemeshResult Bake(IList<Part> parts, TextureBake.Image[] images, bool bakeTexture,
-            bool bakeNormals, int resolution, Action<string, float> onProgress = null)
+            bool bakeNormals, int resolution, Action<string, float> onProgress = null,
+            TextureBake.Image[] normalMaps = null)
         {
             if (parts == null || parts.Count == 0 || !bakeTexture && !bakeNormals) return null;
 
@@ -293,7 +308,9 @@ namespace NativeRemesher
             var st = new List<int>();
             var suv = new List<Vector2>();
             var stex = new List<int>();
+            var snm = new List<int>();
             var anyUvs = false;
+            var anyNormalMaps = false;
             foreach (var part in parts)
             {
                 if (part.positions == null || part.triangles == null) continue;
@@ -308,6 +325,9 @@ namespace NativeRemesher
                     st.Add(part.triangles[t + 1] + offset);
                     st.Add(part.triangles[t + 2] + offset);
                     stex.Add(!hasUvs ? -1 : part.triangleTexture != null && t / 3 < part.triangleTexture.Length ? part.triangleTexture[t / 3] : 0);
+                    var nm = hasUvs && part.triangleNormalMap != null && t / 3 < part.triangleNormalMap.Length ? part.triangleNormalMap[t / 3] : -1;
+                    snm.Add(nm);
+                    anyNormalMaps |= nm >= 0;
                 }
             }
             var sourcePositions = sp.ToArray();
@@ -318,7 +338,8 @@ namespace NativeRemesher
                 RemeshPipeline.BakeTexture(shared, sourcePositions, sourceTriangles, suv.ToArray(), stex.ToArray(),
                     images, resolution, onProgress);
             if (bakeNormals)
-                RemeshPipeline.BakeNormalMap(shared, sourcePositions, sourceTriangles, resolution, onProgress);
+                RemeshPipeline.BakeNormalMap(shared, sourcePositions, sourceTriangles, resolution, onProgress,
+                    anyNormalMaps ? suv.ToArray() : null, anyNormalMaps ? snm.ToArray() : null, anyNormalMaps ? normalMaps : null);
             if (joined.faceUvs == null) return null;
 
             // --- each part's faces back, tangents into its own space ---
@@ -345,6 +366,26 @@ namespace NativeRemesher
                             local[k] = new Vector4(d.x, d.y, d.z, tg[k].w);
                         }
                         ex.faceTangents[f] = local;
+                    }
+                }
+                ex.faceNormals = null;
+                if (joined.faceNormals != null)
+                {
+                    // Back by the transpose of the part's linear map: a normal's inverse transform.
+                    var m = parts[p].toModel;
+                    ex.faceNormals = new Vector3[count][];
+                    for (var f = 0; f < count; f++)
+                    {
+                        var cn = joined.faceNormals[firstFace[p] + f];
+                        if (cn == null) continue;
+                        var local = new Vector3[cn.Length];
+                        for (var k = 0; k < cn.Length; k++)
+                        {
+                            var v = cn[k];
+                            local[k] = MeshMath.SafeNormalize(new Vector3(m.m00 * v.x + m.m10 * v.y + m.m20 * v.z,
+                                m.m01 * v.x + m.m11 * v.y + m.m21 * v.z, m.m02 * v.x + m.m12 * v.y + m.m22 * v.z), Vector3.up);
+                        }
+                        ex.faceNormals[f] = local;
                     }
                 }
             }

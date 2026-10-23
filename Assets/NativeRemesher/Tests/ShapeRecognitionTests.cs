@@ -73,6 +73,31 @@ namespace NativeRemesher.Tests
         }
 
         [Test]
+        public void AClosedUnstructuredBuildingIsAScanNotACharacter()
+        {
+            // A closed box of uneven triangles (no quads in it, no border), as a dense building
+            // sculpted or scanned is: its walls face six ways, which no character's surface does.
+            var random = new System.Random(5);
+            Box(new Vector3(0f, 0f, 0f), new Vector3(6f, 4f, 5f), 14, out var positions, out var triangles,
+                x => x + Vector3.Scale(new Vector3((float)random.NextDouble() - 0.5f, (float)random.NextDouble() - 0.5f,
+                    (float)random.NextDouble() - 0.5f), new Vector3(0.12f, 0.12f, 0.12f)));
+            // Pressed back onto the walls: only the jitter along them stays.
+            for (var i = 0; i < positions.Length; i++)
+            {
+                var q = positions[i];
+                var d = new[] { Mathf.Abs(q.x), Mathf.Abs(q.x - 6f), Mathf.Abs(q.y), Mathf.Abs(q.y - 4f), Mathf.Abs(q.z), Mathf.Abs(q.z - 5f) };
+                var k = System.Array.IndexOf(d, Mathf.Min(d));
+                if (k < 2) q.x = k == 0 ? 0f : 6f; else if (k < 4) q.y = k == 2 ? 0f : 4f; else q.z = k == 4 ? 0f : 5f;
+                positions[i] = q;
+            }
+            var type = ShapeRecognition.Classify(positions, triangles, out var signals);
+            Assert.That(signals.elongated, Is.LessThan(ShapeRecognition.elongatedThreshold), signals.ToString());
+            Assert.That(signals.openBorder, Is.LessThan(0.5f), signals.ToString());
+            Assert.That(signals.flatDirections, Is.GreaterThan(0.6f), signals.ToString());
+            Assert.That(type, Is.EqualTo(ModelType.Scan), signals.ToString());
+        }
+
+        [Test]
         public void AnOpenJitteredSheetIsAScan()
         {
             var random = new System.Random(3);
