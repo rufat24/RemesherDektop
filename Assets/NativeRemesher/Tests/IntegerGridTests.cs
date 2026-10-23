@@ -15,6 +15,12 @@ namespace NativeRemesher.Tests
 {
     public class IntegerGridTests
     {
+        // These measure the field solve; a torus is a surface of revolution, which the pipeline
+        // would otherwise build turned (Revolution) without solving a field at all.
+        bool m_Revolution;
+        [SetUp] public void TurnedOff() { m_Revolution = Revolution.enabled; Revolution.enabled = false; }
+        [TearDown] public void TurnedBack() => Revolution.enabled = m_Revolution;
+
         static RemeshResult Run(Mesh mesh, int target,
             RemeshProfileKind kind = RemeshProfileKind.GameAsset)
         {

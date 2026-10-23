@@ -245,6 +245,93 @@ namespace NativeRemesher
             return pieces;
         }
 
+        /// <summary>
+        /// How many cubes of side <paramref name="cell"/> the part's surface passes through, in the
+        /// model's space, and whether the part is closed (no open edges once welded).
+        /// </summary>
+        public static int Cells(Vector3[] positions, int[] triangles, Matrix4x4 toModel, float cell, out bool closed)
+            => Cells(positions, triangles, toModel, cell, out closed, out _);
+
+        /// <summary>
+        /// As above, and how many cubes of twice the side it passes through: about half as many for
+        /// a part that runs along a line (a band, a seal), a quarter for one that spreads as a sheet.
+        /// </summary>
+        public static int Cells(Vector3[] positions, int[] triangles, Matrix4x4 toModel, float cell, out bool closed, out int coarse)
+        {
+            closed = false;
+            coarse = 0;
+            if (!(cell > 0f) || positions == null || triangles == null) return 0;
+            var keys = new HashSet<long>(Extraction.EdgeKey.Comparer);
+            var coarseKeys = new HashSet<long>(Extraction.EdgeKey.Comparer);
+            long Key(Vector3 p, float c) => ((long)Mathf.FloorToInt(p.x / c) & 0x1FFFFF) << 42
+                                   | ((long)Mathf.FloorToInt(p.y / c) & 0x1FFFFF) << 21
+                                   | (long)Mathf.FloorToInt(p.z / c) & 0x1FFFFF;
+            for (var t = 0; t + 2 < triangles.Length; t += 3)
+            {
+                var a = toModel.MultiplyPoint3x4(positions[triangles[t]]);
+                var b = toModel.MultiplyPoint3x4(positions[triangles[t + 1]]);
+                var c = toModel.MultiplyPoint3x4(positions[triangles[t + 2]]);
+                // Points at most half a cell apart over the triangle.
+                var longest = Mathf.Max((b - a).magnitude, Mathf.Max((c - b).magnitude, (a - c).magnitude));
+                var steps = Mathf.Clamp(Mathf.CeilToInt(2f * longest / cell), 1, 64);
+                for (var i = 0; i <= steps; i++)
+                    for (var j = 0; i + j <= steps; j++)
+                    {
+                        var x = a + (b - a) * ((float)i / steps) + (c - a) * ((float)j / steps);
+                        keys.Add(Key(x, cell));
+                        coarseKeys.Add(Key(x, 2f * cell));
+                    }
+            }
+            // Closed: every welded edge has a partner.
+            var weld = new Dictionary<Vector3, int>();
+            var id = new int[positions.Length];
+            for (var i = 0; i < positions.Length; i++)
+            {
+                if (!weld.TryGetValue(positions[i], out var w)) { w = weld.Count; weld[positions[i]] = w; }
+                id[i] = w;
+            }
+            var edges = new Dictionary<long, int>(Extraction.EdgeKey.Comparer);
+            for (var t = 0; t + 2 < triangles.Length; t += 3)
+                for (var k = 0; k < 3; k++)
+                {
+                    int u = id[triangles[t + k]], v = id[triangles[t + (k + 1) % 3]];
+                    if (u == v) continue;
+                    var e = Extraction.EdgeKey.PackUndirected(u, v);
+                    edges[e] = edges.TryGetValue(e, out var n) ? n + 1 : 1;
+                }
+            var open = 0;
+            foreach (var n in edges.Values) if (n == 1) open++;
+            closed = edges.Count > 0 && open <= 0.01 * edges.Count;
+            coarse = coarseKeys.Count;
+            return keys.Count;
+        }
+
+        /// <summary>
+        /// The least a part thinner than a cell needs to be traced at all: every cell it passes
+        /// through gets 4 quads when closed (top, bottom and both sides), 2 when open. 0 unless it
+        /// runs along a line at this cell size: at twice the cell it passes through more than
+        /// <see cref="thinLine"/> of the cubes (a sheet: a quarter; a band: a half), it is at least
+        /// <see cref="thinCells"/> cells long, and has under <see cref="thinArea"/> of a cell's area
+        /// in each. A large panel crossing the cells slantwise has under a cell's area in each too,
+        /// so area alone took the Ford's body, floor and doors for thin.
+        /// </summary>
+        public static int ThinFloor(int cells, int coarse, double area, float cell, bool closed)
+        {
+            if (cells < thinCells || coarse <= 0 || !(cell > 0f)) return 0;
+            if (coarse < thinLine * cells) return 0;
+            if (area / ((double)cell * cell * cells) >= thinArea) return 0;
+            return cells * (closed ? 4 : 2);
+        }
+
+        /// <summary>The share of its cells a part passes through at twice the cell, at least, to run along a line.</summary>
+        public static float thinLine = 0.36f;
+
+        /// <summary>The fewest cells a thin part passes through: a shorter one is a small piece, not a band.</summary>
+        public static int thinCells = 12;
+
+        /// <summary>The most area in each cell, as a share of a cell's, for a thin part.</summary>
+        public static float thinArea = 0.75f;
+
         /// <summary>Surface area of triangles under a transform.</summary>
         public static double Area(Vector3[] positions, int[] triangles, Matrix4x4 toModel)
         {

@@ -202,6 +202,38 @@ namespace NativeRemesher
                     if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {stage} by {watch.ElapsedMilliseconds} ms");
                 }
                 Timing("visibility");
+                // Thin parts (a windscreen's surround, seals, trims): at least enough quads to go
+                // round them at the model's cell size. By area the Ford's windscreen surround, a
+                // closed band 44 cells long, got 48 quads, and its sides were merged into a blade.
+                var thinNeed = new int[n];
+                // The model's edge length at its budget, were its quads square and spread by area.
+                double areaSum = 0;
+                foreach (var a in areas) areaSum += a;
+                var cell = (float)System.Math.Sqrt(areaSum / System.Math.Max(1, settings.targetQuadCount));
+                if (thinFloors)
+                {
+                    var thin = new int[n];
+                    var thinCells = new int[n];
+                    var thinCoarse = new int[n];
+                    System.Threading.Tasks.Parallel.For(0, n, BackgroundScheduler.Options, p =>
+                    {
+                        thinCells[p] = PartBake.Cells(inputs[p].positions, inputs[p].triangles, inputs[p].toModel, cell, out var closed, out thinCoarse[p]);
+                        thin[p] = PartBake.ThinFloor(thinCells[p], thinCoarse[p], areas[p], cell, closed);
+                    });
+                    for (var p = 0; p < n; p++)
+                    {
+                        // Scaled by how much of it can be seen, as the other floors are.
+                        var weight = run.visibility != null ? Mathf.Max(PartBake.VisibilityWeight(run.visibility[p]), 0.2f) : 1f;
+                        thinNeed[p] = Mathf.RoundToInt(thin[p] * weight);
+                    }
+                    if (QuadReduction.logStats)
+                    {
+                        var count = 0; long sum = 0;
+                        for (var p = 0; p < n; p++) if (thinNeed[p] > 0) { count++; sum += thinNeed[p]; Debug.Log($"[Native Remesher] thin part '{names[p]}': {thin[p]} quads to go round, {thinNeed[p]} as seen ({thinCells[p]} cells, {thinCoarse[p]} at twice, area {areas[p] / ((double)cell * cell * thinCells[p]):0.##} of theirs)"); }
+                        Debug.Log($"[Native Remesher] thin parts: {count}, {sum} quads to go round them, cell {cell:0.###}");
+                    }
+                    Timing("thin parts");
+                }
                 // The floors together at most a share of the budget: held at 20 quads a piece, the
                 // Ford's grille, licence plates and badges (letters, bars: hundreds of pieces) took
                 // 9,500 of its 26,000 faces and left its body 374.
@@ -220,6 +252,22 @@ namespace NativeRemesher
                 // Parts that already are clean quads (modelled parts) are reduced together by quad
                 // strips, at one cell size over the whole model: a flat floor pan gives its quads to a
                 // wheel arch. Each part's share above anchors it (QuadReduction.ReduceParts).
+                // Turned surfaces (tyres, a rim's barrel, hubs) are built as their profile turned:
+                // found first, and kept out of the strips and the collapse.
+                var turned = new Revolution.Fit[n];
+                var turnedPieces = new Revolution.Pieces[n];
+                if (Revolution.enabled && settings.symmetry == SymmetryAxis.None)
+                {
+                    m_JobStage = "Looking for turned parts";
+                    System.Threading.Tasks.Parallel.For(0, n, BackgroundScheduler.Options, p =>
+                    {
+                        if (paints[p] == null) turned[p] = Revolution.Find(inputs[p].positions, inputs[p].triangles);
+                        if (!Revolution.Accept(turned[p], targets[p])) turned[p] = null;
+                        if (turned[p] == null && paints[p] == null && Revolution.pieces)
+                            turnedPieces[p] = Revolution.FindPieces(inputs[p].positions, inputs[p].triangles);
+                    });
+                    Timing("turned parts");
+                }
                 var strips = new QuadReduction.Part[n];
                 var types = new ModelType[n];
                 if (RemeshPipeline.quadInputReduction && settings.symmetry == SymmetryAxis.None)
@@ -231,7 +279,7 @@ namespace NativeRemesher
                         types[p] = settings.modelType == ModelType.Auto
                             ? ShapeRecognition.Classify(inputs[p].positions, inputs[p].triangles, out _)
                             : settings.modelType;
-                        if (!RemeshPipeline.StripsFor(types[p])) continue;
+                        if (!RemeshPipeline.StripsFor(types[p]) || turned[p] != null || turnedPieces[p] != null || thinNeed[p] > targets[p]) continue;
                         var model = new Vector3[inputs[p].positions.Length];
                         for (var i = 0; i < model.Length; i++) model[i] = inputs[p].toModel.MultiplyPoint3x4(inputs[p].positions[i]);
                         strips[p] = new QuadReduction.Part
@@ -294,6 +342,57 @@ namespace NativeRemesher
                             inputs[p].result = solved;
                             run.results.Add(solved);
                             Timing($"part '{names[p]}' (copy of '{names[q0]}', {solved.extraction.faces.Count} faces)");
+                            continue;
+                        }
+                        solved = null;
+                    }
+                    // The model's cell in the part's own space.
+                    var partScale = Mathf.Pow(Mathf.Abs(inputs[p].toModel.determinant), 1f / 3f);
+                    var partCell = partScale > 0f ? cell / partScale : 0f;
+                    if (turned[p] != null)
+                    {
+                        Progress("Turned", 0f);
+                        solved = RemeshPipeline.Revolved(inputs[p].positions, inputs[p].triangles, turned[p], partSettings,
+                            profile, rawUvs[p], submeshes[p], cell: partCell);
+                        if (solved?.extraction != null && solved.extraction.faces.Count > 0)
+                        {
+                            inputs[p].result = solved;
+                            run.results.Add(solved);
+                            Timing($"part '{names[p]}' (turned, {solved.extraction.faces.Count} faces, {turned[p]})");
+                            continue;
+                        }
+                        solved = null;
+                    }
+                    if (turnedPieces[p] != null)
+                    {
+                        Progress("Turned by pieces", 0f);
+                        solved = RemeshPipeline.RevolvedPieces(inputs[p].positions, inputs[p].triangles, turnedPieces[p], partSettings,
+                            profile, rawUvs[p], submeshes[p], cell: partCell);
+                        if (solved?.extraction != null && solved.extraction.faces.Count > 0)
+                        {
+                            inputs[p].result = solved;
+                            run.results.Add(solved);
+                            Timing($"part '{names[p]}' (turned by pieces, {solved.extraction.faces.Count} faces, {turnedPieces[p]})");
+                            continue;
+                        }
+                        solved = null;
+                    }
+                    // Thinner than a cell and given fewer quads than go round it: collapsed and paired
+                    // at what does. Strips at the model's cell size merge a band's sides into a
+                    // blade (the Ford's windscreen surround), and the remesher misses thin loops.
+                    if (thinNeed[p] > targets[p])
+                    {
+                        Progress("Collapsed (thin)", 0f);
+                        RemeshPipeline.CollapseToQuads(inputs[p].positions, inputs[p].triangles, thinNeed[p],
+                            out var thinPositions, out var thinFaces);
+                        partSettings.modelType = types[p];
+                        solved = RemeshPipeline.FromQuadReduction(inputs[p].positions, inputs[p].triangles,
+                            thinPositions, thinFaces, null, partSettings, profile, rawUvs[p], submeshes[p]);
+                        if (solved?.extraction != null && solved.extraction.faces.Count > 0)
+                        {
+                            inputs[p].result = solved;
+                            run.results.Add(solved);
+                            Timing($"part '{names[p]}' (thin, collapsed at {thinNeed[p]} for {targets[p]}, {solved.extraction.faces.Count} faces)");
                             continue;
                         }
                         solved = null;
@@ -462,6 +561,9 @@ namespace NativeRemesher
 
         /// <summary>Only a part with at most this many quads is remeshed again with three times them (a larger one costs too long).</summary>
         public static int retryBudget = 120;
+
+        /// <summary>A part thinner than the model's cell size is given at least enough quads to go round it (PartBake.ThinFloor); false: by area, as before.</summary>
+        public static bool thinFloors = true;
 
         /// <summary>The parts' floors (PartBake.Floor) together take at most this share of the quads; 0: uncapped, as before.</summary>
         public static float floorShare = 0.25f;

@@ -280,6 +280,9 @@ namespace NativeRemesher
         /// <summary>The strip reduction's counters when it was tried (RemeshPipeline.quadInputReduction); null otherwise.</summary>
         public QuadReduction.Stats quadReductionStats;
 
+        /// <summary>The axis the result was turned about (RemeshPipeline.Revolved); null when it was not.</summary>
+        public Revolution.Fit revolution;
+
         /// <summary>What the motion recognition found (RemeshPipeline.kinematicGuides); null when off.</summary>
         public KinematicSurfaces.Stats kinematicStats;
         public bool targetWasClamped;
@@ -703,6 +706,104 @@ namespace NativeRemesher
         }
 
         /// <summary>
+        /// The surface built as its profile turned about <paramref name="fit"/>'s axis (see
+        /// <see cref="Revolution"/>), with the UVs and materials a remesh's result carries; null when
+        /// there is no fit or no profile.
+        /// </summary>
+        public static RemeshResult Revolved(Vector3[] positions, int[] triangles, Revolution.Fit fit, RemeshSettings settings,
+            RemeshProfile profile, Vector2[] sourceUvs, int[] triangleMaterials, Action<string, float> onProgress = null,
+            float cell = 0f)
+        {
+            if (fit == null) return null;
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            if (!Revolution.Build(positions, triangles, fit, settings.targetQuadCount, out var outPositions, out var outFaces, cell))
+                return null;
+            if (settings.modelType == ModelType.Auto) settings.modelType = ModelType.HardSurface;
+            var result = FromQuadReduction(positions, triangles, outPositions, outFaces, null, settings, profile,
+                sourceUvs, triangleMaterials, watch, onProgress);
+            result.revolution = fit;
+            return result;
+        }
+
+        /// <summary>
+        /// A part of several pieces, some turned (<see cref="Revolution.FindPieces"/>): each turned
+        /// piece built turned at its share of the quads by area, the others reduced by their quad
+        /// strips (or, when they will not reduce, collapsed and paired) at theirs; null when no piece
+        /// could be built turned.
+        /// </summary>
+        public static RemeshResult RevolvedPieces(Vector3[] positions, int[] triangles, Revolution.Pieces pieces,
+            RemeshSettings settings, RemeshProfile profile, Vector2[] sourceUvs, int[] triangleMaterials,
+            Action<string, float> onProgress = null, float cell = 0f)
+        {
+            if (pieces == null) return null;
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            double total = 0;
+            foreach (var a in pieces.areas) total += a;
+            if (!(total > 0)) return null;
+            var outPositions = new List<Vector3>();
+            var outFaces = new List<int[]>();
+            void Add(Vector3[] p, List<int[]> f)
+            {
+                var offset = outPositions.Count;
+                outPositions.AddRange(p);
+                foreach (var face in f)
+                {
+                    var moved = new int[face.Length];
+                    for (var i = 0; i < face.Length; i++) moved[i] = face[i] + offset;
+                    outFaces.Add(moved);
+                }
+            }
+            var rest = new List<int>();
+            double restArea = 0;
+            Revolution.Fit first = null;
+            // Largest first, while the turned pieces together stay within the part's budget: built
+            // each at 8 sides or more, a coil spring's turns took the Ford's spring, 18 quads, to 705
+            // faces; what does not fit goes with the rest.
+            var order = new int[pieces.triangles.Count];
+            for (var k = 0; k < order.Length; k++) order[k] = k;
+            Array.Sort(order, (x, y) => pieces.areas[y].CompareTo(pieces.areas[x]));
+            var budget = Math.Max(Revolution.piecesSlack * settings.targetQuadCount, 32);
+            var used = 0;
+            foreach (var k in order)
+            {
+                var target = Math.Max(8, (int)Math.Round(settings.targetQuadCount * pieces.areas[k] / total));
+                var fit = pieces.fits[k];
+                if (Revolution.Accept(fit, target))
+                {
+                    Revolution.Compact(positions, pieces.triangles[k], out var piecePositions, out var pieceTriangles);
+                    if (Revolution.Build(piecePositions, pieceTriangles, fit, target, out var turnedPositions, out var turnedFaces, cell)
+                        && used + turnedFaces.Count <= budget)
+                    {
+                        used += turnedFaces.Count;
+                        Add(turnedPositions, turnedFaces);
+                        first ??= fit;
+                        continue;
+                    }
+                }
+                rest.AddRange(pieces.triangles[k]);
+                restArea += pieces.areas[k];
+            }
+            if (first == null) return null;
+            if (rest.Count > 0)
+            {
+                var restTarget = Math.Max(8, (int)Math.Round(settings.targetQuadCount * restArea / total));
+                Revolution.Compact(positions, rest.ToArray(), out var restPositions, out var restTriangles);
+                if (QuadReduction.Reduce(restPositions, restTriangles, restTarget, out var reducedPositions, out var reducedFaces, out _))
+                    Add(reducedPositions, reducedFaces);
+                else
+                {
+                    CollapseToQuads(restPositions, restTriangles, restTarget, out var collapsedPositions, out var collapsedFaces);
+                    Add(collapsedPositions, collapsedFaces);
+                }
+            }
+            if (settings.modelType == ModelType.Auto) settings.modelType = ModelType.HardSurface;
+            var result = FromQuadReduction(positions, triangles, outPositions.ToArray(), outFaces, null, settings, profile,
+                sourceUvs, triangleMaterials, watch, onProgress);
+            result.revolution = first;
+            return result;
+        }
+
+        /// <summary>
         /// Solve without trying the strip reduction: for a part whose strips were already tried with
         /// the rest of its model (QuadReduction.ReduceParts).
         /// </summary>
@@ -932,6 +1033,21 @@ namespace NativeRemesher
             RemeshProfile profile, Action<string, float> onProgress, Vector2[] sourceUvs, bool autoSelectProfile,
             int[] triangleMaterials)
         {
+            if (Revolution.enabled && settings.symmetry == SymmetryAxis.None && settings.densityPaint == null)
+            {
+                onProgress?.Invoke("Looking for a turned surface", 0f);
+                var fit = Revolution.Find(positions, triangles);
+                var turned = Revolution.Accept(fit, settings.targetQuadCount)
+                    ? Revolved(positions, triangles, fit, settings, profile, sourceUvs, triangleMaterials, onProgress)
+                    : null;
+                if (turned != null) return turned;
+                if (Revolution.pieces)
+                {
+                    turned = RevolvedPieces(positions, triangles, Revolution.FindPieces(positions, triangles), settings, profile,
+                        sourceUvs, triangleMaterials, onProgress);
+                    if (turned != null) return turned;
+                }
+            }
             if (settings.modelType == ModelType.Auto)
             {
                 onProgress?.Invoke("Recognising the model", 0f);
