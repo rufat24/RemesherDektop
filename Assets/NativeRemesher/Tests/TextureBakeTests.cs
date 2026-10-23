@@ -473,6 +473,45 @@ namespace NativeRemesher.Tests
         }
 
         [Test]
+        public void AFurtherMapIsBakedOverTheSameLayoutAsTheTexture()
+        {
+            // The texture red by u, its smoothness map green by u: laid out alike, they must bake
+            // alike, texel for texel -- else the result's material reads its smoothness from
+            // somewhere else on the model (the fuse box's patches).
+            SeamedSphere(32, 64, out var positions, out var triangles, out var uvs);
+            var main = new Color32[64 * 64];
+            var gloss = new Color32[64 * 64];
+            for (var y = 0; y < 64; y++)
+                for (var x = 0; x < 64; x++)
+                {
+                    var v = (byte)(x * 4);
+                    main[y * 64 + x] = new Color32(v, 0, 0, 255);
+                    gloss[y * 64 + x] = new Color32(0, v, 0, 255);
+                }
+            var settings = RemeshSettings.Default;
+            settings.targetQuadCount = 400;
+            var result = RemeshPipeline.Solve(positions, triangles, settings,
+                RemeshProfile.For(RemeshProfileKind.GameAsset), null, uvs);
+            var layer = new TextureBake.Layer { property = "_MetallicGlossMap", images = new[] { new TextureBake.Image(gloss, 64, 64) } };
+            RemeshPipeline.BakeTexture(result, positions, triangles, uvs, null,
+                new[] { new TextureBake.Image(main, 64, 64) }, 512, null, new[] { layer });
+            Assert.AreSame(layer, result.bakedLayers?[0]);
+            Assert.AreEqual(512 * 512, layer.baked.Length);
+            var worst = 0;
+            for (var i = 0; i < layer.baked.Length; i++) worst = Mathf.Max(worst, Mathf.Abs(layer.baked[i].g - result.bakedTexture[i].r));
+            Assert.LessOrEqual(worst, 1, "the map and the texture differ at some texel");
+
+            // A triangle whose material has no such map reads the layer's fallback.
+            var none = new int[triangles.Length / 3];
+            for (var t = 0; t < none.Length; t++) none[t] = -1;
+            var empty = new TextureBake.Layer { images = new[] { new TextureBake.Image(gloss, 64, 64) }, triangleImage = none,
+                fallback = new Color32(10, 20, 30, 255) };
+            RemeshPipeline.BakeTexture(result, positions, triangles, uvs, null,
+                new[] { new TextureBake.Image(main, 64, 64) }, 256, null, new[] { empty });
+            foreach (var c in empty.baked) Assert.AreEqual(20, c.g);
+        }
+
+        [Test]
         public void PipelineBakeReplacesTheUvs()
         {
             SeamedSphere(32, 64, out var positions, out var triangles, out var uvs);

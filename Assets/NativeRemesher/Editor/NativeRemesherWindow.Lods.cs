@@ -559,6 +559,8 @@ namespace NativeRemesher
             mat.name = name;
             if (albedo != null) mat.mainTexture = albedo;
             if (normals != null) AssignNormalMap(mat, normals);
+            // A level baked over its own atlas: the base's other maps are laid out for the base's UVs.
+            if (albedo != null || normals != null) AssignLayers(mat, null);
             if (folder != null) AssetDatabase.CreateAsset(mat, AssetDatabase.GenerateUniqueAssetPath($"{folder}/{SafeName(name)}.mat"));
             if (from != null) made[from] = mat;
             return mat;

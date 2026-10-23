@@ -852,6 +852,7 @@ namespace NativeRemesher
             var current = Selection.activeGameObject;
             m_JobReplaces = current != null && current != selected && SourceOf(current) == selected ? current : null;
             m_JobMaterials = materials;
+            TextureBake.Layer[] bakeLayers = null;
             if (m_BakeTexture && sourceUvs != null)
             {
                 if (materials == null) ReadSourceTextures(selected, triangleSubmesh, out bakeImages, out bakeTriangleTexture);
@@ -861,6 +862,10 @@ namespace NativeRemesher
                     bakeTriangleTexture = ReadTextures(materials, triangleSubmesh, triangles.Length / 3, list, new Dictionary<Texture, int>());
                     bakeImages = list.Count > 0 ? list.ToArray() : null;
                 }
+                // The materials' other maps (smoothness, occlusion, ...) over the same layout.
+                var layerMaterials = materials ?? selected.GetComponent<Renderer>()?.sharedMaterials;
+                if (bakeImages != null && layerMaterials != null)
+                    bakeLayers = ReadLayers(layerMaterials, triangleSubmesh, triangles.Length / 3);
             }
 
             var bakeResolution = TextureSizeFor(bakeImages);
@@ -888,7 +893,7 @@ namespace NativeRemesher
                     sourceUvs, autoProfile, triangleSubmesh);
                 if (bakeImages != null)
                     RemeshPipeline.BakeTexture(solved, positions, triangles, sourceUvs, bakeTriangleTexture,
-                        bakeImages, bakeResolution, Progress);
+                        bakeImages, bakeResolution, Progress, bakeLayers);
                 if (bakeNormals)
                     RemeshPipeline.BakeNormalMap(solved, positions, triangles, bakeResolution, Progress,
                         detailMaps != null ? sourceUvs : null, detailTriangleMap, detailMaps);
@@ -1041,6 +1046,7 @@ namespace NativeRemesher
                 // bump map.
                 var baked = result.bakedTexture != null ? SaveBakedTexture(result, assetPath, selected.name) : null;
                 var normalMap = result.bakedNormalMap != null ? SaveNormalMap(result, assetPath, selected.name) : null;
+                var layers = SaveLayers(result, assetPath, selected.name);
                 var made = new Dictionary<Material, Material>();
                 for (var i = 0; i < slots; i++)
                 {
@@ -1054,6 +1060,7 @@ namespace NativeRemesher
                     if (baked != null) mat.mainTexture = baked;
                     else if (mat.HasProperty("_MainTex") || mat.HasProperty("_BaseMap")) mat.mainTexture = null;
                     if (normalMap != null) AssignNormalMap(mat, normalMap);
+                    AssignLayers(mat, layers);
                     if (!string.IsNullOrEmpty(assetPath))
                     {
                         var matPath = AssetDatabase.GenerateUniqueAssetPath(
@@ -1158,14 +1165,14 @@ namespace NativeRemesher
         /// once each, through <paramref name="read"/>), -1 for none; null when no material has one.
         /// </summary>
         static int[] ReadTextures(Material[] materials, int[] triangleSubmesh, int triangleCount,
-            List<TextureBake.Image> images, Dictionary<Texture, int> read, bool normalMaps = false)
+            List<TextureBake.Image> images, Dictionary<Texture, int> read, bool normalMaps = false, string property = null)
         {
             var slotImage = new int[Mathf.Max(1, materials != null ? materials.Length : 0)];
             var any = false;
             for (var i = 0; i < slotImage.Length; i++)
             {
                 slotImage[i] = -1;
-                var tex = materials != null && i < materials.Length ? TextureOf(materials[i], normalMaps) : null;
+                var tex = materials != null && i < materials.Length ? TextureOf(materials[i], normalMaps, property) : null;
                 if (tex == null) continue;
                 if (!read.TryGetValue(tex, out var index))
                 {
@@ -1187,6 +1194,171 @@ namespace NativeRemesher
                 triangleTexture[t] = slot >= 0 ? slotImage[slot] : -1;
             }
             return triangleTexture;
+        }
+
+        // ------------------------------------------------------------------ further maps
+
+        /// <summary>Bake the materials' other maps (smoothness, occlusion, ...) with the texture; false: they are left off.</summary>
+        public static bool bakeLayers = true;
+
+        // Slots that are not laid out over the mesh's UVs, or that the bake writes itself.
+        static readonly HashSet<string> s_NotLayers = new HashSet<string>
+        {
+            "_MainTex", "_BaseMap", "_BaseColorMap", "_BumpMap", "_NormalMap",
+            // Tiled over the surface by their own scale, not by the layout.
+            "_DetailAlbedoMap", "_DetailNormalMap",
+        };
+
+        // Keywords a shader turns on for a map; off with the map, or the shader reads the default
+        // white texture (URP's metallic map would make the surface fully metal).
+        static readonly Dictionary<string, string[]> s_LayerKeywords = new Dictionary<string, string[]>
+        {
+            ["_MetallicGlossMap"] = new[] { "_METALLICSPECGLOSSMAP", "_METALLICGLOSSMAP" },
+            ["_SpecGlossMap"] = new[] { "_SPECGLOSSMAP", "_METALLICSPECGLOSSMAP" },
+            ["_OcclusionMap"] = new[] { "_OCCLUSIONMAP" },
+            ["_ParallaxMap"] = new[] { "_PARALLAXMAP" },
+            ["_MaskMap"] = new[] { "_MASKMAP" },
+            ["_DetailMask"] = new[] { "_DETAIL_MULX2", "_DETAIL_SCALED" },
+        };
+
+        /// <summary>
+        /// A texture slot of <paramref name="material"/> laid out over the mesh's UVs that the bake
+        /// does not already write (not the main texture, the normal map or a tiled detail map).
+        /// </summary>
+        static bool IsLayer(Material material, string property)
+        {
+            if (material == null || s_NotLayers.Contains(property) || property.StartsWith("unity_")) return false;
+            if (!material.HasProperty(property)) return false;
+            var texture = material.GetTexture(property);
+            return texture == null || texture.dimension == UnityEngine.Rendering.TextureDimension.Tex2D;
+        }
+
+        /// <summary>
+        /// The materials' other maps over the source's UVs, each read once, per triangle which it
+        /// reads: baked with the main texture, or the result's material would read them through the
+        /// new layout -- scattered patches (the fuse box's smoothness map) -- and left off instead.
+        /// </summary>
+        static TextureBake.Layer[] ReadLayers(Material[] materials, int[] triangleSubmesh, int triangleCount)
+        {
+            if (!bakeLayers || materials == null) return null;
+            var properties = LayerProperties(materials);
+            var layers = new List<TextureBake.Layer>();
+            foreach (var property in properties)
+            {
+                var images = new List<TextureBake.Image>();
+                var triangleImage = ReadTextures(materials, triangleSubmesh, triangleCount, images,
+                    new Dictionary<Texture, int>(), property: property);
+                if (triangleImage == null || images.Count == 0) continue;
+                layers.Add(NewLayer(materials, property, images.ToArray(), triangleImage));
+            }
+            return layers.Count > 0 ? layers.ToArray() : null;
+        }
+
+        /// <summary>The layer slots of the materials that hold a texture, other than their main one.</summary>
+        static List<string> LayerProperties(IEnumerable<Material> materials)
+        {
+            var properties = new List<string>();
+            foreach (var material in materials)
+            {
+                if (material == null) continue;
+                foreach (var property in material.GetTexturePropertyNames())
+                {
+                    if (properties.Contains(property) || !IsLayer(material, property)) continue;
+                    var texture = material.GetTexture(property);
+                    // Some shaders keep the main texture in a second slot too.
+                    if (texture != null && texture != material.mainTexture) properties.Add(property);
+                }
+            }
+            return properties;
+        }
+
+        static TextureBake.Layer NewLayer(IEnumerable<Material> materials, string property, TextureBake.Image[] images, int[] triangleImage)
+        {
+            var sRGB = false;
+            foreach (var material in materials)
+            {
+                var texture = TextureOf(material, false, property);
+                if (texture != null && AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(texture)) is TextureImporter importer)
+                {
+                    sRGB = importer.sRGBTexture;
+                    break;
+                }
+            }
+            return new TextureBake.Layer
+            {
+                property = property, images = images, triangleImage = triangleImage, sRGB = sRGB,
+                // Where a material has none: no glow, else white (full occlusion, the sliders' own smoothness).
+                fallback = property.Contains("Emission") ? new Color32(0, 0, 0, 255) : new Color32(255, 255, 255, 255),
+            };
+        }
+
+        /// <summary>The baked layers as textures, by property: PNGs beside the mesh asset, or in memory.</summary>
+        static Dictionary<string, Texture2D> SaveLayers(RemeshResult result, string assetPath, string sourceName)
+        {
+            var saved = new Dictionary<string, Texture2D>();
+            if (result?.bakedLayers == null) return saved;
+            var size = result.bakedTextureSize;
+            foreach (var layer in result.bakedLayers)
+            {
+                if (layer?.baked == null || layer.baked.Length != size * size || saved.ContainsKey(layer.property)) continue;
+                var suffix = layer.property.TrimStart('_');
+                var texture = new Texture2D(size, size, TextureFormat.RGBA32, true, !layer.sRGB)
+                {
+                    name = sourceName + "_Quads_" + suffix,
+                    wrapMode = TextureWrapMode.Clamp,
+                };
+                texture.SetPixels32(layer.baked);
+                texture.Apply(true);
+                saved[layer.property] = texture;
+                if (string.IsNullOrEmpty(assetPath)) continue;
+                try
+                {
+                    var pngPath = AssetDatabase.GenerateUniqueAssetPath(Path.ChangeExtension(assetPath, null) + "_" + suffix + ".png");
+                    File.WriteAllBytes(pngPath, texture.EncodeToPNG());
+                    AssetDatabase.ImportAsset(pngPath, ImportAssetOptions.ForceSynchronousImport);
+                    if (AssetImporter.GetAtPath(pngPath) is TextureImporter importer)
+                    {
+                        importer.sRGBTexture = layer.sRGB;
+                        importer.maxTextureSize = Mathf.Max(importer.maxTextureSize, size);
+                        importer.wrapMode = TextureWrapMode.Clamp;
+                        importer.SaveAndReimport();
+                    }
+                    var file = AssetDatabase.LoadAssetAtPath<Texture2D>(pngPath);
+                    if (file != null)
+                    {
+                        DestroyImmediate(texture);
+                        saved[layer.property] = file;
+                    }
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogWarning($"[Native Remesher] Could not save {suffix}: {e.Message}. It is in memory only.");
+                }
+            }
+            return saved;
+        }
+
+        /// <summary>
+        /// Every layer slot of a baked material: its baked map, or none (with the shader's keyword
+        /// for it off) when there is no bake of it -- never the source's, laid out for other UVs.
+        /// </summary>
+        static void AssignLayers(Material mat, Dictionary<string, Texture2D> layers)
+        {
+            if (mat == null) return;
+            foreach (var property in mat.GetTexturePropertyNames())
+            {
+                if (!IsLayer(mat, property)) continue;
+                var had = mat.GetTexture(property) != null;
+                if (had && layers != null && layers.TryGetValue(property, out var baked) && baked != null)
+                {
+                    mat.SetTexture(property, baked);
+                    continue;
+                }
+                if (!had) continue;
+                mat.SetTexture(property, null);
+                if (s_LayerKeywords.TryGetValue(property, out var keywords))
+                    foreach (var keyword in keywords) mat.DisableKeyword(keyword);
+            }
         }
 
         /// <summary>What the last run read the model as, for the line under Model Type.</summary>
@@ -1255,13 +1427,15 @@ namespace NativeRemesher
         /// A texture's pixels at full size: from its PNG or JPG file when it has one (the importer
         /// may have shrunk it -- ccnb.jpg is 8192 square, imported at 2048), else from the GPU copy.
         /// </summary>
-        /// <summary>A material's main texture, or with <paramref name="normalMap"/> its normal map.</summary>
-        static Texture TextureOf(Material material, bool normalMap)
+        /// <summary>A material's main texture, or with <paramref name="normalMap"/> its normal map, or with <paramref name="property"/> that slot's.</summary>
+        static Texture TextureOf(Material material, bool normalMap, string property = null)
         {
             if (material == null) return null;
+            if (property != null)
+                return material.HasProperty(property) && material.GetTexture(property) is Texture own && own != null ? own : null;
             if (!normalMap) return material.mainTexture;
-            foreach (var property in new[] { "_BumpMap", "_NormalMap" })
-                if (material.HasProperty(property) && material.GetTexture(property) is Texture t && t != null)
+            foreach (var slot in new[] { "_BumpMap", "_NormalMap" })
+                if (material.HasProperty(slot) && material.GetTexture(slot) is Texture t && t != null)
                     return t;
             return null;
         }
@@ -1291,7 +1465,12 @@ namespace NativeRemesher
             // Any other format, or none: through a render target, which needs no Read/Write.
             var w = texture.width;
             var h = texture.height;
-            var rt = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+            // Data (a normal map, smoothness, occlusion) copied as it is: through an sRGB target it
+            // would come back brightened.
+            var linear = AssetImporter.GetAtPath(path) is TextureImporter dataImporter
+                         && (!dataImporter.sRGBTexture || dataImporter.textureType == TextureImporterType.NormalMap);
+            var rt = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32,
+                linear ? RenderTextureReadWrite.Linear : RenderTextureReadWrite.sRGB);
             var previous = RenderTexture.active;
             Graphics.Blit(texture, rt);
             RenderTexture.active = rt;

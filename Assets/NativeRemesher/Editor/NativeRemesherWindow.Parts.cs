@@ -53,6 +53,22 @@ namespace NativeRemesher
             var pieces = new List<int>();
             var occludes = new List<bool>();
             var toRoot = root.transform.worldToLocalMatrix;
+            // The materials' other maps (smoothness, occlusion, ...): one layer per slot over all parts.
+            var layerProperties = new List<string>();
+            var allMaterials = new List<Material>();
+            if (bakeTexture && bakeLayers)
+            {
+                foreach (var go in parts)
+                    if (go.GetComponent<Renderer>() is Renderer r) allMaterials.AddRange(r.sharedMaterials);
+                layerProperties = LayerProperties(allMaterials);
+            }
+            var layerImages = new List<TextureBake.Image>[layerProperties.Count];
+            var layerRead = new Dictionary<Texture, int>[layerProperties.Count];
+            for (var l = 0; l < layerProperties.Count; l++)
+            {
+                layerImages[l] = new List<TextureBake.Image>();
+                layerRead[l] = new Dictionary<Texture, int>();
+            }
             foreach (var go in parts)
             {
                 RemeshTopology.ReadMesh(MeshOn(go), out var positions, out var triangles, out var uvs, out var submesh);
@@ -69,11 +85,16 @@ namespace NativeRemesher
                     textures = new int[triangles.Length / 3];
                     for (var t = 0; t < textures.Length; t++) textures[t] = -1;
                 }
+                var triangleLayers = layerProperties.Count > 0 && textures != null ? new int[layerProperties.Count][] : null;
+                for (var l = 0; triangleLayers != null && l < layerProperties.Count; l++)
+                    triangleLayers[l] = ReadTextures(mats, submesh, triangles.Length / 3, layerImages[l], layerRead[l],
+                        property: layerProperties[l]);
                 var toModel = toRoot * go.transform.localToWorldMatrix;
                 inputs.Add(new PartBake.Part
                 {
                     positions = positions, triangles = triangles, toModel = toModel,
                     uvs = textures != null ? uvs : null, triangleTexture = textures, triangleNormalMap = detail,
+                    triangleLayers = triangleLayers,
                 });
                 areas.Add(PartBake.Area(positions, triangles, toModel));
                 pieces.Add(PartBake.Pieces(positions, triangles));
@@ -139,6 +160,17 @@ namespace NativeRemesher
             var token = m_Cancel.Token;
             var imageArray = images.ToArray();
             var normalImageArray = normalImages.ToArray();
+            var layerList = new List<TextureBake.Layer>();
+            for (var l = 0; l < layerProperties.Count; l++)
+                if (layerImages[l].Count > 0)
+                    layerList.Add(NewLayer(allMaterials, layerProperties[l], layerImages[l].ToArray(), null));
+                else
+                    layerList.Add(null);
+            // Parts index layers by slot: an empty one stays in place, baked as nothing.
+            var layerArray = layerList.Exists(x => x != null) ? layerList.ToArray() : null;
+            if (layerArray != null)
+                for (var l = 0; l < layerArray.Length; l++)
+                    layerArray[l] ??= new TextureBake.Layer { property = layerProperties[l], images = new TextureBake.Image[0] };
 
             s_Scheduler ??= new BackgroundScheduler();
             m_PartsJob = s_Scheduler.Run(() =>
@@ -374,7 +406,7 @@ namespace NativeRemesher
                             token.ThrowIfCancellationRequested();
                             m_JobStage = $"All parts: {stage}";
                             m_JobProgress = (n + Mathf.Clamp01(progress)) / (n + 1);
-                        }, normalImageArray.Length > 0 ? normalImageArray : null);
+                        }, normalImageArray.Length > 0 ? normalImageArray : null, layerArray);
                 Timing("bake");
                 return run;
             }, token);
@@ -492,11 +524,13 @@ namespace NativeRemesher
             }
 
             Texture2D baked = null, normalMap = null;
+            Dictionary<string, Texture2D> sharedLayers = null;
             if (run.shared != null)
             {
                 var sharedPath = folder != null ? $"{folder}/{safe}_Quads.asset" : "";
                 if (run.shared.bakedTexture != null) baked = SaveBakedTexture(run.shared, sharedPath, root.name);
                 if (run.shared.bakedNormalMap != null) normalMap = SaveNormalMap(run.shared, sharedPath, root.name);
+                sharedLayers = SaveLayers(run.shared, sharedPath, root.name);
             }
             var made = new Dictionary<Material, Material>();
             Material blank = null;
@@ -510,6 +544,7 @@ namespace NativeRemesher
                 if (baked != null) mat.mainTexture = baked;
                 else if (mat.HasProperty("_MainTex") || mat.HasProperty("_BaseMap")) mat.mainTexture = null;
                 if (normalMap != null) AssignNormalMap(mat, normalMap);
+                AssignLayers(mat, sharedLayers);
                 if (folder != null)
                 {
                     var matName = string.Join("_", mat.name.Split(Path.GetInvalidFileNameChars()));

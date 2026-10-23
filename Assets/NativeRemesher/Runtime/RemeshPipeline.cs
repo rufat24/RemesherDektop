@@ -121,6 +121,9 @@ namespace NativeRemesher
         public Color32[] bakedTexture;
         public int bakedTextureSize;
 
+        /// <summary>The source's further maps baked over the same atlas as bakedTexture (BakeTexture's layers); null: none.</summary>
+        public TextureBake.Layer[] bakedLayers;
+
         /// <summary>A tangent-space normal map of the input over the same atlas (BakeNormalMap); null when not baked.</summary>
         public Color32[] bakedNormalMap;
         public int bakedNormalMapSize;
@@ -1417,7 +1420,7 @@ namespace NativeRemesher
         /// </summary>
         public static void BakeTexture(RemeshResult result, Vector3[] positions, int[] triangles,
             Vector2[] sourceUvs, int[] triangleTexture, TextureBake.Image[] textures, int resolution,
-            Action<string, float> onProgress = null)
+            Action<string, float> onProgress = null, TextureBake.Layer[] layers = null)
         {
             var extraction = result?.extraction;
             if (extraction == null || extraction.positions == null || sourceUvs == null
@@ -1428,7 +1431,8 @@ namespace NativeRemesher
             var uvs = TextureBake.Unwrap(extraction.positions, extraction.faces, resolution, stats);
             result.bakedTexture = TextureBake.Bake(positions, triangles, sourceUvs, triangleTexture, textures,
                 extraction.positions, extraction.faces, uvs, resolution, stats,
-                p => onProgress?.Invoke("Baking texture", p));
+                p => onProgress?.Invoke("Baking texture", p), layers);
+            result.bakedLayers = layers != null && layers.Length > 0 ? layers : null;
             result.bakedTextureSize = resolution;
             result.bakeStats = stats;
             extraction.faceUvs = uvs;

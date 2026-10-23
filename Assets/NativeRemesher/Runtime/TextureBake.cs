@@ -53,6 +53,25 @@ namespace NativeRemesher
             }
         }
 
+        /// <summary>
+        /// A further map of the source's materials (smoothness, occlusion, emission, ...), laid out
+        /// over the source's UVs as the main texture is: baked over the result's atlas alongside it,
+        /// through the same hits (Bake fills <see cref="baked"/>).
+        /// </summary>
+        public sealed class Layer
+        {
+            /// <summary>The material property it came from, e.g. "_MetallicGlossMap".</summary>
+            public string property;
+            public Image[] images;
+            /// <summary>Per source triangle, its image (-1: none, reads <see cref="fallback"/>); null: the first for all.</summary>
+            public int[] triangleImage;
+            /// <summary>Where a triangle's material has no such map.</summary>
+            public Color32 fallback = new Color32(255, 255, 255, 255);
+            /// <summary>Kept for whoever saves it: whether the source's texture was colour (sRGB) data.</summary>
+            public bool sRGB;
+            public Color32[] baked;
+        }
+
         public sealed class Stats
         {
             public int resolution, charts, gridCharts, singleFaceCharts, largestChart, padding;
@@ -729,35 +748,35 @@ namespace NativeRemesher
         /// Per source triangle, its texture in <paramref name="textures"/> (its material); null when
         /// there is one texture. A triangle with no texture reads mid grey.
         /// </param>
+        /// <param name="layers">
+        /// Further maps read at the same source points as the main texture (each its own mip
+        /// level); each layer's <see cref="Layer.baked"/> is filled. Null: none.
+        /// </param>
         public static Color32[] Bake(Vector3[] sourcePositions, int[] sourceTriangles, Vector2[] sourceUvs,
             int[] sourceTriangleTexture, Image[] textures, Vector3[] positions, IList<int[]> faces,
-            Vector2[][] faceUvs, int resolution, Stats stats, Action<float> onProgress = null)
+            Vector2[][] faceUvs, int resolution, Stats stats, Action<float> onProgress = null, Layer[] layers = null)
         {
             var watch = System.Diagnostics.Stopwatch.StartNew();
             var mips = new Mips[textures.Length];
             for (var i = 0; i < textures.Length; i++)
                 if (textures[i] != null) mips[i] = new Mips(textures[i]);
 
-            // Source texels per output texel, from areas: sum of UV area x texture size over the
-            // world area, against the output's texels per unit squared.
-            double uvArea = 0, worldArea = 0;
-            for (var t = 0; t < sourceTriangles.Length / 3; t++)
-            {
-                var tex = sourceTriangleTexture != null ? sourceTriangleTexture[t] : 0;
-                if (tex < 0 || tex >= textures.Length || textures[tex] == null) continue;
-                int a = sourceTriangles[3 * t], b = sourceTriangles[3 * t + 1], c = sourceTriangles[3 * t + 2];
-                var wa = Vector3.Cross(sourcePositions[b] - sourcePositions[a], sourcePositions[c] - sourcePositions[a]).magnitude * 0.5;
-                var ua = Mathf.Abs((sourceUvs[b].x - sourceUvs[a].x) * (sourceUvs[c].y - sourceUvs[a].y)
-                                   - (sourceUvs[b].y - sourceUvs[a].y) * (sourceUvs[c].x - sourceUvs[a].x)) * 0.5;
-                worldArea += wa;
-                uvArea += ua * textures[tex].width * textures[tex].height;
-            }
-            var sourceDensity = worldArea > 0 ? uvArea / worldArea : 0;
             var outputDensity = (double)stats.texelsPerUnit * stats.texelsPerUnit * supersample * supersample;
-            var level = outputDensity > 0 && sourceDensity > 0
-                ? Mathf.Max(0f, 0.5f * Mathf.Log((float)(sourceDensity / outputDensity), 2f))
-                : 0f;
+            var level = SourceLevel(sourcePositions, sourceTriangles, sourceUvs, sourceTriangleTexture, textures, outputDensity);
             stats.sourceLevel = level;
+            var layerCount = layers?.Length ?? 0;
+            var layerMips = new Mips[layerCount][];
+            var layerLevel = new float[layerCount];
+            var layerPixels = new Color32[layerCount][];
+            for (var l = 0; l < layerCount; l++)
+            {
+                var images = layers[l]?.images ?? Array.Empty<Image>();
+                layerMips[l] = new Mips[images.Length];
+                for (var i = 0; i < images.Length; i++)
+                    if (images[i] != null) layerMips[l][i] = new Mips(images[i]);
+                layerLevel[l] = SourceLevel(sourcePositions, sourceTriangles, sourceUvs, layers[l]?.triangleImage, images, outputDensity);
+                layerPixels[l] = new Color32[resolution * resolution];
+            }
 
             var grid = new SpatialGrid(sourcePositions, sourceTriangles);
             var pixels = new Color32[resolution * resolution];
@@ -806,7 +825,25 @@ namespace NativeRemesher
                 facing = agree < 0 ? 1f : -1f;
             }
 
-            Vector4 SampleAt(Vector3 p, Vector3 n)
+            // The layers at a source point: added into sums (one per layer).
+            void LayersAt(int t, Vector2 uv, Vector4[] sums)
+            {
+                for (var l = 0; l < layerCount; l++)
+                {
+                    var map = t >= 0 && layers[l] != null
+                        ? layers[l].triangleImage != null ? (t < layers[l].triangleImage.Length ? layers[l].triangleImage[t] : -1) : 0
+                        : -1;
+                    if (map >= 0 && map < layerMips[l].Length && layerMips[l][map] != null)
+                        sums[l] += layerMips[l][map].Sample(uv, layerLevel[l]);
+                    else
+                    {
+                        var c = layers[l] != null ? layers[l].fallback : new Color32(255, 255, 255, 255);
+                        sums[l] += new Vector4(c.r, c.g, c.b, c.a);
+                    }
+                }
+            }
+
+            Vector4 SampleAt(Vector3 p, Vector3 n, Vector4[] layerSums)
             {
                 var t = -1;
                 Vector3 q = default;
@@ -829,15 +866,24 @@ namespace NativeRemesher
                         q = SpatialGrid.ClosestPointOnTriangle(p, sourcePositions[na], sourcePositions[nb], sourcePositions[nc]);
                     }
                 }
-                if (t < 0) return new Vector4(128, 128, 128, 255);
-                var tex = sourceTriangleTexture != null ? sourceTriangleTexture[t] : 0;
-                if (tex < 0 || tex >= mips.Length || mips[tex] == null) return new Vector4(128, 128, 128, 255);
+                if (t < 0)
+                {
+                    if (layerCount > 0) LayersAt(-1, default, layerSums);
+                    return new Vector4(128, 128, 128, 255);
+                }
                 int ia = sourceTriangles[3 * t], ib = sourceTriangles[3 * t + 1], ic = sourceTriangles[3 * t + 2];
                 Vector3 a = sourcePositions[ia], b = sourcePositions[ib], c = sourcePositions[ic];
                 Barycentric(q, a, b, c, out var wa, out var wb, out var wc);
                 var uv = sourceUvs[ia] * wa + sourceUvs[ib] * wb + sourceUvs[ic] * wc;
+                if (layerCount > 0) LayersAt(t, uv, layerSums);
+                var tex = sourceTriangleTexture != null ? sourceTriangleTexture[t] : 0;
+                if (tex < 0 || tex >= mips.Length || mips[tex] == null) return new Vector4(128, 128, 128, 255);
                 return mips[tex].Sample(uv, level);
             }
+
+            static Color32 ToColour(Vector4 v) => new Color32((byte)Mathf.Clamp(Mathf.RoundToInt(v.x), 0, 255),
+                (byte)Mathf.Clamp(Mathf.RoundToInt(v.y), 0, 255), (byte)Mathf.Clamp(Mathf.RoundToInt(v.z), 0, 255),
+                (byte)Mathf.Clamp(Mathf.RoundToInt(v.w), 0, 255));
 
             Parallel.For(0, faces.Count, BackgroundScheduler.Options, f =>
             {
@@ -845,6 +891,7 @@ namespace NativeRemesher
                 var uv = faceUvs[f];
                 if (face == null || uv == null || face.Length < 3 || uv.Length != face.Length) return;
                 var local = 0;
+                var layerSums = layerCount > 0 ? new Vector4[layerCount] : null;
                 // As the renderer splits it: a fan from corner 0.
                 for (var i = 1; i + 1 < face.Length; i++)
                 {
@@ -872,6 +919,7 @@ namespace NativeRemesher
                             float d2 = sign * Cross(u0 - u2, c - u2) / L20;
                             if (d0 < -k_Reach || d1 < -k_Reach || d2 < -k_Reach) continue;
                             var sum = Vector4.zero;
+                            if (layerSums != null) Array.Clear(layerSums, 0, layerCount);
                             for (var sy = 0; sy < ss; sy++)
                                 for (var sx = 0; sx < ss; sx++)
                                 {
@@ -885,14 +933,12 @@ namespace NativeRemesher
                                     var sn = normals != null
                                         ? MeshMath.SafeNormalize(normals[face[0]] * w0 + normals[face[i]] * w1 + normals[face[i + 1]] * w2, Vector3.zero)
                                         : Vector3.zero;
-                                    sum += SampleAt(p0 * w0 + p1 * w1 + p2 * w2, sn);
+                                    sum += SampleAt(p0 * w0 + p1 * w1 + p2 * w2, sn, layerSums);
                                 }
                             sum /= ss * ss;
                             var idx = y * resolution + x;
-                            pixels[idx] = new Color32((byte)Mathf.Clamp(Mathf.RoundToInt(sum.x), 0, 255),
-                                (byte)Mathf.Clamp(Mathf.RoundToInt(sum.y), 0, 255),
-                                (byte)Mathf.Clamp(Mathf.RoundToInt(sum.z), 0, 255),
-                                (byte)Mathf.Clamp(Mathf.RoundToInt(sum.w), 0, 255));
+                            pixels[idx] = ToColour(sum);
+                            for (var l = 0; l < layerCount; l++) layerPixels[l][idx] = ToColour(layerSums[l] / (ss * ss));
                             written[idx] = true;
                             local++;
                         }
@@ -904,6 +950,12 @@ namespace NativeRemesher
             stats.bakedTexels = 0;
             foreach (var w in written) if (w) stats.bakedTexels++;
 
+            for (var l = 0; l < layerCount; l++)
+            {
+                // Each from the same texels the main texture was baked to.
+                if (fillGutters) FillOutward(layerPixels[l], (bool[])written.Clone(), resolution);
+                if (layers[l] != null) layers[l].baked = layerPixels[l];
+            }
             if (fillGutters) stats.filledTexels = FillOutward(pixels, written, resolution);
             stats.colourRayMisses = rayMisses;
             stats.bakeMs = watch.ElapsedMilliseconds;
@@ -911,6 +963,29 @@ namespace NativeRemesher
         }
 
         static float Cross(Vector2 a, Vector2 b) => a.x * b.y - a.y * b.x;
+
+        // The mip level to read the source at: source texels per output texel, from areas (sum of
+        // UV area x texture size over the world area, against the output's texels per unit squared).
+        static float SourceLevel(Vector3[] sourcePositions, int[] sourceTriangles, Vector2[] sourceUvs,
+            int[] sourceTriangleTexture, Image[] textures, double outputDensity)
+        {
+            double uvArea = 0, worldArea = 0;
+            for (var t = 0; t < sourceTriangles.Length / 3; t++)
+            {
+                var tex = sourceTriangleTexture != null ? (t < sourceTriangleTexture.Length ? sourceTriangleTexture[t] : -1) : 0;
+                if (tex < 0 || tex >= textures.Length || textures[tex] == null) continue;
+                int a = sourceTriangles[3 * t], b = sourceTriangles[3 * t + 1], c = sourceTriangles[3 * t + 2];
+                var wa = Vector3.Cross(sourcePositions[b] - sourcePositions[a], sourcePositions[c] - sourcePositions[a]).magnitude * 0.5;
+                var ua = Mathf.Abs((sourceUvs[b].x - sourceUvs[a].x) * (sourceUvs[c].y - sourceUvs[a].y)
+                                   - (sourceUvs[b].y - sourceUvs[a].y) * (sourceUvs[c].x - sourceUvs[a].x)) * 0.5;
+                worldArea += wa;
+                uvArea += ua * textures[tex].width * textures[tex].height;
+            }
+            var sourceDensity = worldArea > 0 ? uvArea / worldArea : 0;
+            return outputDensity > 0 && sourceDensity > 0
+                ? Mathf.Max(0f, 0.5f * Mathf.Log((float)(sourceDensity / outputDensity), 2f))
+                : 0f;
+        }
 
         // Each sweep: every vertex's direction becomes the normalised sum over itself and its
         // face neighbours.

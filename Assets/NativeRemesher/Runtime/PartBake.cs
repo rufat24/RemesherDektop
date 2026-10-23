@@ -30,6 +30,9 @@ namespace NativeRemesher
 
             /// <summary>Per source triangle, its normal map in the normal maps passed to Bake (-1: none); null when none has one.</summary>
             public int[] triangleNormalMap;
+
+            /// <summary>Per layer passed to Bake, per source triangle, its image in that layer (-1: none); null: none.</summary>
+            public int[][] triangleLayers;
         }
 
         /// <summary>
@@ -263,7 +266,7 @@ namespace NativeRemesher
         /// </summary>
         public static RemeshResult Bake(IList<Part> parts, TextureBake.Image[] images, bool bakeTexture,
             bool bakeNormals, int resolution, Action<string, float> onProgress = null,
-            TextureBake.Image[] normalMaps = null)
+            TextureBake.Image[] normalMaps = null, TextureBake.Layer[] layers = null)
         {
             if (parts == null || parts.Count == 0 || !bakeTexture && !bakeNormals) return null;
 
@@ -309,6 +312,9 @@ namespace NativeRemesher
             var suv = new List<Vector2>();
             var stex = new List<int>();
             var snm = new List<int>();
+            var layerCount = layers?.Length ?? 0;
+            var sl = new List<int>[layerCount];
+            for (var l = 0; l < layerCount; l++) sl[l] = new List<int>();
             var anyUvs = false;
             var anyNormalMaps = false;
             foreach (var part in parts)
@@ -328,6 +334,11 @@ namespace NativeRemesher
                     var nm = hasUvs && part.triangleNormalMap != null && t / 3 < part.triangleNormalMap.Length ? part.triangleNormalMap[t / 3] : -1;
                     snm.Add(nm);
                     anyNormalMaps |= nm >= 0;
+                    for (var l = 0; l < layerCount; l++)
+                    {
+                        var own = hasUvs && part.triangleLayers != null && l < part.triangleLayers.Length ? part.triangleLayers[l] : null;
+                        sl[l].Add(own != null && t / 3 < own.Length ? own[t / 3] : -1);
+                    }
                 }
             }
             var sourcePositions = sp.ToArray();
@@ -335,8 +346,22 @@ namespace NativeRemesher
 
             var shared = new RemeshResult { extraction = joined };
             if (bakeTexture && anyUvs && images != null && images.Length > 0)
+            {
+                // Each layer over the joined triangles.
+                TextureBake.Layer[] joinedLayers = null;
+                if (layerCount > 0)
+                {
+                    joinedLayers = new TextureBake.Layer[layerCount];
+                    for (var l = 0; l < layerCount; l++)
+                        joinedLayers[l] = new TextureBake.Layer
+                        {
+                            property = layers[l].property, images = layers[l].images, fallback = layers[l].fallback,
+                            sRGB = layers[l].sRGB, triangleImage = sl[l].ToArray(),
+                        };
+                }
                 RemeshPipeline.BakeTexture(shared, sourcePositions, sourceTriangles, suv.ToArray(), stex.ToArray(),
-                    images, resolution, onProgress);
+                    images, resolution, onProgress, joinedLayers);
+            }
             if (bakeNormals)
                 RemeshPipeline.BakeNormalMap(shared, sourcePositions, sourceTriangles, resolution, onProgress,
                     anyNormalMaps ? suv.ToArray() : null, anyNormalMaps ? snm.ToArray() : null, anyNormalMaps ? normalMaps : null);
