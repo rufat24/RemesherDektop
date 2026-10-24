@@ -85,9 +85,11 @@ namespace NativeRemesher
             public int Cost => quads * 2 + triangles;
             /// <summary>Faces whose UVs had to be pulled to one side of a seam.</summary>
             public int seamFaces;
+            /// <summary>Quads turned to their nearer diagonal (RemeshPipeline.nearerDiagonals).</summary>
+            public int turnedQuads;
             public long ms;
             public override string ToString() =>
-                $"{method}{(note != null ? $" ({note})" : "")} faces={faces.Count} quads={quads} tris={triangles} seamFaces={seamFaces} error={error:G3} switch={switchHeight:P1} ms={ms}";
+                $"{method}{(note != null ? $" ({note})" : "")} faces={faces.Count} quads={quads} tris={triangles} seamFaces={seamFaces} turned={turnedQuads} error={error:G3} switch={switchHeight:P1} ms={ms}";
         }
 
         /// <summary>
@@ -145,6 +147,9 @@ namespace NativeRemesher
                     level.positions = stripPositions;
                     level.faces = stripFaces;
                     level.method = "strips";
+                    // Bent quads cut along the diagonal nearer the base, as every output's are.
+                    if (RemeshPipeline.nearerDiagonals)
+                        level.turnedQuads = PlanarQuads.NearerDiagonals(level.positions, level.faces, baseGrid);
                 }
                 else
                 {
