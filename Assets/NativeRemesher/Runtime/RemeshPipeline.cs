@@ -1057,12 +1057,13 @@ namespace NativeRemesher
                 var turned = Revolution.Accept(fit, settings.targetQuadCount)
                     ? Revolved(positions, triangles, fit, settings, profile, sourceUvs, triangleMaterials, onProgress)
                     : null;
-                if (turned != null) return turned;
+                SpatialGrid turnedGrid = null;
+                if (turned != null) return NearerDiagonals(turned, positions, triangles, ref turnedGrid);
                 if (Revolution.pieces)
                 {
                     turned = RevolvedPieces(positions, triangles, Revolution.FindPieces(positions, triangles), settings, profile,
                         sourceUvs, triangleMaterials, onProgress);
-                    if (turned != null) return turned;
+                    if (turned != null) return NearerDiagonals(turned, positions, triangles, ref turnedGrid);
                 }
             }
             if (settings.modelType == ModelType.Auto)
@@ -1072,6 +1073,8 @@ namespace NativeRemesher
             }
             var lattice = SolveLattice(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile,
                 triangleMaterials);
+            SpatialGrid sourceGrid = null;
+            NearerDiagonals(lattice, positions, triangles, ref sourceGrid);
             if (!detailQuadsTry || detailQuads || lattice?.extraction == null || settings.modelType == ModelType.Character
                 || settings.symmetry != SymmetryAxis.None || settings.densityPaint != null
                 || triangles.Length / 3 < detailQuadsTryTriangles
@@ -1094,6 +1097,7 @@ namespace NativeRemesher
                     autoSelectProfile, SymmetryAxis.None, 0f, triangleMaterials);
             }
             finally { detailQuads = false; }
+            NearerDiagonals(detail, positions, triangles, ref sourceGrid);
             var latticeOff = DistanceOff(positions, triangles, lattice.extraction, out var latticeTurn, out var latticeFar);
             var best = lattice;
             var bestOff = latticeOff;
@@ -1130,6 +1134,9 @@ namespace NativeRemesher
                         autoSelectProfile, SymmetryAxis.None, 0f, triangleMaterials);
                 }
                 finally { planarQuads = false; }
+                // Turned already, against the walls made flat (PlanarQuads.nearerDiagonal): against
+                // the source's own bumps they turn worse (ccnb 8.4 deg to 8.7, the house 10.3 to 10.5).
+                if (!PlanarQuads.nearerDiagonal) NearerDiagonals(planar, positions, triangles, ref sourceGrid);
                 if (planar?.extraction != null && planar.extraction.faces.Count > 0)
                 {
                     var planarOff = DistanceOff(positions, triangles, planar.extraction, out var planarTurn, out var planarFar);
@@ -1148,6 +1155,44 @@ namespace NativeRemesher
             lattice.detailTry = tried;
             best.detailTry = tried + kept;
             return best;
+        }
+
+        /// <summary>
+        /// Every output's quads that are not flat turned by a corner where the other diagonal lies
+        /// nearer the source: Unity's quad topology (and the triangulation measured here) cuts a
+        /// quad along its first and third corners, and the cut decides where the bent quad's
+        /// surface lies. False: as each path built them.
+        /// </summary>
+        public static bool nearerDiagonals = true;
+
+        /// <summary>Quads of the last output turned by <see cref="nearerDiagonals"/>.</summary>
+        public static int lastTurnedQuads;
+
+        // Turns the result's quads (see nearerDiagonals) and their corners' UVs, tangents and
+        // normals with them; new lists and arrays, as a result's extraction may share them.
+        static RemeshResult NearerDiagonals(RemeshResult result, Vector3[] positions, int[] triangles, ref SpatialGrid source)
+        {
+            var ex = result?.extraction;
+            if (!nearerDiagonals || ex?.positions == null || ex.faces.Count == 0) return result;
+            source ??= new SpatialGrid(positions, triangles);
+            var faces = new List<int[]>(ex.faces);
+            var turned = new bool[faces.Count];
+            lastTurnedQuads = PlanarQuads.NearerDiagonals(ex.positions, faces, source, turned);
+            if (lastTurnedQuads == 0) return result;
+            T[][] Turned<T>(T[][] corners)
+            {
+                if (corners == null || corners.Length != faces.Count) return corners;
+                var copy = (T[][])corners.Clone();
+                for (var f = 0; f < copy.Length; f++)
+                    if (turned[f] && copy[f] != null && copy[f].Length == 4)
+                        copy[f] = new[] { copy[f][1], copy[f][2], copy[f][3], copy[f][0] };
+                return copy;
+            }
+            ex.faces = faces;
+            ex.faceUvs = Turned(ex.faceUvs);
+            ex.faceTangents = Turned(ex.faceTangents);
+            ex.faceNormals = Turned(ex.faceNormals);
+            return result;
         }
 
         /// <summary>

@@ -776,10 +776,19 @@ namespace NativeRemesher
             return faces.Count > 0;
         }
 
+        /// <summary>
+        /// A bent quad's cut that leaves a half facing against the quad (one through the outside of
+        /// a quad bent in) loses to one that does not, whatever the distances.
+        /// </summary>
+        public static bool diagonalFoldGuard = true;
+
         // Each quad whose two halves, cut one way, fold by more than a few degrees: turned by a
         // corner when the other cut lies nearer the surface (the middle of the cut and of each
-        // half, the farthest of the three). Returns the quads turned.
-        static int NearerDiagonals(Vector3[] positions, List<int[]> faces, SpatialGrid surface)
+        // half, the farthest of the three), or when only it keeps both halves facing the quad's
+        // way (diagonalFoldGuard). Marks the quads turned in `turnedFaces` when given; returns how
+        // many.
+        internal static int NearerDiagonals(Vector3[] positions, List<int[]> faces, SpatialGrid surface,
+            bool[] turnedFaces = null)
         {
             var cosFlat = Mathf.Cos(2f * Mathf.Deg2Rad);
             var turned = 0;
@@ -800,6 +809,14 @@ namespace NativeRemesher
                 var n0 = Vector3.Cross(b - a, c - a);
                 var n1 = Vector3.Cross(c - a, d - a);
                 if (n0.sqrMagnitude > 0f && n1.sqrMagnitude > 0f && MeshMath.CosAngleBetween(n0, n1) >= cosFlat) return;
+                if (diagonalFoldGuard)
+                {
+                    // The quad's own normal: the sum of either cut's halves (the same both ways).
+                    var n = n0 + n1;
+                    var keeps = Vector3.Dot(n0, n) > 0f && Vector3.Dot(n1, n) > 0f;
+                    var other = Vector3.Dot(Vector3.Cross(c - b, d - b), n) > 0f && Vector3.Dot(Vector3.Cross(d - b, a - b), n) > 0f;
+                    if (keeps != other) { turn[i] = other; return; }
+                }
                 turn[i] = Off(b, c, d, a) < Off(a, b, c, d);
             });
             for (var i = 0; i < faces.Count; i++)
@@ -807,6 +824,7 @@ namespace NativeRemesher
                 if (!turn[i]) continue;
                 var f = faces[i];
                 faces[i] = new[] { f[1], f[2], f[3], f[0] };
+                if (turnedFaces != null) turnedFaces[i] = true;
                 turned++;
             }
             return turned;
