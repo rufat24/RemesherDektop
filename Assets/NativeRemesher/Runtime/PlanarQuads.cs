@@ -26,12 +26,18 @@
 // filled so when its steps are flat: it is built as a stepped relief (SteppedRelief), stamped into
 // the simplified wall (the triangles over it go, the gap round it triangulated again).
 //
+// A wall of lapped boards, each a little turned (a gable's siding at a fine cell), is one wall:
+// the regions in its plane or a little before it are its own, both when its windows are found
+// and when they are stamped in (sameWall, sameWallStamp). Reliefs cost more quads than the wall
+// they take, so the large walls' lines are spaced out until the whole comes to the target
+// (reliefBudget).
+//
 // One of the pipeline's tries (RemeshPipeline.planarQuadsTry), kept where it measures no worse.
-// White house, measured both ways against the source (p90 / p99 / mean turn): at 8,979 quads
-// asked, 8,982 faces at 0.000891 / 0.00341 / 11.4 deg against the error-driven quads' 9,185 at
-// 0.00108 / 0.00383 / 12.3, 0.2 % triangles. At 11,818 the gable windows (standing over two
-// regions, and the siding too rough at that cell to be one) are not found and its p99 is the
-// worse: the error-driven quads are kept.
+// White house, measured both ways against the source (p90 / p99 / mean turn): at 8,352 quads
+// asked (UI 3500), 8,618 faces at 0.000931 / 0.00288 / 10.9 deg against the error-driven quads'
+// 8,549 at 0.0011 / 0.00414 / 12.3; at 11,818 (UI 5000), 11,865 at 0.000774 / 0.0030 / 10.6
+// against 11,851 at 0.000805 / 0.00295 / 11.5 (the pipeline's own p99, on fewer samples, a tie).
+// Its chimney's crown is still the worse.
 
 using System;
 using System.Collections.Generic;
@@ -70,8 +76,8 @@ namespace NativeRemesher
         public static Action<List<double>, List<double>, List<(int, int)>, int> debugFailed;
 
 
-        /// <summary>Diagnostics: each wall's raster (its normal, size, and per sample 0 its own region, 1 its background, 2 not-wall in no patch, 3 + the patch).</summary>
-        public static Action<Vector3, int, int, Func<int, int, int>> debugRaster;
+        /// <summary>Diagnostics: each wall's raster (its normal, size, and per sample 0 its own region, 1 its background, 2 not-wall in no patch, 3 + the patch), and its corners (u0 v0, u1 v0, u0 v1).</summary>
+        public static Action<Vector3, int, int, Func<int, int, int>, Vector3[]> debugRaster;
 
         /// <summary>Diagnostics: each hole's outline not built as a relief, and why.</summary>
         public static Action<List<Vector3>, string> debugHole;
@@ -146,6 +152,28 @@ namespace NativeRemesher
 
         /// <summary>A parallel region standing off a wall is its background (not a relief's) from this share of its area.</summary>
         public static float backgroundShare = 0.25f;
+
+        /// <summary>
+        /// A wall's background is told by where other regions stand off it in their middle (not by
+        /// their planes' offsets), and those in its plane count as its own: a wall of boards each
+        /// a little turned is one wall. Off: plane offsets, and only its own region.
+        /// </summary>
+        public static bool sameWall = true;
+
+        /// <summary>...those standing at most this many cells before it.</summary>
+        public static float sameWallCells = 0.5f;
+
+        /// <summary>Reliefs stamped in together whose loop fails: the one nearest the failure is left and the rest tried again (off: all are left).</summary>
+        public static bool dropFailing = true;
+
+        /// <summary>The walls' lines spaced out so they and the reliefs' quads come to about the target together (off: at the spacing, the reliefs' quads on top).</summary>
+        public static bool reliefBudget = true;
+
+        /// <summary>...only walls of at least this many square cells.</summary>
+        public static float budgetWallCells = 100f;
+
+        /// <summary>A relief is stamped into its wall's regions in its plane as into its own.</summary>
+        public static bool sameWallStamp = true;
 
         /// <summary>A strip of not-wall thinner than twice this many cells does not join two patches (a trim from a window to the wall's edge).</summary>
         public static float reliefBarrierCells = 0.25f;
@@ -405,21 +433,53 @@ namespace NativeRemesher
                 for (var c = 0; c < components; c++) ownedComponent[c] = live[c] == 0;
             }
 
-            var cuts = new Dictionary<long, List<float>>(Extraction.EdgeKey.Comparer);
             var tanAligned = Mathf.Tan(alignedDegrees * Mathf.Deg2Rad);
+            // With reliefs (more quads than the wall they take): filled again with the walls' lines
+            // further apart, until the walls' faces and the reliefs' quads come to about the target.
+            var hGrid = h;
+            // (Only large walls' lines spaced out: a chimney's sides keep theirs.)
+            var componentArea = new double[components];
+            for (var t = 0; t < pm; t++)
+            {
+                var c = component[t];
+                if (c >= 0) componentArea[c] += 0.5 * Vector3.Cross(pp[pt[3 * t + 1]] - pp[pt[3 * t]], pp[pt[3 * t + 2]] - pp[pt[3 * t]]).magnitude / (cell * cell);
+            }
+            float Spacing(int c) => componentArea[c] >= budgetWallCells ? hGrid : h;
+            var tried = new List<(float h, double faces)>();
+            bool[] exactAfter;
+            Dictionary<long, List<float>> cuts;
+            List<Vector3> points;
+            Dictionary<long, int[]> chain = null;
+            List<int[]> reliefQuads;
+            var regionTriangles = new List<int>[components];
+            for (var c = 0; c < components; c++) regionTriangles[c] = new List<int>();
+            for (var t = 0; t < pm; t++) if (component[t] >= 0) regionTriangles[component[t]].Add(t);
+            var fillTriangles = new List<int>[components];
+            // An edge's points from a to b.
+            void Walk(int a, int b, List<int> into)
+            {
+                into.Add(a);
+                if (!chain.TryGetValue(Extraction.EdgeKey.PackUndirected(a, b), out var ids)) return;
+                if (a < b) into.AddRange(ids);
+                else for (var i = ids.Length - 1; i >= 0; i--) into.Add(ids[i]);
+            }
+            for (var attempt = 0; ; attempt++)
+            {
+            stats.cutEdges = stats.cuts = stats.failedTriangulation = stats.failedOutline = stats.gridPoints = stats.filled = stats.failed = 0;
+            cuts = new Dictionary<long, List<float>>(Extraction.EdgeKey.Comparer);
             // Each region's lines: its own, or shared along every border with a region whose
             // lines run the same way (a strip between two walls cut where both are).
-            var shared = sharedLines ? SharedLines(pp, pt, component, components, ownedComponent, frames, outline, Twin, h, tanAligned) : null;
+            var shared = sharedLines ? SharedLines(pp, pt, component, components, ownedComponent, frames, outline, Twin, Spacing, tanAligned) : null;
             var wanted = new List<(Vector2 at, float clear)>[components];
             for (var c = 0; c < components; c++)
             {
                 var frame = frames[c];
                 if (shared == null)
                 {
-                    frame.Lines(outline[c], pp, h, tanAligned);
-                    wanted[c] = frame.Grid(h);
+                    frame.Lines(outline[c], pp, Spacing(c), tanAligned);
+                    wanted[c] = frame.Grid(Spacing(c));
                 }
-                else wanted[c] = shared.Grid(c, frame, h);
+                else wanted[c] = shared.Grid(c, frame, Spacing(c));
                 if (ownedComponent[c]) continue;
                 foreach (var (a, b) in outline[c])
                 {
@@ -439,7 +499,7 @@ namespace NativeRemesher
                     var even = new List<float>();
                     for (var i = 0; i + 1 < at.Count; i++)
                     {
-                        var steps = Mathf.CeilToInt((at[i + 1] - at[i]) * len / (1.25f * h));
+                        var steps = Mathf.CeilToInt((at[i + 1] - at[i]) * len / (1.25f * Spacing(c)));
                         for (var s = 1; s < steps; s++) even.Add(at[i] + (at[i + 1] - at[i]) * s / steps);
                     }
                     at.AddRange(even);
@@ -454,8 +514,8 @@ namespace NativeRemesher
             }
 
             // The cut points, merged where both sides asked for nearly the same.
-            var points = new List<Vector3>(pp);
-            var chain = new Dictionary<long, int[]>(Extraction.EdgeKey.Comparer);
+            points = new List<Vector3>(pp);
+            chain = new Dictionary<long, int[]>(Extraction.EdgeKey.Comparer);
             foreach (var kv in cuts)
             {
                 int lo = Extraction.EdgeKey.First(kv.Key), hi = Extraction.EdgeKey.Second(kv.Key);
@@ -482,33 +542,13 @@ namespace NativeRemesher
                 stats.cuts += ids.Length;
             }
             // The reliefs' own points and quads.
-            var reliefQuads = new List<int[]>();
+            reliefQuads = new List<int[]>();
             foreach (var gap in gaps)
                 foreach (var hole in gap.holes)
                     if (hole.relief != null) reliefQuads.AddRange(Emit(gap.frame, hole, points));
             stats.reliefQuads = reliefQuads.Count;
 
-            // An edge's points from a to b.
-            void Walk(int a, int b, List<int> into)
-            {
-                into.Add(a);
-                if (!chain.TryGetValue(Extraction.EdgeKey.PackUndirected(a, b), out var ids)) return;
-                if (a < b) into.AddRange(ids);
-                else for (var i = ids.Length - 1; i >= 0; i--) into.Add(ids[i]);
-            }
-
-            var regionTriangles = new List<int>[components];
-            for (var c = 0; c < components; c++) regionTriangles[c] = new List<int>();
-            for (var t = 0; t < pm; t++) if (component[t] >= 0) regionTriangles[component[t]].Add(t);
-
             // Fill each region; regions that fail keep their simplified triangles.
-            var triangles = new List<int>(2 * pm);
-            var origin = debugOrigin != null ? new List<int>() : null;
-            var exact = new List<bool>();
-            var filled = new bool[components];
-            var fillTriangles = new List<int>[components];
-            var gridStart = new int[components];
-            var gridCount = new int[components];
             Parallel.For(0, components, BackgroundScheduler.Options, c =>
             {
                 if (ownedComponent[c]) { frames[c].grid = new List<Vector2>(); return; }
@@ -516,6 +556,12 @@ namespace NativeRemesher
                 frames[c].grid = grid;
                 frames[c].failure = why;
             });
+            var triangles = new List<int>(2 * pm);
+            var origin = debugOrigin != null ? new List<int>() : null;
+            var exact = new List<bool>();
+            var filled = new bool[components];
+            var gridStart = new int[components];
+            var gridCount = new int[components];
             foreach (var f in frames) { if (f.failure == 1) stats.failedTriangulation++; else if (f.failure == 2) stats.failedOutline++; }
             for (var c = 0; c < components; c++) if (fillTriangles[c] != null) stats.gridPoints += frames[c].grid.Count;
             // Grid points become vertices (serially: their indices).
@@ -594,7 +640,6 @@ namespace NativeRemesher
             }
             var pairStats = new DetailQuads.Stats();
             var baseFaces = DetailQuads.Pair(basePositions, triangles.ToArray(), pairStats);
-            bool[] exactAfter;
             if (split)
             {
                 baseFaces.AddRange(reliefQuads);
@@ -636,6 +681,24 @@ namespace NativeRemesher
                     stats.bridgeLeft = bridgeLeft;
                 }
                 faces.AddRange(reliefQuads);
+            }
+            if (!reliefBudget || gaps.Count == 0 || attempt == 2) break;
+            {
+                var faceCount = faces.Count - reliefQuads.Count;
+                var want = targetQuads - reliefQuads.Count;
+                if (want < 0.25 * targetQuads || Math.Abs(faceCount - want) <= 0.03 * want) break;
+                tried.Add((hGrid, faceCount));
+                // Faces go as the spacing to a power (lines through corners stay): first guessed,
+                // then as the last two tries went.
+                var power = 0.85;
+                if (tried.Count >= 2)
+                {
+                    var (h0, f0) = tried[tried.Count - 2];
+                    var (h1, f1) = tried[tried.Count - 1];
+                    if (h1 != h0 && f0 > 0 && f1 > 0) power = Math.Max(0.3, Math.Min(2.0, Math.Log(f0 / f1) / Math.Log(h1 / h0)));
+                }
+                hGrid *= (float)Math.Pow(faceCount / (double)want, 1.0 / power);
+            }
             }
             stats.quads = faces.Count;
             var surface = new SpatialGrid(flat.positions, sourceTriangles);
@@ -1031,8 +1094,16 @@ namespace NativeRemesher
             public float lo, hi;
             // The share of its border on its wall's own region.
             public float own;
+            // ...and on its wall's region alone.
+            public float mine;
+            // The regions its wall's own (in its plane).
+            public HashSet<int> same;
+            // Its middle on its wall's piece (not only seen from it).
+            public bool inside;
             public int wall;
             public List<int> removed;
+            // ...those it replaces in its wall's own region alone.
+            public List<int> removedOwn;
             public int[] outlineIndex;
         }
 
@@ -1049,6 +1120,10 @@ namespace NativeRemesher
             public string why;
             // A relief of the same wall its triangles ran into: to go with it.
             public Hole merge;
+            // The relief nearest where its loop failed: left, and the rest tried again.
+            public Hole blame;
+            // Tried alone (left from a group): runs into no other.
+            public bool single;
         }
 
         // Each wall seen square on, at the source's own resolution (a raster of the outermost
@@ -1096,7 +1171,38 @@ namespace NativeRemesher
             var step = SteppedRelief.stepCells * cell;
             var band = reliefDepthCells * cell;
             var src = flat.positions;
+            // Each region's middle (its area's): how far one stands off a wall is measured there, as
+            // planes a little turned from each other (boards of a wall) part further off.
+            var middle = new Vector3[flat.regions];
+            {
+                var weight = new double[flat.regions];
+                for (var t = 0; t + 2 < sourceTriangles.Length; t += 3)
+                {
+                    var r = flat.triangleRegion[t / 3];
+                    if (r < 0) continue;
+                    Vector3 a = src[sourceTriangles[t]], b = src[sourceTriangles[t + 1]], q = src[sourceTriangles[t + 2]];
+                    var w = Vector3.Cross(b - a, q - a).magnitude;
+                    middle[r] += w * (a + b + q);
+                    weight[r] += w;
+                }
+                for (var r = 0; r < flat.regions; r++) middle[r] = weight[r] > 0 ? middle[r] / (float)(3 * weight[r]) : flat.normals[r] * flat.offsets[r];
+            }
+            // Each region's box.
+            var regionLo = new Vector3[flat.regions];
+            var regionHi = new Vector3[flat.regions];
+            for (var r = 0; r < flat.regions; r++) { regionLo[r] = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue); regionHi[r] = -regionLo[r]; }
+            for (var t = 0; t + 2 < sourceTriangles.Length; t += 3)
+            {
+                var r = flat.triangleRegion[t / 3];
+                if (r < 0) continue;
+                for (var k = 0; k < 3; k++)
+                {
+                    regionLo[r] = Vector3.Min(regionLo[r], src[sourceTriangles[t + k]]);
+                    regionHi[r] = Vector3.Max(regionHi[r], src[sourceTriangles[t + k]]);
+                }
+            }
             var found = new List<Hole>[walls.Count];
+            var sameOf = new HashSet<int>[walls.Count];
             Parallel.For(0, walls.Count, BackgroundScheduler.Options, w =>
             {
                 found[w] = new List<Hole>();
@@ -1105,18 +1211,58 @@ namespace NativeRemesher
                 // The background: the wall's region and any other large one facing the same way
                 // (a gable above a trim, a wall's other half) -- in its plane, or standing off it
                 // but a good part of its size (a window's pane is neither). A patch is this wall's
-                // when most of what borders it is.
+                // when most of what borders it is: its region, or any other facing its way that
+                // lies in its plane or stands a little before it (a wall of boards, each a little
+                // turned and lapped over the next).
                 var region = componentLabel[c] - 1;
-                var background = new HashSet<int>();
+                var background = new HashSet<int> { region };
+                var same = new HashSet<int> { region };
+                sameOf[w] = same;
                 var cosParallel = Mathf.Cos(10f * Mathf.Deg2Rad);
                 for (var r2 = 0; r2 < flat.regions; r2++)
                 {
-                    if (r2 != region && !(Vector3.Dot(flat.normals[r2], f.normal) > cosParallel && flat.areas[r2] >= reliefWallCells * cell * cell)) continue;
-                    var off = Mathf.Abs(flat.offsets[r2] - flat.offsets[region]);
+                    if (r2 == region || !(Vector3.Dot(flat.normals[r2], f.normal) > cosParallel)) continue;
+                    var rise = Vector3.Dot(middle[r2] - f.origin, f.normal);
+                    if (sameWall && rise >= -2f * step && rise <= sameWallCells * cell)
+                    {
+                        same.Add(r2);
+                        background.Add(r2);
+                        continue;
+                    }
+                    if (flat.areas[r2] < reliefWallCells * cell * cell) continue;
+                    var off = sameWall ? Mathf.Abs(rise) : Mathf.Abs(flat.offsets[r2] - flat.offsets[region]);
                     if (off <= 2f * step || off <= band && flat.areas[r2] >= backgroundShare * flat.areas[region]) background.Add(r2);
                 }
-                // Wide enough round the wall for a window standing over its edge (into a gable above).
-                float u0 = lo2[c].x - band, v0 = lo2[c].y - band, u1 = hi2[c].x + band, v1 = hi2[c].y + band;
+                // Wide enough round the wall for a window standing over its edge (into a gable above),
+                // and over the regions in its plane it runs into (a wall of boards).
+                var wlo = lo2[c];
+                var whi = hi2[c];
+                var joined = new HashSet<int> { region };
+                for (var grown = sameWall; grown; )
+                {
+                    grown = false;
+                    foreach (var r2 in same)
+                    {
+                        if (joined.Contains(r2) || regionHi[r2].x < regionLo[r2].x) continue;
+                        Vector2 rlo2 = new Vector2(float.MaxValue, float.MaxValue), rhi2 = -rlo2;
+                        for (var k = 0; k < 8; k++)
+                        {
+                            var q = f.To2(new Vector3((k & 1) == 0 ? regionLo[r2].x : regionHi[r2].x, (k & 2) == 0 ? regionLo[r2].y : regionHi[r2].y, (k & 4) == 0 ? regionLo[r2].z : regionHi[r2].z));
+                            rlo2 = Vector2.Min(rlo2, q);
+                            rhi2 = Vector2.Max(rhi2, q);
+                        }
+                        if (rhi2.x < wlo.x - band || rlo2.x > whi.x + band || rhi2.y < wlo.y - band || rlo2.y > whi.y + band) continue;
+                        joined.Add(r2);
+                        wlo = Vector2.Min(wlo, rlo2);
+                        whi = Vector2.Max(whi, rhi2);
+                        grown = true;
+                    }
+                }
+                // (Seen from the largest of them only.)
+                foreach (var r2 in joined)
+                    if (flat.areas[r2] > flat.areas[region] || flat.areas[r2] == flat.areas[region] && r2 < region)
+                        return;
+                float u0 = wlo.x - band, v0 = wlo.y - band, u1 = whi.x + band, v1 = whi.y + band;
                 var s = cell / SteppedRelief.samplesPerCell;
                 var samples = (double)(u1 - u0) * (v1 - v0) / (s * s);
                 if (samples > maxRasterSamples) s *= (float)Math.Sqrt(samples / maxRasterSamples);
@@ -1133,6 +1279,7 @@ namespace NativeRemesher
                     }
                 var tris = new List<SteppedRelief.Flat>();
                 var ownTris = new List<SteppedRelief.Flat>();
+                var mineTris = new List<SteppedRelief.Flat>();
                 for (var t = 0; t + 2 < sourceTriangles.Length; t += 3)
                 {
                     Vector3 a = src[sourceTriangles[t]], b = src[sourceTriangles[t + 1]], q = src[sourceTriangles[t + 2]];
@@ -1147,11 +1294,13 @@ namespace NativeRemesher
                         a = f.To2(a), b = f.To2(b), c = f.To2(q), ha = za, hb = zb, hc = zq,
                         wall = background.Contains(r3),
                     });
-                    if (r3 == region) ownTris.Add(tris[tris.Count - 1]);
+                    if (r3 >= 0 && same.Contains(r3)) ownTris.Add(tris[tris.Count - 1]);
+                    if (r3 == region) mineTris.Add(tris[tris.Count - 1]);
                 }
                 SteppedRelief.Raster(tris, u0, v0, s, s, nu, nv, out var height, out var wallAt);
                 // Where the outermost surface is the wall's own region.
                 SteppedRelief.Raster(ownTris, u0, v0, s, s, nu, nv, out var ownHeight, out _);
+                SteppedRelief.Raster(mineTris, u0, v0, s, s, nu, nv, out var mineHeight, out _);
                 // Patches not the wall's (nothing seen counts), each with its extent; those reaching
                 // the raster's edge are not enclosed. A strip thinner than `barrier` (a trim, a
                 // gap between boards) does not join two: the patches are what is left of the
@@ -1210,7 +1359,7 @@ namespace NativeRemesher
                         grow.Enqueue((x, y, depth + 1));
                     }
                 }
-                debugRaster?.Invoke(f.normal, nu, nv, (x, y) => Wall(x, y) ? (ownHeight[x, y] >= height[x, y] - 1e-6f * cell ? 0 : 1) : label[x, y] == 0 ? 2 : 3 + label[x, y]);
+                debugRaster?.Invoke(f.normal, nu, nv, (x, y) => Wall(x, y) ? (ownHeight[x, y] >= height[x, y] - 1e-6f * cell ? 0 : 1) : label[x, y] == 0 ? 2 : 3 + label[x, y], new[] { f.To3(new Vector2(u0, v0)), f.To3(new Vector2(u1, v0)), f.To3(new Vector2(u0, v1)) });
                 var pia = new int[patches + 1];
                 var pib = new int[patches + 1];
                 var pja = new int[patches + 1];
@@ -1218,6 +1367,7 @@ namespace NativeRemesher
                 var pedge = new bool[patches + 1];
                 var pown = new int[patches + 1];
                 var pother = new int[patches + 1];
+                var pmine = new int[patches + 1];
                 for (var id = 1; id <= patches; id++) { pia[id] = pja[id] = int.MaxValue; pib[id] = pjb[id] = -1; }
                 for (var i = 0; i < nu; i++)
                     for (var j = 0; j < nv; j++)
@@ -1231,6 +1381,7 @@ namespace NativeRemesher
                         {
                             if (x < 0 || y < 0 || x >= nu || y >= nv || !Wall(x, y)) continue;
                             if (ownHeight[x, y] >= height[x, y] - 1e-6f * cell) pown[id]++; else pother[id]++;
+                            if (mineHeight[x, y] >= height[x, y] - 1e-6f * cell) pmine[id]++;
                         }
                     }
                 for (var id = 1; id <= patches; id++)
@@ -1272,14 +1423,22 @@ namespace NativeRemesher
                         float rlo = 0f, rhi = 0f;
                         foreach (var l in relief.level) { rlo = Mathf.Min(rlo, l); rhi = Mathf.Max(rhi, l); }
                         if (-rlo > 0.5f * Mathf.Min(pu1 - pu0, pv1 - pv0)) { Left("deep", f, pu0, pv0, pu1, pv1); continue; }
-                        found[w].Add(new Hole { relief = relief, lo = rlo, hi = rhi, own = own / (float)(own + other) });
+                        debugHole?.Invoke(new List<Vector3> { f.To3(new Vector2(pu0, pv0)), f.To3(new Vector2(pu1, pv0)), f.To3(new Vector2(pu1, pv1)), f.To3(new Vector2(pu0, pv1)) }, "found");
+                        found[w].Add(new Hole { relief = relief, lo = rlo, hi = rhi, own = own / (float)(own + other), mine = pmine[id] / (float)(own + other),
+                            inside = (pu0 + pu1) / 2 >= lo2[c].x && (pu0 + pu1) / 2 <= hi2[c].x && (pv0 + pv1) / 2 >= lo2[c].y && (pv0 + pv1) / 2 <= hi2[c].y });
                     }
             });
 
             // 3. The simplified triangles each relief replaces: all within its depths over its
             // cells (a little wider), and the wall's touching those.
             var all = new List<(int wall, Hole hole)>();
-            for (var w = 0; w < walls.Count; w++) foreach (var hole in found[w]) { hole.wall = walls[w]; all.Add((walls[w], hole)); }
+            for (var w = 0; w < walls.Count; w++) foreach (var hole in found[w]) { hole.wall = walls[w]; hole.same = sameOf[w]; all.Add((walls[w], hole)); }
+            // A triangle's component is the wall's, or one in its plane.
+            bool Ours(Hole hole, int c2) => OursPlane(hole, c2);
+            bool OursPlane(Hole hole, int c2) => c2 == hole.wall || sameWallStamp && c2 >= 0 && c2 < components && hole.same.Contains(componentLabel[c2] - 1);
+            // Off the wall's plane no further than its own regions may be (a lapped board, its top
+            // edge behind the plane and its foot before it).
+            var roughPlane = Mathf.Max(step, sameWallCells * cell);
             // A window seen from two walls (two pieces of one, or a gable and the wall under it):
             // the one with more of its border its own.
             {
@@ -1295,9 +1454,22 @@ namespace NativeRemesher
                     box.Encapsulate(box.max + hole.hi * f.normal);
                     boxes.Add(box);
                 }
+                // (A part of another -- a pane seen from its own region -- after the whole.)
+                var part = new bool[all.Count];
+                if (sameWall)
+                    for (var i = 0; i < all.Count; i++)
+                        for (var j = 0; j < all.Count && !part[i]; j++)
+                        {
+                            if (i == j || Mathf.Abs(Vector3.Dot(frames[all[i].wall].normal, frames[all[j].wall].normal)) <= 0.98f) continue;
+                            if (Face(all[j].hole) >= 2f * Face(all[i].hole) && Within(boxes[j], boxes[i].center)) part[i] = true;
+                        }
+                bool Within(Bounds b, Vector3 q) => q.x >= b.min.x && q.y >= b.min.y && q.z >= b.min.z && q.x <= b.max.x && q.y <= b.max.y && q.z <= b.max.z;
+                float Face(Hole hole) => (hole.relief.us[hole.relief.us.Count - 1] - hole.relief.us[0]) * (hole.relief.vs[hole.relief.vs.Count - 1] - hole.relief.vs[0]);
                 var order = new List<int>();
                 for (var i = 0; i < all.Count; i++) order.Add(i);
-                order.Sort((x, y) => all[y].hole.own.CompareTo(all[x].hole.own));
+                order.Sort((x, y) => part[x] != part[y] ? part[x].CompareTo(part[y])
+                    : all[y].hole.inside != all[x].hole.inside ? all[y].hole.inside.CompareTo(all[x].hole.inside)
+                    : all[y].hole.own != all[x].hole.own ? all[y].hole.own.CompareTo(all[x].hole.own) : all[y].hole.mine.CompareTo(all[x].hole.mine));
                 var kept = new List<int>();
                 var keep = new List<(int, Hole)>();
                 foreach (var i in order)
@@ -1325,6 +1497,8 @@ namespace NativeRemesher
                 float ru0 = r.us[0], ru1 = r.us[r.us.Count - 1], rv0 = r.vs[0], rv1 = r.vs[r.vs.Count - 1];
                 var removed = new List<int>();
                 var gone = new HashSet<int>();
+                var removedOwn = new List<int>();
+                var goneOwn = new HashSet<int>();
                 for (var t = 0; t < pm; t++)
                 {
                     Vector2 a = f.To2(pp[pt[3 * t]]), b = f.To2(pp[pt[3 * t + 1]]), q = f.To2(pp[pt[3 * t + 2]]);
@@ -1339,34 +1513,68 @@ namespace NativeRemesher
                     for (var i = 0; i < 3; i++)
                     {
                         var z = Vector3.Dot(pp[pt[3 * t + i]] - f.origin, f.normal);
-                        if (z < zlo || z > zhi) near = false;
+                        // (Behind it, hidden by it, is its too.)
+                        if (z < (sameWallStamp ? -band : zlo) || z > zhi) near = false;
                     }
                     // Something standing over the relief from further out is not its.
-                    if (!near && component[t] != c) continue;
+                    if (near || component[t] == c)
+                    {
+                        removedOwn.Add(t);
+                        goneOwn.Add(pt[3 * t]); goneOwn.Add(pt[3 * t + 1]); goneOwn.Add(pt[3 * t + 2]);
+                    }
+                    if (!near && !Ours(hole, component[t])) continue;
                     removed.Add(t);
                     gone.Add(pt[3 * t]); gone.Add(pt[3 * t + 1]); gone.Add(pt[3 * t + 2]);
                 }
                 var ring = new List<int>();
+                var ringOwn = new List<int>();
                 for (var t = 0; t < pm; t++)
-                    if (component[t] == c && (gone.Contains(pt[3 * t]) || gone.Contains(pt[3 * t + 1]) || gone.Contains(pt[3 * t + 2])))
+                {
+                    if ((component[t] == c || Ours(hole, component[t]) && Near(t)) && (gone.Contains(pt[3 * t]) || gone.Contains(pt[3 * t + 1]) || gone.Contains(pt[3 * t + 2])))
                         ring.Add(t);
+                    if (component[t] == c && (goneOwn.Contains(pt[3 * t]) || goneOwn.Contains(pt[3 * t + 1]) || goneOwn.Contains(pt[3 * t + 2])))
+                        ringOwn.Add(t);
+                }
+                // (Its plane's other regions only round it.)
+                bool Near(int t)
+                {
+                    for (var k2 = 0; k2 < 3; k2++)
+                    {
+                        var q = f.To2(pp[pt[3 * t + k2]]);
+                        if (q.x < ru0 - cell || q.x > ru1 + cell || q.y < rv0 - cell || q.y > rv1 + cell) return false;
+                    }
+                    return true;
+                }
                 var set = new HashSet<int>(removed);
                 set.UnionWith(ring);
                 hole.removed = new List<int>(set);
+                set = new HashSet<int>(removedOwn);
+                set.UnionWith(ringOwn);
+                hole.removedOwn = new List<int>(set);
             });
 
             // 4. Reliefs sharing a triangle go together; each group's outer loop and gap.
             var group = new int[all.Count];
-            for (var i = 0; i < all.Count; i++) group[i] = i;
             int Root(int i) { while (group[i] != i) i = group[i] = group[group[i]]; return i; }
             var owner = new int[pm];
-            for (var t = 0; t < pm; t++) owner[t] = -1;
-            for (var i = 0; i < all.Count; i++)
-                foreach (var t in all[i].hole.removed)
-                {
-                    if (owner[t] < 0) owner[t] = i;
-                    else group[Root(owner[t])] = Root(i);
-                }
+            var dropped = new bool[all.Count];
+            var joins = new List<(int, int)>();
+            var alone = new List<Gap>();
+            void Group()
+            {
+                for (var i = 0; i < all.Count; i++) group[i] = i;
+                for (var t = 0; t < pm; t++) owner[t] = -1;
+                for (var i = 0; i < all.Count; i++)
+                    if (!dropped[i])
+                        foreach (var t in all[i].hole.removed)
+                        {
+                            if (owner[t] < 0) owner[t] = i;
+                            else group[Root(owner[t])] = Root(i);
+                        }
+                foreach (var (a, b) in joins)
+                    if (!dropped[a] && !dropped[b]) group[Root(a)] = Root(b);
+            }
+            Group();
             var indexOf = new Dictionary<Hole, int>();
             for (var i = 0; i < all.Count; i++) indexOf[all[i].hole] = i;
             // Over a relief: its rectangle a cell wider, from behind it (hidden) to a cell before it.
@@ -1384,11 +1592,12 @@ namespace NativeRemesher
                 return true;
             }
             List<Gap> gapList = null;
-            for (var pass = 0; pass < 8; pass++)
+            for (var pass = 0; pass < 16; pass++)
             {
             var gaps = new Dictionary<int, Gap>();
             for (var i = 0; i < all.Count; i++)
             {
+                if (dropped[i]) continue;
                 var r = Root(i);
                 if (!gaps.TryGetValue(r, out var g)) gaps[r] = g = new Gap { wall = all[i].wall, frame = frames[all[i].wall] };
                 if (g.wall != all[i].wall) g.wall = -1;
@@ -1398,10 +1607,33 @@ namespace NativeRemesher
             Parallel.For(0, gapList.Count, BackgroundScheduler.Options, k =>
             {
                 var g = gapList[k];
+                // Into the wall and its regions in its plane; its loop folded over seen square on:
+                // again, with the boards' lips in its plane gone; else into the wall's region alone.
+                StampAll(g);
+            });
+            // Into the wall and its regions in its plane; its loop folded over seen square on:
+            // again, with the boards' lips in its plane gone; grown off round its reliefs: again,
+            // kept round them; else into the wall's region alone.
+            void StampAll(Gap g)
+            {
+                Stamp(g, sameWallStamp, false);
+                var folded = g.gap == null && g.outer != null && g.why == "crossing";
+                if (sameWallStamp && folded) Stamp(g, true, true);
+                if (sameWallStamp && g.gap == null && g.merge == null) Stamp(g, true, folded, true);
+                if (sameWallStamp && g.gap == null && g.merge == null) Stamp(g, false, false);
+            }
+            void Stamp(Gap g, bool plane, bool lips, bool kept = false)
+            {
+                g.why = null;
+                g.outer = null;
+                g.merge = null;
+                g.blame = null;
                 if (g.wall < 0) { g.gap = null; return; }
+                var rough = plane ? roughPlane : step;
+                bool Ours(Hole hole, int c2) => plane ? OursPlane(hole, c2) : c2 == hole.wall;
                 var f = g.frame;
                 var goneSet = new HashSet<int>();
-                foreach (var hole in g.holes) goneSet.UnionWith(hole.removed);
+                foreach (var hole in g.holes) goneSet.UnionWith(plane ? hole.removed : hole.removedOwn);
                 // The loop round them: edges of the triangles that go against those that stay (or
                 // the wall's open ones). Where it touches itself, or leaves the wall's plane, the
                 // triangles there go too (the wall's always; others only over a relief).
@@ -1415,12 +1647,23 @@ namespace NativeRemesher
                         for (var e = 0; e < 3; e++)
                         {
                             var u = twin(t, e);
-                            if (u >= 0 ? goneSet.Contains(u) : component[t] != g.wall) continue;
+                            if (u >= 0 ? goneSet.Contains(u) : !Ours(g.holes[0], component[t])) continue;
                             int a = pt[3 * t + e], b = pt[3 * t + (e + 1) % 3];
                             if (outerNext.ContainsKey(a)) bad.Add(a);
                             else outerNext[a] = b;
                             // Off the plane is the wall's own only where the wall had it already.
-                            if (Mathf.Abs(Vector3.Dot(pp[a] - f.origin, f.normal)) > step && !OnWall(a)) bad.Add(a);
+                            var za = Vector3.Dot(pp[a] - f.origin, f.normal);
+                            if (Mathf.Abs(za) > rough && !OnWall(a)) bad.Add(a);
+                            // A board's lip (standing across the plane, in its band) folds the loop
+                            // seen square on: it goes too.
+                            if (lips && !bad.Contains(a))
+                                for (var i = start[a]; i < start[a + 1]; i++)
+                                {
+                                    var t2 = around[i];
+                                    if (goneSet.Contains(t2) || !OnPlane(t2, rough) || kept && !Close(t2)) continue;
+                                    var n = Vector3.Cross(pp[pt[3 * t2 + 1]] - pp[pt[3 * t2]], pp[pt[3 * t2 + 2]] - pp[pt[3 * t2]]);
+                                    if (Vector3.Dot(n, f.normal) < 0.5f * n.magnitude) { bad.Add(a); break; }
+                                }
                         }
                     if (bad.Count == 0)
                     {
@@ -1457,7 +1700,10 @@ namespace NativeRemesher
                             }
                             if (sum > widestArea) { widestArea = sum; widest = l; }
                         }
-                        if (loops.Count == 1)
+                        // Seen square on, crossing itself or a relief's outline: its points there are
+                        // bad (the wall round them goes too).
+                        if (loops.Count == 1 && plane && Crossing(loops[0], bad)) { }
+                        else if (loops.Count == 1)
                         {
                             outer.Clear();
                             outer.AddRange(loops[0]);
@@ -1473,11 +1719,24 @@ namespace NativeRemesher
                         {
                             var t = around[i];
                             if (goneSet.Contains(t)) continue;
-                            if (component[t] != g.wall && !OverRelief(t) && !OnPlane(t))
+                            if (kept ? !(component[t] == g.wall || OverRelief(t) || OnPlane(t, step) || Close(t) && (Ours(g.holes[0], component[t]) || OnPlane(t, rough)))
+                                : !Ours(g.holes[0], component[t]) && !OverRelief(t) && !OnPlane(t, rough))
                             {
                                 grew = false;
                                 foreach (var (w2, other) in all)
-                                    if (w2 == g.wall && !g.holes.Contains(other) && Over(other, f, t)) { g.merge = other; break; }
+                                    if (!g.single && w2 == g.wall && !g.holes.Contains(other) && !dropped[indexOf[other]] && Over(other, f, t)) { g.merge = other; break; }
+                                if (g.merge == null && dropFailing && g.holes.Count > 1)
+                                {
+                                    var q = f.To2(pp[v]);
+                                    var nearest = float.MaxValue;
+                                    foreach (var hole in g.holes)
+                                    {
+                                        var r = hole.relief;
+                                        var dx = Mathf.Max(0f, Mathf.Max(r.us[0] - q.x, q.x - r.us[r.us.Count - 1]));
+                                        var dy = Mathf.Max(0f, Mathf.Max(r.vs[0] - q.y, q.y - r.vs[r.vs.Count - 1]));
+                                        if (dx * dx + dy * dy < nearest) { nearest = dx * dx + dy * dy; g.blame = hole; }
+                                    }
+                                }
                                 g.why = (Mathf.Abs(Vector3.Dot(pp[v] - f.origin, f.normal)) > step ? "lifted" : "touching") + (component[t] < 0 ? " free" : " region");
                             }
                             else goneSet.Add(t);
@@ -1487,15 +1746,65 @@ namespace NativeRemesher
                 }
                 bool OnWall(int v)
                 {
-                    for (var i = start[v]; i < start[v + 1]; i++) if (component[around[i]] == g.wall) return true;
+                    for (var i = start[v]; i < start[v + 1]; i++) if (Ours(g.holes[0], component[around[i]])) return true;
                     return false;
                 }
                 // In the wall's plane (another region's, or none's): the wall fills it the same.
-                bool OnPlane(int t)
+                bool OnPlane(int t, float tolerance)
                 {
                     for (var k2 = 0; k2 < 3; k2++)
-                        if (Mathf.Abs(Vector3.Dot(pp[pt[3 * t + k2]] - f.origin, f.normal)) > step) return false;
+                    {
+                        var z = Vector3.Dot(pp[pt[3 * t + k2]] - f.origin, f.normal);
+                        if (Mathf.Abs(z) > tolerance) return false;
+                    }
                     return true;
+                }
+                // Touching a relief's rectangle two cells wider.
+                bool Close(int t)
+                {
+                    foreach (var hole in g.holes)
+                    {
+                        var r = hole.relief;
+                        for (var k2 = 0; k2 < 3; k2++)
+                        {
+                            var q = f.To2(pp[pt[3 * t + k2]]);
+                            if (q.x >= r.us[0] - 2f * cell && q.x <= r.us[r.us.Count - 1] + 2f * cell && q.y >= r.vs[0] - 2f * cell && q.y <= r.vs[r.vs.Count - 1] + 2f * cell) return true;
+                        }
+                    }
+                    return false;
+                }
+                bool Crossing(List<int> loop, HashSet<int> into)
+                {
+                    var q = new Vector2[loop.Count];
+                    for (var i = 0; i < loop.Count; i++) q[i] = f.To2(pp[loop[i]]);
+                    var others = new List<(Vector2, Vector2)>();
+                    foreach (var hole in g.holes)
+                    {
+                        var r = hole.relief;
+                        for (var i = 0; i < r.outline.Count; i++)
+                        {
+                            var a = r.outline[i];
+                            var b = r.outline[(i + 1) % r.outline.Count];
+                            others.Add((new Vector2(r.us[a.x], r.vs[a.y]), new Vector2(r.us[b.x], r.vs[b.y])));
+                        }
+                    }
+                    var found = false;
+                    for (var i = 0; i < loop.Count; i++)
+                    {
+                        Vector2 a = q[i], b = q[(i + 1) % loop.Count];
+                        var hit = false;
+                        foreach (var (c, d) in others) if (SegmentsCross(a, b, c, d)) { hit = true; break; }
+                        for (var j = i + 2; j < loop.Count && !hit; j++)
+                        {
+                            if ((j + 1) % loop.Count == i) continue;
+                            if (SegmentsCross(a, b, q[j], q[(j + 1) % loop.Count])) hit = true;
+                        }
+                        if (!hit) continue;
+                        into.Add(loop[i]);
+                        into.Add(loop[(i + 1) % loop.Count]);
+                        found = true;
+                    }
+                    return found;
                 }
                 bool OverRelief(int t)
                 {
@@ -1528,30 +1837,49 @@ namespace NativeRemesher
                 {
                     var shape = new List<Vector2>();
                     foreach (var q in hole.relief.outline) shape.Add(new Vector2(hole.relief.us[q.x], hole.relief.vs[q.y]));
-                    foreach (var q in shape) if (!InsidePolygon(ringShape, q)) { g.gap = null; return; }
+                    foreach (var q in shape) if (!InsidePolygon(ringShape, q)) { g.gap = null; g.why = "outside"; return; }
                     gapArea -= Math.Abs(Loop(shape));
                 }
-                if (!(gapArea > 0) || !ConstrainedDelaunay.Triangulate(xs, ys, segments, out var gap)) { g.gap = null; return; }
+                if (!(gapArea > 0) || !ConstrainedDelaunay.Triangulate(xs, ys, segments, out var gap)) { g.gap = null; g.why = gapArea > 0 ? "crossing" : "area"; return; }
                 double filled = 0;
                 for (var i = 0; i + 2 < gap.Count; i += 3)
                 {
                     int a = gap[i], b = gap[i + 1], q = gap[i + 2];
                     filled += 0.5 * ((xs[b] - xs[a]) * (ys[q] - ys[a]) - (xs[q] - xs[a]) * (ys[b] - ys[a]));
                 }
-                if (Math.Abs(filled - gapArea) > 1e-3 * gapArea) { g.gap = null; return; }
+                if (Math.Abs(filled - gapArea) > 1e-3 * gapArea) { g.gap = null; g.why = "filled"; return; }
                 g.gap = gap;
-            });
-            var merged = false;
+            }
+            var again = false;
             foreach (var g in gapList)
                 if (g.merge != null)
                 {
-                    group[Root(indexOf[g.holes[0]])] = Root(indexOf[g.merge]);
-                    merged = true;
+                    joins.Add((indexOf[g.holes[0]], indexOf[g.merge]));
+                    again = true;
                 }
-            if (!merged) break;
+                else if (g.gap == null && g.blame != null)
+                {
+                    dropped[indexOf[g.blame]] = true;
+                    again = true;
+                }
+            if (!again)
+            {
+                // Those left from a group, each tried alone (after the rest: where they meet
+                // what those took, left).
+                for (var i = 0; i < all.Count; i++)
+                    if (dropped[i])
+                        alone.Add(new Gap { wall = all[i].wall, frame = frames[all[i].wall], holes = { all[i].hole }, single = true });
+                Parallel.For(0, alone.Count, BackgroundScheduler.Options, k =>
+                {
+                    StampAll(alone[k]);
+                });
+                break;
+            }
+            Group();
             }
             var result = new List<Gap>();
             var claimed = new bool[pm];
+            gapList.AddRange(alone);
             foreach (var g in gapList)
             {
                 // Grown into another's: left.
@@ -1566,7 +1894,7 @@ namespace NativeRemesher
                     foreach (var hole in g.holes)
                     {
                         var r = hole.relief;
-                        Left(g.wall < 0 ? "walls" : g.outer == null ? "ring " + g.why : "gap", g.frame, r.us[0], r.vs[0], r.us[r.us.Count - 1], r.vs[r.vs.Count - 1]);
+                        Left(g.wall < 0 ? "walls" : g.outer == null ? "ring " + g.why : "gap " + g.why, g.frame, r.us[0], r.vs[0], r.us[r.us.Count - 1], r.vs[r.vs.Count - 1]);
                     }
                     continue;
                 }
@@ -1598,6 +1926,14 @@ namespace NativeRemesher
                 if (separated) return false;
             }
             return true;
+        }
+
+        // Segments ab and cd cross (properly, not meeting at an end).
+        static bool SegmentsCross(Vector2 a, Vector2 b, Vector2 c, Vector2 d)
+        {
+            float Side(Vector2 p, Vector2 q, Vector2 r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+            float d1 = Side(c, d, a), d2 = Side(c, d, b), d3 = Side(a, b, c), d4 = Side(a, b, d);
+            return (d1 > 0 && d2 < 0 || d1 < 0 && d2 > 0) && (d3 > 0 && d4 < 0 || d3 < 0 && d4 > 0);
         }
 
         static bool InsidePolygon(List<Vector2> polygon, Vector2 q)
@@ -1681,7 +2017,7 @@ namespace NativeRemesher
         }
 
         static Shared SharedLines(Vector3[] pp, int[] pt, int[] component, int components, bool[] owned, Frame[] frames,
-            List<(int a, int b)>[] outline, Func<int, int, int> twin, float h, float tanAligned)
+            List<(int a, int b)>[] outline, Func<int, int, int> twin, Func<int, float> spacing, float tanAligned)
         {
             var keys = 2 * components;
             var group = new int[keys];
@@ -1766,6 +2102,9 @@ namespace NativeRemesher
                 if (at[g] == null) continue;
                 float lo = float.MaxValue, hi = float.MinValue;
                 foreach (var (x, _) in at[g]) { lo = Mathf.Min(lo, x); hi = Mathf.Max(hi, x); }
+                // (Spaced as the widest its regions are.)
+                var h = 0f;
+                for (var k = 0; k < keys; k++) if (shared.group[k] == g) h = Mathf.Max(h, spacing(k / 2));
                 shared.lines[g] = Frame.Merge(at[g], lo, hi, h);
             }
             for (var k = 0; k < keys; k++) if (shared.lines[shared.group[k]] == null) shared.lines[shared.group[k]] = new List<float>();
