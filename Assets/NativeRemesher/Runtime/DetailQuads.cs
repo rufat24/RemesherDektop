@@ -354,7 +354,7 @@ namespace NativeRemesher
         }
 
         // Greedy matching on the shared edges, best quad first.
-        static List<int[]> Pair(Vector3[] p, int[] t, Stats stats)
+        internal static List<int[]> Pair(Vector3[] p, int[] t, Stats stats)
         {
             var count = t.Length / 3;
             var normals = new Vector3[count];
@@ -445,7 +445,7 @@ namespace NativeRemesher
         }
 
         // The split's new points evened out along the surface; the simplification's points stay.
-        static void Relax(Vector3[] positions, List<int[]> faces, bool[] isNew, SpatialGrid surface, int iterations)
+        internal static void Relax(Vector3[] positions, List<int[]> faces, bool[] isNew, SpatialGrid surface, int iterations)
         {
             if (iterations <= 0) return;
             var n = positions.Length;

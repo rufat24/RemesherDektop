@@ -209,7 +209,7 @@ namespace NativeRemesher
         // Triangles (indices into the polygon) of a simple polygon wound counter-clockwise; null
         // when it is not simple (no ear left before it is done). Points on an ear's edges do not
         // block it (a straight run of the ring is many collinear points).
-        static List<int> EarClip(List<Vector2> polygon)
+        internal static List<int> EarClip(List<Vector2> polygon)
         {
             var count = polygon.Count;
             double area = 0;
