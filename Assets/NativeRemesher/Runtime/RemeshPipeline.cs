@@ -284,6 +284,9 @@ namespace NativeRemesher
         /// <summary>What RemeshPipeline.detailQuads did, when on.</summary>
         public DetailQuads.Stats detailQuadsStats;
 
+        /// <summary>What RemeshPipeline.planarQuads did, when on.</summary>
+        public PlanarQuads.Stats planarQuadsStats;
+
         /// <summary>The strip reduction's counters when it was tried (RemeshPipeline.quadInputReduction); null otherwise.</summary>
         public QuadReduction.Stats quadReductionStats;
 
@@ -399,6 +402,13 @@ namespace NativeRemesher
         /// seconds rather than a minute. Off: the lattice pipeline.
         /// </summary>
         public static bool detailQuads = false;
+
+        /// <summary>
+        /// Build the quads as a building's (PlanarQuads): flat walls as grids through their
+        /// windows' corners, windows and doors as stepped reliefs, the rest error-driven. Off: the
+        /// lattice pipeline (or the error-driven quads, with detailQuads).
+        /// </summary>
+        public static bool planarQuads = false;
 
         /// <summary>
         /// An input that already is clean quads (a modelled part: 95 % of its triangles pair into
@@ -1084,17 +1094,73 @@ namespace NativeRemesher
                     autoSelectProfile, SymmetryAxis.None, 0f, triangleMaterials);
             }
             finally { detailQuads = false; }
-            if (detail?.extraction == null || detail.extraction.faces.Count == 0) return lattice;
-            var latticeOff = DistanceOff(positions, triangles, lattice.extraction, out var latticeTurn);
-            var detailOff = DistanceOff(positions, triangles, detail.extraction, out var detailTurn);
-            lattice.detailTry = $"lattice {latticeOff:G3}, {latticeTurn:0.0} deg at {lattice.extraction.faces.Count} faces; " +
-                                $"error-driven {detailOff:G3}, {detailTurn:0.0} deg at {detail.extraction.faces.Count}";
-            if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {lattice.detailTry}");
-            // Clearly closer, and their faces turning from the source's no more.
-            if (!(detailOff < detailQuadsWins * latticeOff && detailTurn <= detailQuadsTurn * latticeTurn)) return lattice;
-            detail.detailTry = lattice.detailTry + ": error-driven kept";
-            return detail;
+            var latticeOff = DistanceOff(positions, triangles, lattice.extraction, out var latticeTurn, out var latticeFar);
+            var best = lattice;
+            var bestOff = latticeOff;
+            var bestTurn = latticeTurn;
+            var bestFar = latticeFar;
+            var tried = $"lattice {latticeOff:G3}, {latticeTurn:0.0} deg at {lattice.extraction.faces.Count} faces";
+            var kept = "";
+            if (detail?.extraction != null && detail.extraction.faces.Count > 0)
+            {
+                var detailOff = DistanceOff(positions, triangles, detail.extraction, out var detailTurn, out var detailFar);
+                tried += $"; error-driven {detailOff:G3}, {detailTurn:0.0} deg at {detail.extraction.faces.Count}";
+                // Clearly closer, and their faces turning from the source's no more.
+                if (detailOff < detailQuadsWins * latticeOff && detailTurn <= detailQuadsTurn * latticeTurn)
+                {
+                    best = detail;
+                    bestOff = detailOff;
+                    bestTurn = detailTurn;
+                    bestFar = detailFar;
+                    kept = ": error-driven kept";
+                }
+            }
+            // A building (mostly flat walls): its walls as grids, its windows and doors as reliefs.
+            // Kept when no further from the source than the best so far (in general and at its
+            // worst: a window it could not build is no mushier), turning no more, at no more
+            // faces, and all but quads.
+            if (planarQuadsTry && PlanarQuads.enabled)
+            {
+                onProgress?.Invoke("Trying a building's quads", 0f);
+                RemeshResult planar;
+                planarQuads = true;
+                try
+                {
+                    planar = SolveInternal(positions, triangles, detailSettings, profile, onProgress, sourceUvs,
+                        autoSelectProfile, SymmetryAxis.None, 0f, triangleMaterials);
+                }
+                finally { planarQuads = false; }
+                if (planar?.extraction != null && planar.extraction.faces.Count > 0)
+                {
+                    var planarOff = DistanceOff(positions, triangles, planar.extraction, out var planarTurn, out var planarFar);
+                    var faces = planar.extraction.faces.Count;
+                    var triangleShare = planar.extraction.triangleCount / (float)faces;
+                    tried += $"; building {planarOff:G3} (p99 {planarFar:G3} against {bestFar:G3}), {planarTurn:0.0} deg at {faces} ({triangleShare:P1} triangles)";
+                    if (planarOff <= bestOff && planarFar <= bestFar && planarTurn <= bestTurn && triangleShare <= planarQuadsTriangles
+                        && faces <= planarQuadsFaces * best.extraction.faces.Count)
+                    {
+                        best = planar;
+                        kept = ": building kept";
+                    }
+                }
+            }
+            if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {tried}{kept}");
+            lattice.detailTry = tried;
+            best.detailTry = tried + kept;
+            return best;
         }
+
+        /// <summary>
+        /// Dense meshes that are mostly flat walls are also built as a building's quads
+        /// (PlanarQuads) when error-driven quads are tried, and kept when they measure no worse.
+        /// </summary>
+        public static bool planarQuadsTry = true;
+
+        /// <summary>The building's quads are kept with at most this share of triangles...</summary>
+        public static float planarQuadsTriangles = 0.01f;
+
+        /// <summary>...and at most this many times the faces of what they replace.</summary>
+        public static float planarQuadsFaces = 1.1f;
 
         /// <summary>
         /// Dense meshes that are not characters are also built as error-driven quads (DetailQuads),
@@ -1119,12 +1185,14 @@ namespace NativeRemesher
 
         /// <summary>
         /// The 90th percentile of the distances between source and output, sampled both ways, in the
-        /// source's units; and the mean angle between the output's faces and the source's nearest.
+        /// source's units; the 99th (`far`); and the mean angle between the output's faces and the
+        /// source's nearest.
         /// </summary>
         static float DistanceOff(Vector3[] positions, int[] triangles, QuadExtractionResult extraction, out float turn,
-            int samples = 6000)
+            out float far, int samples = 6000)
         {
             turn = 180f;
+            far = float.PositiveInfinity;
             var tris = LodChain.Triangulate(extraction.faces, out _);
             if (tris.Length < 3) return float.PositiveInfinity;
             var output = new SpatialGrid(extraction.positions, tris);
@@ -1153,6 +1221,7 @@ namespace NativeRemesher
             foreach (var a in angles) sum += a;
             turn = angles.Length > 0 ? (float)(sum / angles.Length) : 180f;
             Array.Sort(d);
+            if (d.Length > 0) far = d[Mathf.Clamp((int)(0.99f * d.Length), 0, d.Length - 1)];
             return d.Length > 0 ? d[Mathf.Clamp((int)(0.9f * d.Length), 0, d.Length - 1)] : float.PositiveInfinity;
         }
 
@@ -1263,12 +1332,21 @@ namespace NativeRemesher
             }
             var watch = new System.Diagnostics.Stopwatch();
 
-            if (detailQuads)
+            if (detailQuads || planarQuads)
             {
-                onProgress?.Invoke("Detail quads", 0f);
+                onProgress?.Invoke(planarQuads ? "Building quads" : "Detail quads", 0f);
                 watch.Restart();
-                DetailQuads.Build(positions, triangles, Mathf.Max(1, settings.targetQuadCount),
-                    out var detailPositions, out var detailFaces, out result.detailQuadsStats);
+                Vector3[] detailPositions;
+                List<int[]> detailFaces;
+                if (planarQuads)
+                {
+                    if (!PlanarQuads.Build(positions, triangles, Mathf.Max(1, settings.targetQuadCount),
+                            out detailPositions, out detailFaces, out result.planarQuadsStats))
+                        return null;
+                }
+                else
+                    DetailQuads.Build(positions, triangles, Mathf.Max(1, settings.targetQuadCount),
+                        out detailPositions, out detailFaces, out result.detailQuadsStats);
                 var extraction = new QuadExtractionResult { positions = detailPositions, faces = detailFaces };
                 extraction.normals = new Vector3[detailPositions.Length];
                 foreach (var face in detailFaces)

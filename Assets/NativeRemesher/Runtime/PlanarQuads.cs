@@ -8,21 +8,30 @@
 //
 // So:
 //   1. the source's planar regions are found and flattened (PlanarRegions);
-//   2. the flattened source is simplified with the regions' borders kept as edges;
+//   2. the flattened source is simplified with the regions' borders kept as edges, and its
+//      borders straightened (Straighten): strips a sliver wide closed up, points on a border that
+//      runs on straight past them taken out;
 //   3. each planar region of it is filled again: lines along the wall's two directions through
 //      every corner of its outline (a window's edges, the wall's ends), more lines between where
 //      they are far apart, their crossings inside the outline triangulated with the outline
 //      (ConstrainedDelaunay) -- rectangles, cut in two, wherever the lines run -- and the outline
-//      itself cut where the lines meet it, the same cuts on both sides of an edge shared;
-//   4. everything paired into quads, the triangles left paired across chains of quads (or, with
-//      `split`, split once, Catmull-Clark's topology: all quads, at about three times the faces).
+//      itself cut where the lines meet it, the same cuts on both sides of an edge shared. A
+//      region's lines run on into each neighbour whose lines run the same way (SharedLines), and
+//      what is off every region is filled the same way in flat patches;
+//   4. everything paired into quads, the triangles left paired across chains of quads, and those
+//      still left joined in twos along the quads between them (Bridge); or, with `split`, split
+//      once, Catmull-Clark's topology: all quads, at about three times the faces.
 //
 // A window, a door, a panel -- a patch of a wall, seen square on, that is not the wall -- is not
 // filled so when its steps are flat: it is built as a stepped relief (SteppedRelief), stamped into
 // the simplified wall (the triangles over it go, the gap round it triangulated again).
 //
-// Not yet one of the pipeline's tries: unsplit, about a third of the faces off the reliefs stay
-// triangles (thin strips, fans where the outline is cut).
+// One of the pipeline's tries (RemeshPipeline.planarQuadsTry), kept where it measures no worse.
+// White house, measured both ways against the source (p90 / p99 / mean turn): at 8,979 quads
+// asked, 8,982 faces at 0.000891 / 0.00341 / 11.4 deg against the error-driven quads' 9,185 at
+// 0.00108 / 0.00383 / 12.3, 0.2 % triangles. At 11,818 the gable windows (standing over two
+// regions, and the siding too rough at that cell to be one) are not found and its p99 is the
+// worse: the error-driven quads are kept.
 
 using System;
 using System.Collections.Generic;
@@ -61,8 +70,14 @@ namespace NativeRemesher
         public static Action<List<double>, List<double>, List<(int, int)>, int> debugFailed;
 
 
-        /// <summary>Diagnostics: each hole's outline (in its wall's frame) not built as a relief, and why.</summary>
-        public static Action<List<Vector2>, string> debugHole;
+        /// <summary>Diagnostics: each wall's raster (its normal, size, and per sample 0 its own region, 1 its background, 2 not-wall in no patch, 3 + the patch).</summary>
+        public static Action<Vector3, int, int, Func<int, int, int>> debugRaster;
+
+        /// <summary>Diagnostics: each hole's outline not built as a relief, and why.</summary>
+        public static Action<List<Vector3>, string> debugHole;
+
+        /// <summary>Diagnostics: the triangles before the split or pairing (false) and those the pairing left (true), each one's source (component, -1 off every region, -2 a region left as simplified, -3 made by the pairing), and each component's region.</summary>
+        public static Action<Vector3[], int[], int[], int[], bool> debugOrigin;
 
         /// <summary>The simplification's sliver guard (PreDecimate.sliverGuardQuality) here.</summary>
         public static float sliverGuard = 0f;
@@ -73,6 +88,46 @@ namespace NativeRemesher
         /// stay -- about a third the faces for the same lines.
         /// </summary>
         public static bool split = false;
+
+        /// <summary>
+        /// Lines shared along borders: a region's lines run on into each neighbour whose lines run
+        /// the same way (false: each region has its own, and is cut wherever its neighbours' meet it).
+        /// </summary>
+        public static bool sharedLines = true;
+
+        /// <summary>Two regions' lines are one set when their directions are within this angle, degrees.</summary>
+        public static float sharedDegrees = 1f;
+
+        /// <summary>
+        /// The simplified borders between regions straightened: a point on one is taken out where
+        /// the border without it stays within this many cells of where it ran (and so is a
+        /// planar region's point inside it). 0: left as simplified.
+        /// </summary>
+        public static float straightenCells = 0.25f;
+
+        /// <summary>The simplified triangles off every region filled as flat patches (false: each fanned from its middle where cut).</summary>
+        public static bool freePatches = true;
+
+        /// <summary>A patch takes in triangles facing within this angle of its first, degrees...</summary>
+        public static float patchDegrees = 12f;
+
+        /// <summary>...with their corners within this many cells of its plane.</summary>
+        public static float patchFlatCells = 0.1f;
+
+        /// <summary>Simplified edges shorter than this many cells are closed up first, across any border (a strip a sliver wide is a line). 0: none.</summary>
+        public static float thinCells = 0.3f;
+
+        /// <summary>...when no triangle the closing changes turns by more than this many degrees.</summary>
+        public static float thinDegrees = 20f;
+
+        /// <summary>
+        /// Unsplit, the triangles the pairing left joined in twos along the ring of quads between
+        /// them (cut down its middle), so none stays.
+        /// </summary>
+        public static bool bridges = true;
+
+        /// <summary>The most quads a bridge crosses.</summary>
+        public static int bridgeQuads = 32;
 
         /// <summary>Holes in walls whose contents are flat steps (windows, doors, panels) built as stepped reliefs.</summary>
         public static bool reliefs = true;
@@ -88,6 +143,12 @@ namespace NativeRemesher
 
         /// <summary>The most samples a wall's raster has (coarser past it).</summary>
         public static int maxRasterSamples = 16 << 20;
+
+        /// <summary>A parallel region standing off a wall is its background (not a relief's) from this share of its area.</summary>
+        public static float backgroundShare = 0.25f;
+
+        /// <summary>A strip of not-wall thinner than twice this many cells does not join two patches (a trim from a window to the wall's edge).</summary>
+        public static float reliefBarrierCells = 0.25f;
 
         /// <summary>The smallest relief, in cells along either side.</summary>
         public static float reliefMinCells = 0.75f;
@@ -107,12 +168,12 @@ namespace NativeRemesher
             public FeatureFit.Stats fit;
             public string decimate;
             public int failedTriangulation, failedOutline;
-            public int reliefHoles, reliefs, reliefQuads;
+            public int reliefHoles, reliefs, reliefQuads, straightened, patches, bridged, bridgeLeft;
             public string reliefLeft = "";
             public string pairing = "";
             public override string ToString() =>
-                $"planar quads: {flat}; proxy {proxyTriangles} triangles, {components} regions ({filled} filled, {failed} left), " +
-                $"{gridPoints} grid points, {cuts} cuts on {cutEdges} edges, {quads} quads (fill failures: {failedTriangulation} triangulation, {failedOutline} outline); reliefs {reliefs} of {reliefHoles} holes, {reliefQuads} quads (left: {reliefLeft}); pairing [{pairing}]; decimate [{decimate}]; flatten {flattenMs} ms, decimate {decimateMs} ms, fill {fillMs} ms, total {totalMs} ms; {fit}";
+                $"planar quads: {flat}; proxy {proxyTriangles} triangles ({straightened} points straightened away), {components} regions and {patches} patches ({filled} filled, {failed} left), " +
+                $"{gridPoints} grid points, {cuts} cuts on {cutEdges} edges, {quads} quads (fill failures: {failedTriangulation} triangulation, {failedOutline} outline); reliefs {reliefs} of {reliefHoles} holes, {reliefQuads} quads (left: {reliefLeft}); pairing [{pairing}]; {bridged} triangle pairs bridged ({bridgeLeft} left); decimate [{decimate}]; flatten {flattenMs} ms, decimate {decimateMs} ms, fill {fillMs} ms, total {totalMs} ms; {fit}";
         }
 
         /// <summary>The quads, or false when the source is not mostly planar (or nothing came of it).</summary>
@@ -161,6 +222,11 @@ namespace NativeRemesher
                 var nt = Vector3.Cross(pp[pt[3 * t + 1]] - pp[pt[3 * t]], pp[pt[3 * t + 2]] - pp[pt[3 * t]]);
                 var len = nt.magnitude;
                 if (!(len > 0f) || Vector3.Dot(nt / len, flat.normals[proxyLabel[t] - 1]) < cosFacing) proxyLabel[t] = 0;
+            }
+            if (straightenCells > 0f)
+            {
+                stats.straightened = Straighten(pp, ref pt, ref proxyLabel, straightenCells * cell, thinCells * cell);
+                pm = pt.Length / 3;
             }
             stats.proxyTriangles = pm;
             stats.decimateMs = watch.ElapsedMilliseconds;
@@ -271,6 +337,66 @@ namespace NativeRemesher
                             halfEdge[Extraction.EdgeKey.Pack(pt[3 * t + k], pt[3 * t + (k + 1) % 3])] = t;
                 Outlines();
             }
+            // The simplified triangles off every region, in flat patches (a trim's step, a sill's
+            // face): filled as regions too, their lines run on from their neighbours', so a step
+            // between two bands is a row of quads where both bands cut it -- not each triangle
+            // fanned from its middle on its own.
+            var planarComponents = components;
+            if (freePatches)
+            {
+                var cosPatch = Mathf.Cos(patchDegrees * Mathf.Deg2Rad);
+                var flatTol = patchFlatCells * cell;
+                var planes = new List<(Vector3 n, float offset)>();
+                var queue = new Queue<int>();
+                Vector3 UnitNormal(int t)
+                {
+                    var n = Vector3.Cross(pp[pt[3 * t + 1]] - pp[pt[3 * t]], pp[pt[3 * t + 2]] - pp[pt[3 * t]]);
+                    var len = n.magnitude;
+                    return len > 1e-12f ? n / len : Vector3.zero;
+                }
+                for (var s0 = 0; s0 < pm; s0++)
+                {
+                    if (owned[s0] || component[s0] >= 0) continue;
+                    var n0 = UnitNormal(s0);
+                    if (n0 == Vector3.zero) continue;
+                    var offset = Vector3.Dot(n0, pp[pt[3 * s0]]);
+                    var c = components + planes.Count;
+                    planes.Add((n0, offset));
+                    component[s0] = c;
+                    queue.Enqueue(s0);
+                    while (queue.Count > 0)
+                    {
+                        var t = queue.Dequeue();
+                        for (var k = 0; k < 3; k++)
+                        {
+                            var u = Twin(t, k);
+                            if (u < 0 || owned[u] || component[u] >= 0) continue;
+                            if (Vector3.Dot(UnitNormal(u), n0) < cosPatch) continue;
+                            var flatEnough = true;
+                            for (var i = 0; i < 3; i++)
+                                if (Mathf.Abs(Vector3.Dot(n0, pp[pt[3 * u + i]]) - offset) > flatTol) flatEnough = false;
+                            if (!flatEnough) continue;
+                            component[u] = c;
+                            queue.Enqueue(u);
+                        }
+                    }
+                }
+                if (planes.Count > 0)
+                {
+                    components += planes.Count;
+                    Array.Resize(ref frames, components);
+                    Array.Resize(ref outline, components);
+                    for (var c = planarComponents; c < components; c++)
+                    {
+                        outline[c] = new List<(int, int)>();
+                        componentLabel.Add(0);
+                    }
+                    Outlines();
+                    for (var c = planarComponents; c < components; c++)
+                        frames[c] = Frame.For(planes[c - planarComponents].n, planes[c - planarComponents].offset, outline[c], pp);
+                }
+                stats.patches = planes.Count;
+            }
             // Regions left with no triangles (a window's panes and bars): the reliefs'.
             var ownedComponent = new bool[components];
             {
@@ -281,10 +407,19 @@ namespace NativeRemesher
 
             var cuts = new Dictionary<long, List<float>>(Extraction.EdgeKey.Comparer);
             var tanAligned = Mathf.Tan(alignedDegrees * Mathf.Deg2Rad);
+            // Each region's lines: its own, or shared along every border with a region whose
+            // lines run the same way (a strip between two walls cut where both are).
+            var shared = sharedLines ? SharedLines(pp, pt, component, components, ownedComponent, frames, outline, Twin, h, tanAligned) : null;
+            var wanted = new List<(Vector2 at, float clear)>[components];
             for (var c = 0; c < components; c++)
             {
                 var frame = frames[c];
-                frame.Lines(outline[c], pp, h, tanAligned);
+                if (shared == null)
+                {
+                    frame.Lines(outline[c], pp, h, tanAligned);
+                    wanted[c] = frame.Grid(h);
+                }
+                else wanted[c] = shared.Grid(c, frame, h);
                 if (ownedComponent[c]) continue;
                 foreach (var (a, b) in outline[c])
                 {
@@ -294,8 +429,10 @@ namespace NativeRemesher
                     var len = d.magnitude;
                     if (!(len > 0f)) continue;
                     var at = new List<float>();
-                    if (Mathf.Abs(d.y) <= tanAligned * Mathf.Abs(d.x)) frame.Crossings(frame.us, qa.x, qb.x, at);
-                    else if (Mathf.Abs(d.x) <= tanAligned * Mathf.Abs(d.y)) frame.Crossings(frame.vs, qa.y, qb.y, at);
+                    var axis = Mathf.Abs(d.y) <= tanAligned * Mathf.Abs(d.x) ? 0 : Mathf.Abs(d.x) <= tanAligned * Mathf.Abs(d.y) ? 1 : -1;
+                    if (shared != null) { if (axis >= 0) shared.Crossings(c, axis, pp[a], pp[b], at); }
+                    else if (axis == 0) frame.Crossings(frame.us, qa.x, qb.x, at);
+                    else if (axis == 1) frame.Crossings(frame.vs, qa.y, qb.y, at);
                     // Slanted (a gable's rake) or long between lines: even steps of at most the spacing.
                     at.Add(0f); at.Add(1f);
                     at.Sort();
@@ -366,13 +503,16 @@ namespace NativeRemesher
 
             // Fill each region; regions that fail keep their simplified triangles.
             var triangles = new List<int>(2 * pm);
+            var origin = debugOrigin != null ? new List<int>() : null;
             var exact = new List<bool>();
             var filled = new bool[components];
             var fillTriangles = new List<int>[components];
+            var gridStart = new int[components];
+            var gridCount = new int[components];
             Parallel.For(0, components, BackgroundScheduler.Options, c =>
             {
                 if (ownedComponent[c]) { frames[c].grid = new List<Vector2>(); return; }
-                fillTriangles[c] = Fill(frames[c], regionTriangles[c], pt, outline[c], points, Walk, h, out var grid, out var why);
+                fillTriangles[c] = Fill(frames[c], regionTriangles[c], pt, outline[c], points, Walk, wanted[c], out var grid, out var why);
                 frames[c].grid = grid;
                 frames[c].failure = why;
             });
@@ -389,16 +529,32 @@ namespace NativeRemesher
                 var gridBase = points.Count;
                 var frame = frames[c];
                 foreach (var g in frame.grid) points.Add(frame.To3(g));
+                gridStart[c] = gridBase;
+                gridCount[c] = frame.grid.Count;
                 for (var i = 0; i < tris.Count; i++)
                     triangles.Add(tris[i] >= 0 ? tris[i] : gridBase + (-tris[i] - 1));
+                if (origin != null) for (var i = 0; i < tris.Count / 3; i++) origin.Add(c);
             }
             var isExact = new bool[points.Count];
-            for (var c = 0; c < components; c++)
+            for (var c = 0; c < planarComponents; c++)
             {
                 if (!filled[c]) continue;
                 foreach (var (a, b) in outline[c]) { isExact[a] = isExact[b] = true; }
             }
             for (var i = pp.Length; i < points.Count; i++) isExact[i] = true;
+            // A patch's own points, and those cut along its outline, are free points as before.
+            var looseRun = new List<int>();
+            for (var c = planarComponents; c < components; c++)
+            {
+                if (!filled[c]) continue;
+                for (var i = 0; i < gridCount[c]; i++) isExact[gridStart[c] + i] = false;
+                foreach (var (a, b) in outline[c])
+                {
+                    looseRun.Clear();
+                    Walk(a, b, looseRun);
+                    for (var i = 1; i < looseRun.Count; i++) isExact[looseRun[i]] = false;
+                }
+            }
             // The rest: the simplified triangles, their cut edges fanned.
             var corners = new List<int>(12);
             var sideStart = new int[3];
@@ -421,13 +577,21 @@ namespace NativeRemesher
                     Walk(pt[3 * t + side], pt[3 * t + (side + 1) % 3], corners);
                 }
                 foreach (var v in corners) if (v >= pp.Length && v < isExact.Length) isExact[v] = false;
+                var before = triangles.Count;
                 CutTriangle(corners, sideStart, middleOf, triangles);
+                if (origin != null) for (var i = before; i < triangles.Count; i += 3) origin.Add(c < 0 ? -1 : -2);
             }
             if (points.Count > isExact.Length) Array.Resize(ref isExact, points.Count);
             stats.fillMs = watch.ElapsedMilliseconds;
 
             // 4. Paired, split, the new points off the planes put on the source.
             var basePositions = points.ToArray();
+            if (origin != null)
+            {
+                var componentRegion = new int[components];
+                for (var c = 0; c < components; c++) componentRegion[c] = componentLabel[c] - 1;
+                debugOrigin(basePositions, triangles.ToArray(), origin.ToArray(), componentRegion, false);
+            }
             var pairStats = new DetailQuads.Stats();
             var baseFaces = DetailQuads.Pair(basePositions, triangles.ToArray(), pairStats);
             bool[] exactAfter;
@@ -443,6 +607,34 @@ namespace NativeRemesher
                 exactAfter = isExact;
                 // The leftover triangles paired across the fill's quads (not the reliefs': those are exact).
                 stats.pairing = Extraction.TrianglePairing.Run(faces, positions, pairingQuality, pairingChain).ToString();
+                if (origin != null)
+                {
+                    long Key(int a, int b, int c)
+                    {
+                        if (a > b) (a, b) = (b, a);
+                        if (b > c) (b, c) = (c, b);
+                        if (a > b) (a, b) = (b, a);
+                        return ((long)a * 3000017 + b) * 3000017 + c;
+                    }
+                    var from = new Dictionary<long, int>();
+                    for (var i = 0; i < origin.Count; i++) from[Key(triangles[3 * i], triangles[3 * i + 1], triangles[3 * i + 2])] = origin[i];
+                    var left = new List<int>();
+                    var leftFrom = new List<int>();
+                    foreach (var face in faces)
+                    {
+                        if (face.Length != 3) continue;
+                        left.AddRange(face);
+                        leftFrom.Add(from.TryGetValue(Key(face[0], face[1], face[2]), out var o) ? o : -3);
+                    }
+                    var componentRegion = new int[components];
+                    for (var c = 0; c < components; c++) componentRegion[c] = componentLabel[c] - 1;
+                    debugOrigin(positions, left.ToArray(), leftFrom.ToArray(), componentRegion, true);
+                }
+                if (bridges)
+                {
+                    stats.bridged = Bridge(ref positions, faces, ref exactAfter, bridgeQuads, out var bridgeLeft);
+                    stats.bridgeLeft = bridgeLeft;
+                }
                 faces.AddRange(reliefQuads);
             }
             stats.quads = faces.Count;
@@ -468,11 +660,377 @@ namespace NativeRemesher
             return faces.Count > 0;
         }
 
+        // Points of the simplified mesh taken out (each collapsed into a neighbour) where nothing
+        // is lost by it: inside a planar region (it is filled again), and on a border between two
+        // labels where the border runs on straight past it -- within `tolerance` of every point
+        // taken out of it so far. A triangle the collapse changes must keep facing the way it did.
+        // The fill then cuts long straight borders at its lines, not at wherever the simplification
+        // happened to stop. Returns the points taken out.
+        static int Straighten(Vector3[] pp, ref int[] pt, ref int[] labelOf, float tolerance, float thin)
+        {
+            var label = labelOf;
+            var m = pt.Length / 3;
+            var tri = (int[])pt.Clone();
+            var alive = new bool[m];
+            for (var t = 0; t < m; t++) alive[t] = true;
+            var around = new List<int>[pp.Length];
+            for (var t = 0; t < m; t++)
+                for (var k = 0; k < 3; k++) (around[tri[3 * t + k]] ??= new List<int>(6)).Add(t);
+            // Points on an open or non-manifold edge stay.
+            var edgeUse = new Dictionary<long, int>(Extraction.EdgeKey.Comparer);
+            for (var t = 0; t < m; t++)
+                for (var k = 0; k < 3; k++)
+                {
+                    var key = Extraction.EdgeKey.PackUndirected(tri[3 * t + k], tri[3 * t + (k + 1) % 3]);
+                    edgeUse[key] = edgeUse.TryGetValue(key, out var n) ? n + 1 : 1;
+                }
+            var frozen = new bool[pp.Length];
+            foreach (var kv in edgeUse)
+                if (kv.Value != 2) frozen[Extraction.EdgeKey.First(kv.Key)] = frozen[Extraction.EdgeKey.Second(kv.Key)] = true;
+            // The points each border edge stands for.
+            var standsFor = new Dictionary<long, List<Vector3>>(Extraction.EdgeKey.Comparer);
+            var tol2 = tolerance * tolerance;
+            var cosFree = Mathf.Cos(25f * Mathf.Deg2Rad);
+            var removed = 0;
+            var labels = new List<int>(4);
+            var ends = new List<int>(4);
+            var ring = new HashSet<int>();
+            Vector3 Normal(int a, int b, int c) => Vector3.Cross(pp[b] - pp[a], pp[c] - pp[a]);
+            float SegmentDistance2(Vector3 q, Vector3 a, Vector3 b)
+            {
+                var ab = b - a;
+                var len2 = ab.sqrMagnitude;
+                var s = len2 > 0f ? Mathf.Clamp01(Vector3.Dot(q - a, ab) / len2) : 0f;
+                return (a + s * ab - q).sqrMagnitude;
+            }
+            // v's triangles across its edge to w.
+            int Across(int v, int w, out int second)
+            {
+                int first = -1;
+                second = -1;
+                foreach (var t in around[v])
+                {
+                    if (!alive[t] || tri[3 * t] != w && tri[3 * t + 1] != w && tri[3 * t + 2] != w) continue;
+                    if (first < 0) first = t; else second = t;
+                }
+                return first;
+            }
+            bool TryCollapse(int v, int w, bool border, int other, float cosKeep = -2f)
+            {
+                var t0 = Across(v, w, out var t1);
+                if (t0 < 0 || t1 < 0) return false;
+                // Link: the points beside both are only the two triangles' third points.
+                ring.Clear();
+                foreach (var t in around[v])
+                    if (alive[t]) for (var k = 0; k < 3; k++) ring.Add(tri[3 * t + k]);
+                var common = 0;
+                foreach (var t in around[w])
+                    if (alive[t])
+                        for (var k = 0; k < 3; k++)
+                        {
+                            var x = tri[3 * t + k];
+                            if (x != v && x != w && ring.Remove(x)) common++;
+                        }
+                if (common != 2) return false;
+                // Every triangle that changes keeps facing as it did, and keeps an area.
+                foreach (var t in around[v])
+                {
+                    if (!alive[t] || t == t0 || t == t1) continue;
+                    int a = tri[3 * t], b = tri[3 * t + 1], c = tri[3 * t + 2];
+                    var before = Normal(a, b, c);
+                    var after = Normal(a == v ? w : a, b == v ? w : b, c == v ? w : c);
+                    float lb = before.magnitude, la = after.magnitude;
+                    if (!(la > 1e-4f * lb)) return false;
+                    var cos = Vector3.Dot(before, after) / (lb * la);
+                    if (cos < (cosKeep > -2f ? cosKeep : label[t] > 0 ? 0.999f : cosFree)) return false;
+                }
+                if (border)
+                {
+                    // The border w - other stays near every point it now stands for.
+                    var keyVw = Extraction.EdgeKey.PackUndirected(v, w);
+                    var keyVo = Extraction.EdgeKey.PackUndirected(v, other);
+                    if (SegmentDistance2(pp[v], pp[w], pp[other]) > tol2) return false;
+                    if (standsFor.TryGetValue(keyVw, out var l1)) foreach (var q in l1) if (SegmentDistance2(q, pp[w], pp[other]) > tol2) return false;
+                    if (standsFor.TryGetValue(keyVo, out var l2)) foreach (var q in l2) if (SegmentDistance2(q, pp[w], pp[other]) > tol2) return false;
+                    var list = new List<Vector3> { pp[v] };
+                    if (l1 != null) list.AddRange(l1);
+                    if (l2 != null) list.AddRange(l2);
+                    standsFor[Extraction.EdgeKey.PackUndirected(w, other)] = list;
+                }
+                alive[t0] = alive[t1] = false;
+                foreach (var t in around[v])
+                {
+                    if (!alive[t]) continue;
+                    for (var k = 0; k < 3; k++) if (tri[3 * t + k] == v) tri[3 * t + k] = w;
+                    around[w].Add(t);
+                }
+                around[v].Clear();
+                frozen[v] = true;
+                removed++;
+                return true;
+            }
+            // Edges shorter than `thin` (a strip a sliver wide, a bevel) closed up first, whatever
+            // their labels: into the point on more labels (a corner), so the borders keep theirs.
+            var cosThin = Mathf.Cos(thinDegrees * Mathf.Deg2Rad);
+            int LabelCount(int x)
+            {
+                labels.Clear();
+                foreach (var t in around[x]) if (alive[t] && !labels.Contains(label[t])) labels.Add(label[t]);
+                return labels.Count;
+            }
+            for (var pass = 0; pass < 8 && thin > 0f; pass++)
+            {
+                var before = removed;
+                for (var t = 0; t < m; t++)
+                    for (var k = 0; k < 3 && alive[t]; k++)
+                    {
+                        int a = tri[3 * t + k], b = tri[3 * t + (k + 1) % 3];
+                        if ((pp[a] - pp[b]).sqrMagnitude >= thin * thin) continue;
+                        if (frozen[a] && frozen[b]) continue;
+                        // v goes, w stays.
+                        int v = a, w = b;
+                        if (frozen[v] || !frozen[w] && LabelCount(v) > LabelCount(w)) { v = b; w = a; }
+                        if (!TryCollapse(v, w, false, -1, cosThin)) continue;
+                        k = 3;
+                    }
+                if (removed == before) break;
+            }
+            for (var pass = 0; pass < 8; pass++)
+            {
+                var before = removed;
+                for (var v = 0; v < pp.Length; v++)
+                {
+                    if (frozen[v] || around[v] == null || around[v].Count == 0) continue;
+                    labels.Clear();
+                    foreach (var t in around[v]) if (alive[t] && !labels.Contains(label[t])) labels.Add(label[t]);
+                    if (labels.Count == 1)
+                    {
+                        // Inside a planar region: into whichever neighbour takes it.
+                        if (labels[0] <= 0) continue;
+                        var done = false;
+                        foreach (var t in around[v].ToArray())
+                        {
+                            if (done || !alive[t]) continue;
+                            for (var k = 0; k < 3 && !done; k++)
+                            {
+                                var w = tri[3 * t + k];
+                                if (w != v) done = TryCollapse(v, w, false, -1);
+                            }
+                        }
+                        continue;
+                    }
+                    if (labels.Count != 2) continue;
+                    // On one border: its two edges there.
+                    ends.Clear();
+                    foreach (var t in around[v])
+                    {
+                        if (!alive[t]) continue;
+                        for (var k = 0; k < 3; k++)
+                        {
+                            var w = tri[3 * t + k];
+                            if (w == v || ends.Contains(w)) continue;
+                            var t0 = Across(v, w, out var t1);
+                            if (t0 >= 0 && t1 >= 0 && label[t0] != label[t1]) ends.Add(w);
+                        }
+                    }
+                    if (ends.Count != 2) continue;
+                    if (!TryCollapse(v, ends[0], true, ends[1])) TryCollapse(v, ends[1], true, ends[0]);
+                }
+                if (removed == before) break;
+            }
+            var keptTriangles = new List<int>(3 * m);
+            var keptLabels = new List<int>(m);
+            for (var t = 0; t < m; t++)
+            {
+                if (!alive[t]) continue;
+                keptTriangles.Add(tri[3 * t]); keptTriangles.Add(tri[3 * t + 1]); keptTriangles.Add(tri[3 * t + 2]);
+                keptLabels.Add(label[t]);
+            }
+            pt = keptTriangles.ToArray();
+            labelOf = keptLabels.ToArray();
+            return removed;
+        }
+
+        // Triangles joined in twos: from a triangle, out across one of its edges and on through
+        // quads -- in by one edge, out by the opposite (a face) or by one beside it (two: the
+        // quad is cut round its corner) -- to the nearest other triangle. The path is cut down its
+        // middle: a quad crossed straight becomes two, one turned in becomes three (about a point
+        // in its middle), each triangle a quad with a point on the edge it was left or met by. The
+        // nearest pairs go first; a face already cut is not crossed again. A new point is exact
+        // where the points it is made of are. Returns the pairs joined; `left`, the triangles none
+        // reached.
+        static int Bridge(ref Vector3[] positions, List<int[]> faces, ref bool[] exact, int most, out int left)
+        {
+            var edgeFace = new Dictionary<long, int>(Extraction.EdgeKey.Comparer);
+            for (var f = 0; f < faces.Count; f++)
+            {
+                var face = faces[f];
+                for (var k = 0; k < face.Length; k++) edgeFace[Extraction.EdgeKey.Pack(face[k], face[(k + 1) % face.Length])] = f;
+            }
+            var used = new bool[faces.Count];
+            // A step of a path: face g entered by its edge at index `inAt`, left by its edge at
+            // `outAt` (-1: the triangle met).
+            var cost = new Dictionary<int, int>();
+            var tentative = new Dictionary<int, int>();
+            var from = new Dictionary<int, (int previous, int inAt)>();
+            // The nearest other triangle within `reach`: the path from t's edge `start` to it.
+            List<(int face, int inAt, int outAt)> Search(int t, int reach, out int startEdge)
+            {
+                startEdge = -1;
+                cost.Clear();
+                tentative.Clear();
+                from.Clear();
+                var best = -1;
+                var bestCost = int.MaxValue;
+                var queue = new SortedSet<(int c, int face, int inAt)>();
+                cost[t] = 0;
+                for (var k = 0; k < 3; k++) Leave(t, k, 0);
+                // Out of g by its edge at outAt, the path so far costing c.
+                void Leave(int g, int outAt, int c)
+                {
+                    var gf = faces[g];
+                    int a = gf[outAt], b = gf[(outAt + 1) % gf.Length];
+                    if (!edgeFace.TryGetValue(Extraction.EdgeKey.Pack(b, a), out var h) || used[h] || cost.ContainsKey(h)) return;
+                    var hf = faces[h];
+                    if (hf.Length != 3 && hf.Length != 4) return;
+                    var inAt = Array.IndexOf(hf, b);
+                    if (hf.Length == 3)
+                    {
+                        if (c < bestCost) { bestCost = c; best = h; from[h] = (g, inAt); }
+                        return;
+                    }
+                    if (c >= reach || tentative.TryGetValue(h, out var had) && had <= c) return;
+                    tentative[h] = c;
+                    queue.Add((c, h, inAt));
+                    from[h] = (g, inAt);
+                }
+                while (queue.Count > 0)
+                {
+                    var (c, g, inAt) = queue.Min;
+                    queue.Remove(queue.Min);
+                    if (c >= bestCost) break;
+                    if (cost.ContainsKey(g) || from[g].inAt != inAt) continue;
+                    cost[g] = c;
+                    // Straight on (one more face), or round a corner (two more).
+                    Leave(g, (inAt + 2) % 4, c + 1);
+                    Leave(g, (inAt + 1) % 4, c + 2);
+                    Leave(g, (inAt + 3) % 4, c + 2);
+                }
+                if (best < 0) return null;
+                // Back from the triangle met: each face with the edge it was entered by and the one
+                // it was left by (the left-by edge of a face is where the next face was entered).
+                var path = new List<(int face, int inAt, int outAt)>();
+                var at = best;
+                var outOf = -1;
+                while (at != t)
+                {
+                    var (previous, inAt) = from[at];
+                    path.Add((at, inAt, outOf));
+                    // The previous face left by the edge `at` was entered across.
+                    var af = faces[at];
+                    int a = af[inAt], b = af[(inAt + 1) % af.Length];
+                    var pf = faces[previous];
+                    var j = Array.IndexOf(pf, b);
+                    outOf = j;
+                    if (previous == t) startEdge = j;
+                    at = previous;
+                }
+                path.Reverse();
+                return path;
+            }
+            var list = new List<Vector3>(positions);
+            var flags = new List<bool>(exact);
+            var mid = new Dictionary<long, int>(Extraction.EdgeKey.Comparer);
+            int Mid(int a, int b)
+            {
+                var key = Extraction.EdgeKey.PackUndirected(a, b);
+                if (mid.TryGetValue(key, out var m)) return m;
+                m = list.Count;
+                list.Add(0.5f * (list[a] + list[b]));
+                flags.Add(flags[a] && flags[b]);
+                mid[key] = m;
+                return m;
+            }
+            int Centre(int[] q)
+            {
+                list.Add(0.25f * (list[q[0]] + list[q[1]] + list[q[2]] + list[q[3]]));
+                flags.Add(flags[q[0]] && flags[q[1]] && flags[q[2]] && flags[q[3]]);
+                return list.Count - 1;
+            }
+            var joined = 0;
+            var replaced = new Dictionary<int, List<int[]>>();
+            for (var reach = 0; reach <= most; reach++)
+                for (var t = 0; t < faces.Count; t++)
+                {
+                    if (used[t] || faces[t].Length != 3) continue;
+                    var path = Search(t, reach, out var startEdge);
+                    if (path == null || startEdge < 0) continue;
+                    var tf = faces[t];
+                    int ea = tf[startEdge], eb = tf[(startEdge + 1) % 3];
+                    var entry = Mid(ea, eb);
+                    replaced[t] = new List<int[]> { new[] { ea, entry, eb, tf[(startEdge + 2) % 3] } };
+                    used[t] = true;
+                    foreach (var (g, inAt, outAt) in path)
+                    {
+                        var gf = faces[g];
+                        used[g] = true;
+                        int a = gf[inAt], b = gf[(inAt + 1) % gf.Length];
+                        if (gf.Length == 3)
+                        {
+                            replaced[g] = new List<int[]> { new[] { a, entry, b, gf[(inAt + 2) % 3] } };
+                            break;
+                        }
+                        int c = gf[(inAt + 2) % 4], d = gf[(inAt + 3) % 4];
+                        if (outAt == (inAt + 2) % 4)
+                        {
+                            var exit = Mid(c, d);
+                            replaced[g] = new List<int[]> { new[] { a, entry, exit, d }, new[] { entry, b, c, exit } };
+                            entry = exit;
+                        }
+                        else if (outAt == (inAt + 1) % 4)
+                        {
+                            // Out by b -> c.
+                            var exit = Mid(b, c);
+                            var p = Centre(gf);
+                            replaced[g] = new List<int[]> { new[] { entry, b, exit, p }, new[] { p, exit, c, d }, new[] { a, entry, p, d } };
+                            entry = exit;
+                        }
+                        else
+                        {
+                            // Out by d -> a.
+                            var exit = Mid(d, a);
+                            var p = Centre(gf);
+                            replaced[g] = new List<int[]> { new[] { exit, a, entry, p }, new[] { p, entry, b, c }, new[] { exit, p, c, d } };
+                            entry = exit;
+                        }
+                    }
+                    joined++;
+                }
+            left = 0;
+            var result = new List<int[]>(faces.Count + 2 * joined);
+            for (var f = 0; f < faces.Count; f++)
+            {
+                if (replaced.TryGetValue(f, out var with)) result.AddRange(with);
+                else
+                {
+                    result.Add(faces[f]);
+                    if (faces[f].Length == 3) left++;
+                }
+            }
+            faces.Clear();
+            faces.AddRange(result);
+            positions = list.ToArray();
+            exact = flags.ToArray();
+            return joined;
+        }
+
         // A relief found on a wall, and when applied its outline's points.
         sealed class Hole
         {
             public SteppedRelief.Relief relief;
             public float lo, hi;
+            // The share of its border on its wall's own region.
+            public float own;
             public int wall;
             public List<int> removed;
             public int[] outlineIndex;
@@ -505,7 +1063,7 @@ namespace NativeRemesher
             void Left(string why, Frame f, float a0, float b0, float a1, float b1)
             {
                 lock (left) left[why] = left.TryGetValue(why, out var n) ? n + 1 : 1;
-                debugHole?.Invoke(new List<Vector2> { new Vector2(a0, b0), new Vector2(a1, b0), new Vector2(a1, b1), new Vector2(a0, b1) }, why);
+                debugHole?.Invoke(new List<Vector3> { f.To3(new Vector2(a0, b0)), f.To3(new Vector2(a1, b0)), f.To3(new Vector2(a1, b1)), f.To3(new Vector2(a0, b1)) }, why);
             }
 
             // Each point's triangles.
@@ -545,16 +1103,20 @@ namespace NativeRemesher
                 var c = walls[w];
                 var f = frames[c];
                 // The background: the wall's region and any other large one facing the same way
-                // (a gable above a trim, a wall's other half); a patch is this wall's when most of
-                // what borders it is.
+                // (a gable above a trim, a wall's other half) -- in its plane, or standing off it
+                // but a good part of its size (a window's pane is neither). A patch is this wall's
+                // when most of what borders it is.
                 var region = componentLabel[c] - 1;
                 var background = new HashSet<int>();
                 var cosParallel = Mathf.Cos(10f * Mathf.Deg2Rad);
                 for (var r2 = 0; r2 < flat.regions; r2++)
-                    if (r2 == region || Vector3.Dot(flat.normals[r2], f.normal) > cosParallel && flat.areas[r2] >= reliefWallCells * cell * cell
-                        && Mathf.Abs(flat.offsets[r2] - flat.offsets[region]) <= 2f * step)
-                        background.Add(r2);
-                float u0 = lo2[c].x - cell, v0 = lo2[c].y - cell, u1 = hi2[c].x + cell, v1 = hi2[c].y + cell;
+                {
+                    if (r2 != region && !(Vector3.Dot(flat.normals[r2], f.normal) > cosParallel && flat.areas[r2] >= reliefWallCells * cell * cell)) continue;
+                    var off = Mathf.Abs(flat.offsets[r2] - flat.offsets[region]);
+                    if (off <= 2f * step || off <= band && flat.areas[r2] >= backgroundShare * flat.areas[region]) background.Add(r2);
+                }
+                // Wide enough round the wall for a window standing over its edge (into a gable above).
+                float u0 = lo2[c].x - band, v0 = lo2[c].y - band, u1 = hi2[c].x + band, v1 = hi2[c].y + band;
                 var s = cell / SteppedRelief.samplesPerCell;
                 var samples = (double)(u1 - u0) * (v1 - v0) / (s * s);
                 if (samples > maxRasterSamples) s *= (float)Math.Sqrt(samples / maxRasterSamples);
@@ -579,55 +1141,117 @@ namespace NativeRemesher
                     if (Mathf.Max(a.z, Mathf.Max(b.z, q.z)) < minEdge.z || Mathf.Min(a.z, Mathf.Min(b.z, q.z)) > maxEdge.z) continue;
                     float za = Vector3.Dot(a - f.origin, f.normal), zb = Vector3.Dot(b - f.origin, f.normal), zq = Vector3.Dot(q - f.origin, f.normal);
                     if (Mathf.Min(za, Mathf.Min(zb, zq)) < -band || Mathf.Max(za, Mathf.Max(zb, zq)) > band) continue;
+                    var r3 = flat.triangleRegion[t / 3];
                     tris.Add(new SteppedRelief.Flat
                     {
                         a = f.To2(a), b = f.To2(b), c = f.To2(q), ha = za, hb = zb, hc = zq,
-                        wall = background.Contains(flat.triangleRegion[t / 3]),
+                        wall = background.Contains(r3),
                     });
-                    if (flat.triangleRegion[t / 3] == region) ownTris.Add(tris[tris.Count - 1]);
+                    if (r3 == region) ownTris.Add(tris[tris.Count - 1]);
                 }
                 SteppedRelief.Raster(tris, u0, v0, s, s, nu, nv, out var height, out var wallAt);
                 // Where the outermost surface is the wall's own region.
                 SteppedRelief.Raster(ownTris, u0, v0, s, s, nu, nv, out var ownHeight, out _);
                 // Patches not the wall's (nothing seen counts), each with its extent; those reaching
-                // the raster's edge are not enclosed.
+                // the raster's edge are not enclosed. A strip thinner than `barrier` (a trim, a
+                // gap between boards) does not join two: the patches are what is left of the
+                // not-wall once that is worn back by `barrier` (each piece apart), grown back as far.
+                bool Wall(int x, int y) => wallAt[x, y] && !float.IsNegativeInfinity(height[x, y]);
+                var reach = Mathf.Max(0, Mathf.RoundToInt(reliefBarrierCells * cell / s));
+                var dist = new ushort[nu, nv];
+                for (var i = 0; i < nu; i++)
+                    for (var j = 0; j < nv; j++)
+                    {
+                        if (Wall(i, j)) continue;
+                        var d = ushort.MaxValue - 1;
+                        if (i > 0) d = Math.Min(d, dist[i - 1, j] + 1);
+                        if (j > 0) d = Math.Min(d, dist[i, j - 1] + 1);
+                        dist[i, j] = (ushort)d;
+                    }
+                for (var i = nu - 1; i >= 0; i--)
+                    for (var j = nv - 1; j >= 0; j--)
+                    {
+                        int d = dist[i, j];
+                        if (i + 1 < nu) d = Math.Min(d, dist[i + 1, j] + 1);
+                        if (j + 1 < nv) d = Math.Min(d, dist[i, j + 1] + 1);
+                        dist[i, j] = (ushort)d;
+                    }
                 var label = new int[nu, nv];
                 var stack = new Stack<(int, int)>();
+                var grow = new Queue<(int, int, int)>();
                 var patches = 0;
                 for (var i0 = 0; i0 < nu; i0++)
                     for (var j0 = 0; j0 < nv; j0++)
                     {
-                        if (label[i0, j0] != 0 || wallAt[i0, j0] && !float.IsNegativeInfinity(height[i0, j0])) continue;
+                        if (label[i0, j0] != 0 || dist[i0, j0] <= reach) continue;
                         var id = ++patches;
-                        int ia = i0, ib = i0, ja = j0, jb = j0;
-                        var edge = false;
-                        int own = 0, other = 0;
                         label[i0, j0] = id;
                         stack.Push((i0, j0));
                         while (stack.Count > 0)
                         {
                             var (i, j) = stack.Pop();
-                            ia = Math.Min(ia, i); ib = Math.Max(ib, i); ja = Math.Min(ja, j); jb = Math.Max(jb, j);
-                            if (i == 0 || j == 0 || i == nu - 1 || j == nv - 1) edge = true;
+                            grow.Enqueue((i, j, 0));
                             foreach (var (x, y) in new[] { (i - 1, j), (i + 1, j), (i, j - 1), (i, j + 1) })
                             {
-                                if (x < 0 || y < 0 || x >= nu || y >= nv || label[x, y] != 0) continue;
-                                if (wallAt[x, y] && !float.IsNegativeInfinity(height[x, y]))
-                                {
-                                    if (ownHeight[x, y] >= height[x, y] - 1e-6f * cell) own++; else other++;
-                                    continue;
-                                }
+                                if (x < 0 || y < 0 || x >= nu || y >= nv || label[x, y] != 0 || dist[x, y] <= reach) continue;
                                 label[x, y] = id;
                                 stack.Push((x, y));
                             }
                         }
-                        if (edge)
+                    }
+                while (grow.Count > 0)
+                {
+                    var (i, j, depth) = grow.Dequeue();
+                    if (depth > reach) continue;
+                    foreach (var (x, y) in new[] { (i - 1, j), (i + 1, j), (i, j - 1), (i, j + 1) })
+                    {
+                        if (x < 0 || y < 0 || x >= nu || y >= nv || label[x, y] != 0 || Wall(x, y)) continue;
+                        label[x, y] = label[i, j];
+                        grow.Enqueue((x, y, depth + 1));
+                    }
+                }
+                debugRaster?.Invoke(f.normal, nu, nv, (x, y) => Wall(x, y) ? (ownHeight[x, y] >= height[x, y] - 1e-6f * cell ? 0 : 1) : label[x, y] == 0 ? 2 : 3 + label[x, y]);
+                var pia = new int[patches + 1];
+                var pib = new int[patches + 1];
+                var pja = new int[patches + 1];
+                var pjb = new int[patches + 1];
+                var pedge = new bool[patches + 1];
+                var pown = new int[patches + 1];
+                var pother = new int[patches + 1];
+                for (var id = 1; id <= patches; id++) { pia[id] = pja[id] = int.MaxValue; pib[id] = pjb[id] = -1; }
+                for (var i = 0; i < nu; i++)
+                    for (var j = 0; j < nv; j++)
+                    {
+                        var id = label[i, j];
+                        if (id == 0) continue;
+                        pia[id] = Math.Min(pia[id], i); pib[id] = Math.Max(pib[id], i);
+                        pja[id] = Math.Min(pja[id], j); pjb[id] = Math.Max(pjb[id], j);
+                        if (i == 0 || j == 0 || i == nu - 1 || j == nv - 1) pedge[id] = true;
+                        foreach (var (x, y) in new[] { (i - 1, j), (i + 1, j), (i, j - 1), (i, j + 1) })
                         {
-                            continue;
+                            if (x < 0 || y < 0 || x >= nu || y >= nv || !Wall(x, y)) continue;
+                            if (ownHeight[x, y] >= height[x, y] - 1e-6f * cell) pown[id]++; else pother[id]++;
                         }
+                    }
+                for (var id = 1; id <= patches; id++)
+                    {
+                        int ia = pia[id], ib = pib[id], ja = pja[id], jb = pjb[id];
+                        var edge = pedge[id];
+                        int own = pown[id], other = pother[id];
                         float pu0 = u0 + ia * s, pu1 = u0 + (ib + 1) * s, pv0 = v0 + ja * s, pv1 = v0 + (jb + 1) * s;
                         if (pu1 - pu0 < reliefMinCells * cell || pv1 - pv0 < reliefMinCells * cell) continue;
-                        if (own <= other) continue;
+                        // (Diagnostics only for patches smaller than half the wall: the rest is the world round it.)
+                        var small = ib - ia < nu / 2 && jb - ja < nv / 2;
+                        if (edge)
+                        {
+                            if (small) Left("open", f, pu0, pv0, pu1, pv1);
+                            continue;
+                        }
+                        if (own <= other)
+                        {
+                            if (small) Left("not its own", f, pu0, pv0, pu1, pv1);
+                            continue;
+                        }
                         lock (stats) stats.reliefHoles++;
                         // Its own samples, and the wall round them (anything else nearby is the wall's here).
                         var pad = Mathf.Max(2, Mathf.CeilToInt(4f * reliefSnapCells * cell / s));
@@ -648,7 +1272,7 @@ namespace NativeRemesher
                         float rlo = 0f, rhi = 0f;
                         foreach (var l in relief.level) { rlo = Mathf.Min(rlo, l); rhi = Mathf.Max(rhi, l); }
                         if (-rlo > 0.5f * Mathf.Min(pu1 - pu0, pv1 - pv0)) { Left("deep", f, pu0, pv0, pu1, pv1); continue; }
-                        found[w].Add(new Hole { relief = relief, lo = rlo, hi = rhi });
+                        found[w].Add(new Hole { relief = relief, lo = rlo, hi = rhi, own = own / (float)(own + other) });
                     }
             });
 
@@ -656,6 +1280,41 @@ namespace NativeRemesher
             // cells (a little wider), and the wall's touching those.
             var all = new List<(int wall, Hole hole)>();
             for (var w = 0; w < walls.Count; w++) foreach (var hole in found[w]) { hole.wall = walls[w]; all.Add((walls[w], hole)); }
+            // A window seen from two walls (two pieces of one, or a gable and the wall under it):
+            // the one with more of its border its own.
+            {
+                var boxes = new List<Bounds>();
+                foreach (var (c, hole) in all)
+                {
+                    var r = hole.relief;
+                    var f = frames[c];
+                    var box = new Bounds(f.To3(new Vector2(r.us[0], r.vs[0])), Vector3.zero);
+                    foreach (var q in new[] { new Vector2(r.us[r.us.Count - 1], r.vs[0]), new Vector2(r.us[0], r.vs[r.vs.Count - 1]), new Vector2(r.us[r.us.Count - 1], r.vs[r.vs.Count - 1]) })
+                        box.Encapsulate(f.To3(q));
+                    box.Encapsulate(box.min + hole.lo * f.normal);
+                    box.Encapsulate(box.max + hole.hi * f.normal);
+                    boxes.Add(box);
+                }
+                var order = new List<int>();
+                for (var i = 0; i < all.Count; i++) order.Add(i);
+                order.Sort((x, y) => all[y].hole.own.CompareTo(all[x].hole.own));
+                var kept = new List<int>();
+                var keep = new List<(int, Hole)>();
+                foreach (var i in order)
+                {
+                    var clash = false;
+                    foreach (var j in kept)
+                        if (boxes[i].Intersects(boxes[j]) && Mathf.Abs(Vector3.Dot(frames[all[i].wall].normal, frames[all[j].wall].normal)) > 0.98f)
+                        {
+                            clash = true;
+                            break;
+                        }
+                    if (clash) { Left("twice", frames[all[i].wall], 0, 0, 0, 0); continue; }
+                    kept.Add(i);
+                    keep.Add(all[i]);
+                }
+                all = keep;
+            }
             Parallel.For(0, all.Count, BackgroundScheduler.Options, k =>
             {
                 var (c, hole) = all[k];
@@ -963,6 +1622,156 @@ namespace NativeRemesher
                 (q, z) => { points.Add(f.To3(q) + z * f.normal); return points.Count - 1; });
         }
 
+        // Lines shared between regions. Each region's two directions are keys (2c: lines u = const,
+        // 2c + 1: v = const); a border between two regions, along a direction both have, joins the
+        // keys whose lines cross it when those run the same way. A joined set's lines are planes
+        // across one world direction, merged from all its regions' corners and edges and spaced out
+        // over all of them, and each region takes those over its own extent.
+        sealed class Shared
+        {
+            public int[] group;
+            public Vector3[] direction;
+            public List<float>[] lines;
+            public float[] min, max;
+
+            public List<float> Lines(int c, int axis)
+            {
+                var k = 2 * c + axis;
+                var mine = new List<float>();
+                foreach (var x in lines[group[k]]) if (x >= min[k] && x <= max[k]) mine.Add(x);
+                return mine;
+            }
+
+            // The parameters along a -> b where the region's lines along `axis` cross it.
+            public void Crossings(int c, int axis, Vector3 a, Vector3 b, List<float> into)
+            {
+                var g = group[2 * c + axis];
+                var d = direction[g];
+                float xa = Vector3.Dot(a, d), xb = Vector3.Dot(b, d);
+                var lo = Mathf.Min(xa, xb);
+                var hi = Mathf.Max(xa, xb);
+                if (!(hi > lo)) return;
+                foreach (var x in lines[g])
+                    if (x > lo && x < hi) into.Add((x - xa) / (xb - xa));
+            }
+
+            // Where the region's lines cross, in its frame: each a pair of world planes met in its own.
+            public List<(Vector2 at, float clear)> Grid(int c, Frame f, float h)
+            {
+                var grid = new List<(Vector2, float)>();
+                var ul = Lines(c, 0);
+                var vl = Lines(c, 1);
+                Vector3 a = direction[group[2 * c]], b = direction[group[2 * c + 1]];
+                // x = (origin + u f.u + v f.v) . a, and x' the same with b.
+                float m00 = Vector3.Dot(f.u, a), m01 = Vector3.Dot(f.v, a), m10 = Vector3.Dot(f.u, b), m11 = Vector3.Dot(f.v, b);
+                var det = m00 * m11 - m01 * m10;
+                if (!(Mathf.Abs(det) > 0.5f)) return grid;
+                float oa = Vector3.Dot(f.origin, a), ob = Vector3.Dot(f.origin, b);
+                for (var j = 0; j < vl.Count; j++)
+                    for (var i = 0; i < ul.Count; i++)
+                    {
+                        float ra = ul[i] - oa, rb = vl[j] - ob;
+                        var q = new Vector2((ra * m11 - m01 * rb) / det, (m00 * rb - m10 * ra) / det);
+                        var gu = Mathf.Min(i > 0 ? ul[i] - ul[i - 1] : h, i + 1 < ul.Count ? ul[i + 1] - ul[i] : h);
+                        var gv = Mathf.Min(j > 0 ? vl[j] - vl[j - 1] : h, j + 1 < vl.Count ? vl[j + 1] - vl[j] : h);
+                        grid.Add((q, clearanceShare * Mathf.Min(gu, gv)));
+                    }
+                return grid;
+            }
+        }
+
+        static Shared SharedLines(Vector3[] pp, int[] pt, int[] component, int components, bool[] owned, Frame[] frames,
+            List<(int a, int b)>[] outline, Func<int, int, int> twin, float h, float tanAligned)
+        {
+            var keys = 2 * components;
+            var group = new int[keys];
+            for (var k = 0; k < keys; k++) group[k] = k;
+            int Root(int k) { while (group[k] != k) k = group[k] = group[group[k]]; return k; }
+            Vector3 Dir(int k) => (k & 1) == 0 ? frames[k >> 1].u : frames[k >> 1].v;
+            var cosAligned = Mathf.Cos(Mathf.Atan(tanAligned));
+            var cosShared = Mathf.Cos(sharedDegrees * Mathf.Deg2Rad);
+            // The key of c whose lines cross an edge along d, or -1.
+            int Across(int c, Vector3 d)
+            {
+                if (Mathf.Abs(Vector3.Dot(d, frames[c].u)) >= cosAligned) return 2 * c;
+                if (Mathf.Abs(Vector3.Dot(d, frames[c].v)) >= cosAligned) return 2 * c + 1;
+                return -1;
+            }
+            var pm = pt.Length / 3;
+            for (var t = 0; t < pm; t++)
+            {
+                var c = component[t];
+                if (c < 0 || owned[c]) continue;
+                for (var e = 0; e < 3; e++)
+                {
+                    var u = twin(t, e);
+                    if (u < 0) continue;
+                    var c2 = component[u];
+                    if (c2 < 0 || c2 <= c || owned[c2]) continue;
+                    var d = pp[pt[3 * t + (e + 1) % 3]] - pp[pt[3 * t + e]];
+                    var len = d.magnitude;
+                    if (!(len > 0f)) continue;
+                    d /= len;
+                    int k1 = Across(c, d), k2 = Across(c2, d);
+                    if (k1 < 0 || k2 < 0 || Mathf.Abs(Vector3.Dot(Dir(k1), Dir(k2))) < cosShared) continue;
+                    group[Root(k1)] = Root(k2);
+                }
+            }
+            var shared = new Shared
+            {
+                group = new int[keys], direction = new Vector3[keys], lines = new List<float>[keys],
+                min = new float[keys], max = new float[keys],
+            };
+            for (var k = 0; k < keys; k++) shared.group[k] = Root(k);
+            for (var k = 0; k < keys; k++) if (shared.group[k] == k) shared.direction[k] = Dir(k);
+            // Each key's candidates (as Frame.Lines finds them), in its set's world coordinate.
+            var at = new List<(float at, float weight)>[keys];
+            for (var k = 0; k < keys; k++)
+            {
+                var c = k >> 1;
+                shared.min[k] = float.MaxValue;
+                shared.max[k] = float.MinValue;
+                if (owned[c] || outline[c].Count == 0) continue;
+                var g = shared.group[k];
+                if (at[g] == null) at[g] = new List<(float, float)>();
+                var list = at[g];
+                var dir = shared.direction[g];
+                var f = frames[c];
+                var degree = new Dictionary<int, List<Vector2>>();
+                foreach (var (a, b) in outline[c])
+                {
+                    float xa = Vector3.Dot(pp[a], dir), xb = Vector3.Dot(pp[b], dir);
+                    shared.min[k] = Mathf.Min(shared.min[k], Mathf.Min(xa, xb));
+                    shared.max[k] = Mathf.Max(shared.max[k], Mathf.Max(xa, xb));
+                    Vector2 qa = f.To2(pp[a]), qb = f.To2(pp[b]);
+                    var d = qb - qa;
+                    var len = d.magnitude;
+                    if (!(len > 0f)) continue;
+                    // An edge along the other direction is one of these lines where it runs.
+                    var other = (k & 1) == 0 ? Mathf.Abs(d.x) <= tanAligned * Mathf.Abs(d.y) : Mathf.Abs(d.y) <= tanAligned * Mathf.Abs(d.x);
+                    if (other) list.Add((0.5f * (xa + xb), len));
+                    (degree.TryGetValue(a, out var la) ? la : degree[a] = new List<Vector2>(2)).Add(d / len);
+                    (degree.TryGetValue(b, out var lb) ? lb : degree[b] = new List<Vector2>(2)).Add(-d / len);
+                }
+                foreach (var kv in degree)
+                {
+                    var dirs = kv.Value;
+                    if (dirs.Count != 2 || Vector2.Dot(dirs[0], -dirs[1]) < 0.94f) list.Add((Vector3.Dot(pp[kv.Key], dir), 0f));
+                }
+                list.Add((shared.min[k], 0f));
+                list.Add((shared.max[k], 0f));
+            }
+            for (var g = 0; g < keys; g++)
+            {
+                if (at[g] == null) continue;
+                float lo = float.MaxValue, hi = float.MinValue;
+                foreach (var (x, _) in at[g]) { lo = Mathf.Min(lo, x); hi = Mathf.Max(hi, x); }
+                shared.lines[g] = Frame.Merge(at[g], lo, hi, h);
+            }
+            for (var k = 0; k < keys; k++) if (shared.lines[shared.group[k]] == null) shared.lines[shared.group[k]] = new List<float>();
+            return shared;
+        }
+
         // A region's plane coordinates: u along its outline's main direction, v across, u x v its normal.
         sealed class Frame
         {
@@ -1062,7 +1871,7 @@ namespace NativeRemesher
                 vs = Merge(vAt, minV, maxV, h);
             }
 
-            static List<float> Merge(List<(float at, float weight)> at, float min, float max, float h)
+            public static List<float> Merge(List<(float at, float weight)> at, float min, float max, float h)
             {
                 at.Add((min, 0f));
                 at.Add((max, 0f));
@@ -1098,6 +1907,20 @@ namespace NativeRemesher
                 return filled;
             }
 
+            // The lines' crossings, each with how far clear of the outline it must be.
+            public List<(Vector2 at, float clear)> Grid(float h)
+            {
+                var grid = new List<(Vector2, float)>();
+                for (var j = 0; j < vs.Count; j++)
+                    for (var i = 0; i < us.Count; i++)
+                    {
+                        var gu = Mathf.Min(i > 0 ? us[i] - us[i - 1] : h, i + 1 < us.Count ? us[i + 1] - us[i] : h);
+                        var gv = Mathf.Min(j > 0 ? vs[j] - vs[j - 1] : h, j + 1 < vs.Count ? vs[j + 1] - vs[j] : h);
+                        grid.Add((new Vector2(us[i], vs[j]), clearanceShare * Mathf.Min(gu, gv)));
+                    }
+                return grid;
+            }
+
             // The parameters along a -> b (as coordinates from x0 to x1) where lines cross it.
             public void Crossings(List<float> lines, float x0, float x1, List<float> into)
             {
@@ -1115,7 +1938,7 @@ namespace NativeRemesher
         // and pinches where it touches itself stay as they are). Indices >= 0 are points; -1 - i
         // is the region's i-th grid point. Null when it cannot be done.
         static List<int> Fill(Frame frame, List<int> region, int[] pt, List<(int a, int b)> outline, List<Vector3> points,
-            Action<int, int, List<int>> walk, float h, out List<Vector2> grid, out int failure)
+            Action<int, int, List<int>> walk, List<(Vector2 at, float clear)> wanted, out List<Vector2> grid, out int failure)
         {
             failure = 0;
             grid = new List<Vector2>();
@@ -1180,19 +2003,13 @@ namespace NativeRemesher
             }
             var first = ids.Count;
             // Grid points: the lines' crossings clear of the outline.
-            var us = frame.us;
-            var vs = frame.vs;
             var candidates = new List<Vector2>();
-            for (var j = 0; j < vs.Count; j++)
-                for (var i = 0; i < us.Count; i++)
-                {
-                    var q = new Vector2(us[i], vs[j]);
-                    var gu = Mathf.Min(i > 0 ? us[i] - us[i - 1] : h, i + 1 < us.Count ? us[i + 1] - us[i] : h);
-                    var gv = Mathf.Min(j > 0 ? vs[j] - vs[j - 1] : h, j + 1 < vs.Count ? vs[j + 1] - vs[j] : h);
-                    if (!Clear(q, segs2, clearanceShare * Mathf.Min(gu, gv))) continue;
-                    candidates.Add(q);
-                    xs.Add(q.x); ys.Add(q.y);
-                }
+            foreach (var (q, clear) in wanted)
+            {
+                if (!Clear(q, segs2, clear)) continue;
+                candidates.Add(q);
+                xs.Add(q.x); ys.Add(q.y);
+            }
             if (!ConstrainedDelaunay.Refine(xs, ys, triangles, fixedEdges, first, out var inserted))
             {
                 failure = 2;
