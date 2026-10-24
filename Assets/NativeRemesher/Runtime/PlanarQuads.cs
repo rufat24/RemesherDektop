@@ -85,6 +85,27 @@ namespace NativeRemesher
         /// <summary>Diagnostics: the triangles before the split or pairing (false) and those the pairing left (true), each one's source (component, -1 off every region, -2 a region left as simplified, -3 made by the pairing), and each component's region.</summary>
         public static Action<Vector3[], int[], int[], int[], bool> debugOrigin;
 
+        /// <summary>Diagnostics: the simplified mesh and each triangle's label (0 off every region) at a stage ("source", "simplified", "facing", "straightened"), and the faces fanned (labels 0) after the fill's later steps ("paired", "bridged", "placed", "fit").</summary>
+        public static Action<Vector3[], int[], int[], string> debugProxy;
+
+        /// <summary>
+        /// A quad not flat is drawn as two triangles cut along its first and third corners: each
+        /// such quad's corners turned so that cut is the diagonal lying nearer the source.
+        /// </summary>
+        public static bool nearerDiagonal = true;
+
+        /// <summary>
+        /// Small regions (under smallRegionCells square cells) keep their simplified edges within
+        /// this many cells, so a thin part's faces cannot reach across it (a chimney's rim and
+        /// flue walls, half a cell thick: simplified freely, triangles were laid over the flue
+        /// from rim to rim and its crown cut across). 0: off.
+        /// </summary>
+        public static float smallRegionEdgeCells = 1.5f;
+        public static float smallRegionCells = 16f;
+
+        /// <summary>...and the points off every region too (a crown's mouldings, a sill's nose).</summary>
+        public static bool smallRegionFree = true;
+
         /// <summary>The simplification's sliver guard (PreDecimate.sliverGuardQuality) here.</summary>
         public static float sliverGuard = 0f;
 
@@ -196,12 +217,13 @@ namespace NativeRemesher
             public FeatureFit.Stats fit;
             public string decimate;
             public int failedTriangulation, failedOutline;
-            public int reliefHoles, reliefs, reliefQuads, straightened, patches, bridged, bridgeLeft;
+            public int reliefHoles, reliefs, reliefQuads, straightened, patches, bridged, bridgeLeft, turnedQuads;
             public string reliefLeft = "";
             public string pairing = "";
+            public string budget = "";
             public override string ToString() =>
                 $"planar quads: {flat}; proxy {proxyTriangles} triangles ({straightened} points straightened away), {components} regions and {patches} patches ({filled} filled, {failed} left), " +
-                $"{gridPoints} grid points, {cuts} cuts on {cutEdges} edges, {quads} quads (fill failures: {failedTriangulation} triangulation, {failedOutline} outline); reliefs {reliefs} of {reliefHoles} holes, {reliefQuads} quads (left: {reliefLeft}); pairing [{pairing}]; {bridged} triangle pairs bridged ({bridgeLeft} left); decimate [{decimate}]; flatten {flattenMs} ms, decimate {decimateMs} ms, fill {fillMs} ms, total {totalMs} ms; {fit}";
+                $"{gridPoints} grid points, {cuts} cuts on {cutEdges} edges, {quads} quads (fill failures: {failedTriangulation} triangulation, {failedOutline} outline); reliefs {reliefs} of {reliefHoles} holes, {reliefQuads} quads (left: {reliefLeft}); pairing [{pairing}]; {bridged} triangle pairs bridged ({bridgeLeft} left), {turnedQuads} quads turned to the nearer diagonal; budget [{budget}]; decimate [{decimate}]; flatten {flattenMs} ms, decimate {decimateMs} ms, fill {fillMs} ms, total {totalMs} ms; {fit}";
         }
 
         /// <summary>The quads, or false when the source is not mostly planar (or nothing came of it).</summary>
@@ -230,16 +252,39 @@ namespace NativeRemesher
             var labelOf = new int[m];
             for (var t = 0; t < m; t++) labelOf[t] = flat.triangleRegion[t] + 1;
             var labels = new MaterialLabels(flat.positions, sourceTriangles, labelOf);
+            debugProxy?.Invoke(flat.positions, sourceTriangles, labelOf, "source");
             var budget = Mathf.Max(256, Mathf.RoundToInt(targetQuads *
                 (freeTrianglesPerQuad * (1f - flat.share) + flatTrianglesPerQuad * flat.share)));
             var options = DecimateOptions.ForTriangleCount(budget);
             options.labels = labels;
             // Slivers on the planes do not matter: those triangles are made again.
             options.sliverGuard = sliverGuard;
+            if (smallRegionEdgeCells > 0f)
+            {
+                // By the cell a point is in (the simplification asks again of points it has moved).
+                long Voxel(Vector3 q) => ((long)Mathf.FloorToInt(q.x / cell) & 0x1FFFFF) << 42
+                    | ((long)Mathf.FloorToInt(q.y / cell) & 0x1FFFFF) << 21 | ((long)Mathf.FloorToInt(q.z / cell) & 0x1FFFFF);
+                var limited = new HashSet<long>();
+                var small = smallRegionCells * cell * cell;
+                for (var t = 0; t < m; t++)
+                {
+                    var r = flat.triangleRegion[t];
+                    if (r >= 0 ? flat.areas[r] >= small : !smallRegionFree) continue;
+                    for (var k = 0; k < 3; k++) limited.Add(Voxel(flat.positions[sourceTriangles[3 * t + k]]));
+                }
+                var edge = smallRegionEdgeCells * cell;
+                options.vertexSizes = ps =>
+                {
+                    var size = new float[ps.Length];
+                    for (var i = 0; i < ps.Length; i++) size[i] = limited.Contains(Voxel(ps[i])) ? edge : float.MaxValue;
+                    return size;
+                };
+            }
             PreDecimate.Decimate(flat.positions, sourceTriangles, options, out var decimateStats, out var pp, out var pt);
             stats.decimate = decimateStats.ToString();
             var proxyLabel = labels.ForTriangles(pp, pt);
             var pm = pt.Length / 3;
+            debugProxy?.Invoke(pp, pt, proxyLabel, "simplified");
             // A triangle is its region's only facing as the region does: the nearest source
             // triangle of one standing across a region's edge (a fascia under the eaves, a strip
             // folded at a corner) is the region's, and projected onto its plane it folds the outline.
@@ -251,10 +296,12 @@ namespace NativeRemesher
                 var len = nt.magnitude;
                 if (!(len > 0f) || Vector3.Dot(nt / len, flat.normals[proxyLabel[t] - 1]) < cosFacing) proxyLabel[t] = 0;
             }
+            debugProxy?.Invoke(pp, pt, proxyLabel, "facing");
             if (straightenCells > 0f)
             {
                 stats.straightened = Straighten(pp, ref pt, ref proxyLabel, straightenCells * cell, thinCells * cell);
                 pm = pt.Length / 3;
+                debugProxy?.Invoke(pp, pt, proxyLabel, "straightened");
             }
             stats.proxyTriangles = pm;
             stats.decimateMs = watch.ElapsedMilliseconds;
@@ -675,13 +722,16 @@ namespace NativeRemesher
                     for (var c = 0; c < components; c++) componentRegion[c] = componentLabel[c] - 1;
                     debugOrigin(positions, left.ToArray(), leftFrom.ToArray(), componentRegion, true);
                 }
+                DumpFaces(positions, faces, "paired");
                 if (bridges)
                 {
                     stats.bridged = Bridge(ref positions, faces, ref exactAfter, bridgeQuads, out var bridgeLeft);
                     stats.bridgeLeft = bridgeLeft;
                 }
+                DumpFaces(positions, faces, "bridged");
                 faces.AddRange(reliefQuads);
             }
+            stats.budget += $"{(stats.budget.Length > 0 ? ", " : "")}{hGrid / cell:0.00} cells: {faces.Count} faces ({reliefQuads.Count} of them reliefs')";
             if (!reliefBudget || gaps.Count == 0 || attempt == 2) break;
             {
                 var faceCount = faces.Count - reliefQuads.Count;
@@ -710,6 +760,7 @@ namespace NativeRemesher
                 if (loose[v]) placed[v] = surface.NearestPoint(placed[v], out _);
             });
             DetailQuads.Relax(positions, faces, loose, surface, DetailQuads.relaxIterations);
+            DumpFaces(positions, faces, "placed");
             if (fitIterations > 0)
             {
                 var keep = new Vector3[positions.Length];
@@ -718,9 +769,56 @@ namespace NativeRemesher
                 // The planes' points stay where they were built.
                 for (var v = 0; v < positions.Length; v++) if (!loose[v]) positions[v] = keep[v];
             }
+            if (nearerDiagonal) stats.turnedQuads = NearerDiagonals(positions, faces, surface);
+            DumpFaces(positions, faces, "fit");
             Compact(ref positions, faces);
             stats.totalMs = total.ElapsedMilliseconds;
             return faces.Count > 0;
+        }
+
+        // Each quad whose two halves, cut one way, fold by more than a few degrees: turned by a
+        // corner when the other cut lies nearer the surface (the middle of the cut and of each
+        // half, the farthest of the three). Returns the quads turned.
+        static int NearerDiagonals(Vector3[] positions, List<int[]> faces, SpatialGrid surface)
+        {
+            var cosFlat = Mathf.Cos(2f * Mathf.Deg2Rad);
+            var turned = 0;
+            float Off(Vector3 a, Vector3 b, Vector3 c, Vector3 d)
+            {
+                // Cut along a-c: halves a b c and a c d.
+                surface.NearestPoint((a + c) * 0.5f, out var m);
+                surface.NearestPoint((a + b + c) / 3f, out var h0);
+                surface.NearestPoint((a + c + d) / 3f, out var h1);
+                return Mathf.Max(m, Mathf.Max(h0, h1));
+            }
+            var turn = new bool[faces.Count];
+            Parallel.For(0, faces.Count, BackgroundScheduler.Options, i =>
+            {
+                var f = faces[i];
+                if (f.Length != 4) return;
+                Vector3 a = positions[f[0]], b = positions[f[1]], c = positions[f[2]], d = positions[f[3]];
+                var n0 = Vector3.Cross(b - a, c - a);
+                var n1 = Vector3.Cross(c - a, d - a);
+                if (n0.sqrMagnitude > 0f && n1.sqrMagnitude > 0f && MeshMath.CosAngleBetween(n0, n1) >= cosFlat) return;
+                turn[i] = Off(b, c, d, a) < Off(a, b, c, d);
+            });
+            for (var i = 0; i < faces.Count; i++)
+            {
+                if (!turn[i]) continue;
+                var f = faces[i];
+                faces[i] = new[] { f[1], f[2], f[3], f[0] };
+                turned++;
+            }
+            return turned;
+        }
+
+        static void DumpFaces(Vector3[] positions, List<int[]> faces, string stage)
+        {
+            if (debugProxy == null) return;
+            var tris = new List<int>();
+            foreach (var f in faces)
+                for (var i = 1; i + 1 < f.Length; i++) { tris.Add(f[0]); tris.Add(f[i]); tris.Add(f[i + 1]); }
+            debugProxy(positions, tris.ToArray(), new int[tris.Count / 3], stage);
         }
 
         // Points of the simplified mesh taken out (each collapsed into a neighbour) where nothing

@@ -37,7 +37,9 @@
 //   in source order, the mesh comes back with every normal inverted. Measured rather than assumed -
 //   the round trip reported matching positions and a signed volume of the opposite sign, which is
 //   what inside-out looks like in one number. So the corner order is reversed here, and the two
-//   reversals cancel.
+//   reversals cancel. Reversed from the first corner (0, n-1, ..., 1), not end to start: a quad
+//   not flat is split along its first and third corners -- by Unity's quad topology and by most
+//   importers -- and that keeps it the same diagonal in the file as in Unity.
 //
 //   UNITS. `UnitScaleFactor` declares centimetres PER UNIT, so 100 says "these coordinates are in
 //   metres" - which is what a Unity unit is - and the positions are then written unchanged. Scaling
@@ -246,10 +248,11 @@ namespace NativeRemesher
                 var face = faces[f];
                 if (face == null || face.Length < 3) continue;
 
-                // Reversed, so that this cancels the winding flip negating X introduces.
+                // Reversed, so that this cancels the winding flip negating X introduces; from the
+                // first corner, so a quad keeps its diagonal.
                 for (var k = 0; k < face.Length; k++)
                 {
-                    var corner = face[face.Length - 1 - k];
+                    var corner = face[(face.Length - k) % face.Length];
                     if (written > 0) text.Append(',');
                     text.Append(k == face.Length - 1 ? (-corner - 1) : corner);
                     written++;
@@ -326,7 +329,7 @@ namespace NativeRemesher
                 var uv = faceUvs[f];
                 for (var k = 0; k < face.Length; k++)
                 {
-                    var corner = face.Length - 1 - k;
+                    var corner = (face.Length - k) % face.Length;
                     var value = uv != null && uv.Length == face.Length ? uv[corner] : Vector2.zero;
                     if (!lookup.TryGetValue(value, out var index))
                     {
