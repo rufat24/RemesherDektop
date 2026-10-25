@@ -524,8 +524,18 @@ namespace NativeRemesher
                     images, resolution, onProgress, joinedLayers);
             }
             if (bakeNormals)
+            {
+                // Hard edges by each part's own profile.
+                var faceHardEdges = new bool[joined.faces.Count];
+                for (var p = 0; p < parts.Count; p++)
+                {
+                    var hardEdges = TextureBake.HardEdgesFor(parts[p].result?.profile);
+                    for (var f = firstFace[p]; f < firstFace[p + 1]; f++) faceHardEdges[f] = hardEdges;
+                }
                 RemeshPipeline.BakeNormalMap(shared, sourcePositions, sourceTriangles, resolution, onProgress,
-                    anyNormalMaps ? suv.ToArray() : null, anyNormalMaps ? snm.ToArray() : null, anyNormalMaps ? normalMaps : null);
+                    anyNormalMaps ? suv.ToArray() : null, anyNormalMaps ? snm.ToArray() : null, anyNormalMaps ? normalMaps : null,
+                    faceHardEdges);
+            }
             if (joined.faceUvs == null) return null;
 
             // --- each part's faces back, tangents into its own space ---
@@ -597,7 +607,7 @@ namespace NativeRemesher
                 var n = ex.shadingNormals != null && ex.shadingNormals.Length == ex.positions.Length ? ex.shadingNormals : ex.normals;
                 if (n == null || n.Length != ex.positions.Length)
                     n = Extraction.NormalRecalculator.Compute(ex.faces, ex.positions, null);
-                ex.faceNormals = TextureBake.hardEdgeAngle > 0f
+                ex.faceNormals = TextureBake.hardEdgeAngle > 0f && TextureBake.HardEdgesFor(parts[p].result?.profile)
                     ? TextureBake.CornerNormals(ex.positions, ex.faces, ex.faceUvs, n, TextureBake.hardEdgeAngle)
                     : null;
                 ex.faceTangents = TextureBake.Tangents(ex.positions, ex.faces, ex.faceUvs, n, ex.faceNormals);

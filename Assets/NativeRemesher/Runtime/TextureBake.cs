@@ -1128,12 +1128,26 @@ namespace NativeRemesher
         public static float hardEdgeAngle = 40f;
 
         /// <summary>
+        /// Hard edges only on surfaces of a profile with sharp features: none on a Character's or
+        /// Photogrammetry's, whose creases at the output's few quads are not the source's. The
+        /// head's ear, helmet rim and straps, split there, shaded as blocks and planks where they
+        /// were round (since 2026-10-23). Off: on every surface.
+        /// </summary>
+        public static bool hardEdgesByProfile = true;
+
+        /// <summary>Whether a surface solved under <paramref name="profile"/> gets hard edges (see <see cref="hardEdgesByProfile"/>).</summary>
+        public static bool HardEdgesFor(RemeshProfile? profile) =>
+            !hardEdgesByProfile || !profile.HasValue
+            || profile.Value.kind != RemeshProfileKind.Character && profile.Value.kind != RemeshProfileKind.Photogrammetry;
+
+        /// <summary>
         /// Per face corner, its shading normal: the vertex's own, except at a vertex where the UV
         /// charts meeting there face apart by more than <paramref name="hardAngle"/> -- then each
         /// chart's corners take that chart's normal (angle-weighted over its faces at the vertex).
+        /// Given <paramref name="faceHardEdges"/>, never at a vertex of a face it marks false.
         /// </summary>
         public static Vector3[][] CornerNormals(Vector3[] positions, IList<int[]> faces, Vector2[][] faceUvs,
-            Vector3[] normals, float hardAngle)
+            Vector3[] normals, float hardAngle, bool[] faceHardEdges = null)
         {
             var index = new Dictionary<(int, Vector2), int>();
             var sum = new List<Vector3>();
@@ -1173,9 +1187,18 @@ namespace NativeRemesher
                 if (!first.TryGetValue(vertexOf[id], out var list)) first[vertexOf[id]] = list = new List<int>(2);
                 list.Add(id);
             }
+            HashSet<int> soft = null;
+            if (faceHardEdges != null)
+            {
+                soft = new HashSet<int>();
+                for (var f = 0; f < faces.Count && f < faceHardEdges.Length; f++)
+                    if (!faceHardEdges[f] && faces[f] != null)
+                        foreach (var v in faces[f]) soft.Add(v);
+            }
             var hard = new HashSet<int>();
             foreach (var pair in first)
             {
+                if (soft != null && soft.Contains(pair.Key)) continue;
                 var ids = pair.Value;
                 for (var i = 0; i < ids.Count && !hard.Contains(pair.Key); i++)
                     for (var j = i + 1; j < ids.Count; j++)

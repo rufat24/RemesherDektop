@@ -1810,7 +1810,7 @@ namespace NativeRemesher
         /// </summary>
         public static void BakeNormalMap(RemeshResult result, Vector3[] positions, int[] triangles, int resolution,
             Action<string, float> onProgress = null, Vector2[] sourceUvs = null, int[] sourceTriangleNormalMap = null,
-            TextureBake.Image[] sourceNormalMaps = null)
+            TextureBake.Image[] sourceNormalMaps = null, bool[] faceHardEdges = null)
         {
             var extraction = result?.extraction;
             if (extraction == null || extraction.positions == null || positions == null || triangles == null) return;
@@ -1828,8 +1828,10 @@ namespace NativeRemesher
                 : extraction.normals;
             if (normals == null || normals.Length != extraction.positions.Length)
                 normals = Extraction.NormalRecalculator.Compute(extraction.faces, extraction.positions, null);
-            extraction.faceNormals = TextureBake.hardEdgeAngle > 0f
-                ? TextureBake.CornerNormals(extraction.positions, extraction.faces, extraction.faceUvs, normals, TextureBake.hardEdgeAngle)
+            // Per face whether it may be hard: as given (parts of several profiles), else by the result's profile.
+            extraction.faceNormals = TextureBake.hardEdgeAngle > 0f && (faceHardEdges != null || TextureBake.HardEdgesFor(result.profile))
+                ? TextureBake.CornerNormals(extraction.positions, extraction.faces, extraction.faceUvs, normals, TextureBake.hardEdgeAngle,
+                    faceHardEdges)
                 : null;
             extraction.faceTangents = TextureBake.Tangents(extraction.positions, extraction.faces, extraction.faceUvs, normals,
                 extraction.faceNormals);
