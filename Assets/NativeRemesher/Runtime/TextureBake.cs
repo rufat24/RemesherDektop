@@ -1043,18 +1043,24 @@ namespace NativeRemesher
         /// </summary>
         public static bool bakeCavity = true;
 
-        /// <summary>The depth below its surroundings, in mean output edges, at which a texel is darkest.</summary>
-        public static float cavityDepthEdges = 0.08f;
+        /// <summary>
+        /// The depth below its surroundings, in mean output edges, at which a texel is darkest. At
+        /// 0.08 the gap between a curved source and the flat quads over it (a few tenths of a
+        /// millimetre on a head at 19,000 faces) went dark too: specks over a balaclava's cloth,
+        /// black lines along its folds and charts, blotches on the Ford's doors; a tread's grooves
+        /// lie deeper than this.
+        /// </summary>
+        public static float cavityDepthEdges = 0.2f;
 
         /// <summary>
         /// The share of the darkest depth under which a texel is not darkened at all: where two of the
         /// output's faces meet at an angle the source lies a little below their crease, and a panel's
         /// quads drew lines over it.
         /// </summary>
-        public static float cavityKnee = 0.4f;
+        public static float cavityKnee = 0.55f;
 
         /// <summary>How dark the deepest texels go (0: none, 1: black).</summary>
-        public static float cavityStrength = 0.85f;
+        public static float cavityStrength = 0.7f;
 
         /// <summary>
         /// The source's depth under each texel also bent into the normal map, as a height map's
