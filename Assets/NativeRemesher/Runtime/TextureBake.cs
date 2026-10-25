@@ -1039,9 +1039,10 @@ namespace NativeRemesher
         /// With the normal map, an occlusion map of the source's cavities: how far below its
         /// surroundings the source lies under each texel, darker the deeper. The normal map cannot
         /// show a tyre's tread: a texel's line meets a block's top or a groove's floor, both facing
-        /// out, and never the groove's walls; the Ford's tyres came out bare.
+        /// out, and never the groove's walls; the Ford's tyres came out bare. Off by default: where
+        /// the quads miss the source's shape it shaded what was not there.
         /// </summary>
-        public static bool bakeCavity = true;
+        public static bool bakeCavity = false;
 
         /// <summary>
         /// The depth below its surroundings, in mean output edges, at which a texel is darkest. At
