@@ -214,12 +214,16 @@ namespace NativeRemesher
         /// A UV per face corner: the faces unfolded into lattice charts and packed into a square
         /// atlas of <paramref name="resolution"/> texels.
         /// </summary>
+        /// <remarks>
+        /// <paramref name="creaseAngle"/> at or above 0 stands for <see cref="chartCreaseAngle"/>
+        /// in this call (see RemeshResult.panelCreases).
+        /// </remarks>
         public static Vector2[][] Unwrap(Vector3[] positions, IList<int[]> faces, int resolution, Stats stats,
-            float[] faceScale = null)
+            float[] faceScale = null, float creaseAngle = -1f)
         {
             var watch = System.Diagnostics.Stopwatch.StartNew();
             stats.resolution = resolution;
-            var charts = GrowCharts(positions, faces);
+            var charts = GrowCharts(positions, faces, creaseAngle >= 0f ? creaseAngle : chartCreaseAngle);
             // A chart's texels per unit times its faces' scale (a chart lies on one part).
             if (faceScale != null)
                 foreach (var c in charts)
@@ -427,7 +431,7 @@ namespace NativeRemesher
             return sum / face.Length;
         }
 
-        static List<Chart> GrowCharts(Vector3[] positions, IList<int[]> faces)
+        static List<Chart> GrowCharts(Vector3[] positions, IList<int[]> faces, float chartCreaseAngle)
         {
             // The faces on each edge; an edge on three or more is not crossed.
             var edgeFaces = new Dictionary<long, (int a, int b)>(faces.Count * 2, Extraction.EdgeKey.Comparer);

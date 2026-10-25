@@ -257,6 +257,16 @@ namespace NativeRemesher
         public int denseCreasesDropped;
 
         /// <summary>
+        /// The creases came from the flat panels (RemeshPipeline.hardSurfacePanelCreases): the
+        /// result is also fitted onto them, its normals split from
+        /// RemeshPipeline.panelHardEdgeAngle, and no building's quads are tried for it.
+        /// </summary>
+        public bool panelCreases;
+
+        /// <summary>The panels were asked for creases and gave too few (see RemeshPipeline.panelCreasesMinShare).</summary>
+        public bool panelCreasesRefused;
+
+        /// <summary>
         /// The count asked for, before Adaptive Quad Count raised it; see
         /// IntegerGridMap.curvesAddQuads. Zero when the mode did not run.
         /// </summary>
@@ -1123,7 +1133,11 @@ namespace NativeRemesher
             // Kept when no further from the source than the best so far (in general and at its
             // worst: a window it could not build is no mushier), turning no more, at no more
             // faces, and all but quads.
-            if (planarQuadsTry && PlanarQuads.enabled)
+            // Not for a result whose creases came from its panels: built from the same panels, the
+            // building's fill leaves everything not flat -- wheels, pipes, hinges -- as loose
+            // triangles, which measured nearer the car (0.00114 against 0.00153) and looked
+            // crumpled and lumpy beside the grid's round wheels and straight plate edges.
+            if (planarQuadsTry && PlanarQuads.enabled && !lattice.panelCreases)
             {
                 onProgress?.Invoke("Trying a building's quads", 0f);
                 RemeshResult planar;
@@ -1672,11 +1686,16 @@ namespace NativeRemesher
             RunCore(solvePositions, solveTriangles, settings, result, watch, onProgress,
                 autoSelectProfile);
 
-            if (featureFitIterations > 0 && result.extraction?.positions != null)
+            if (QuadReduction.logStats && result.features != null)
+                Debug.Log($"[Native Remesher] creases: {result.features.featureEdgeCount} edges in {result.features.polylineCount} chains, " +
+                          $"{result.denseCreasesDropped} dense dropped, from panels {result.panelCreases}; " +
+                          $"snap [{result.extraction?.snapStats}]");
+            var fitPasses = result.panelCreases ? Mathf.Max(featureFitIterations, panelFitPasses) : featureFitIterations;
+            if (fitPasses > 0 && result.extraction?.positions != null)
             {
                 onProgress?.Invoke("Fitting features", 0f);
                 result.featureFitStats = FeatureFit.Fit(result.extraction.positions, result.extraction.faces,
-                    positions, triangles, featureFitIterations);
+                    positions, triangles, fitPasses);
             }
 
             // Stars (many faces folded round one vertex, where detail a cell or two across was
@@ -1904,7 +1923,8 @@ namespace NativeRemesher
                 return;
             onProgress?.Invoke("Baking texture", 0f);
             var stats = new TextureBake.Stats();
-            var uvs = TextureBake.Unwrap(extraction.positions, extraction.faces, resolution, stats, extraction.faceTexelScale);
+            var uvs = TextureBake.Unwrap(extraction.positions, extraction.faces, resolution, stats, extraction.faceTexelScale,
+                result.panelCreases ? panelHardEdgeAngle : -1f);
             result.bakedTexture = TextureBake.Bake(positions, triangles, sourceUvs, triangleTexture, textures,
                 extraction.positions, extraction.faces, uvs, resolution, stats,
                 p => onProgress?.Invoke("Baking texture", p), layers);
@@ -1932,7 +1952,8 @@ namespace NativeRemesher
             if (stats == null || extraction.faceUvs == null || result.bakedTexture == null || result.bakedTextureSize != resolution)
             {
                 stats = new TextureBake.Stats();
-                extraction.faceUvs = TextureBake.Unwrap(extraction.positions, extraction.faces, resolution, stats, extraction.faceTexelScale);
+                extraction.faceUvs = TextureBake.Unwrap(extraction.positions, extraction.faces, resolution, stats, extraction.faceTexelScale,
+                    result.panelCreases ? panelHardEdgeAngle : -1f);
                 extraction.uvs = null;
                 result.bakeStats = stats;
             }
@@ -1943,8 +1964,8 @@ namespace NativeRemesher
                 normals = Extraction.NormalRecalculator.Compute(extraction.faces, extraction.positions, null);
             // Per face whether it may be hard: as given (parts of several profiles), else by the result's profile.
             extraction.faceNormals = TextureBake.hardEdgeAngle > 0f && (faceHardEdges != null || TextureBake.HardEdgesFor(result.profile))
-                ? TextureBake.CornerNormals(extraction.positions, extraction.faces, extraction.faceUvs, normals, TextureBake.hardEdgeAngle,
-                    faceHardEdges)
+                ? TextureBake.CornerNormals(extraction.positions, extraction.faces, extraction.faceUvs, normals,
+                    result.panelCreases ? panelHardEdgeAngle : TextureBake.hardEdgeAngle, faceHardEdges)
                 : null;
             extraction.faceTangents = TextureBake.Tangents(extraction.positions, extraction.faces, extraction.faceUvs, normals,
                 extraction.faceNormals);
@@ -2387,6 +2408,91 @@ namespace NativeRemesher
         /// <summary>Most crease length, over the radius, within it that a kept crease edge may have.</summary>
         public static float sparseCreaseMaxLength = 4.5f;
 
+        /// <summary>
+        /// Hard Surface takes its creases from the flat panels it finds (PlanarRegions) where the
+        /// bend test is measuring the surface's grain instead of its edges -- where the density
+        /// filter above drops at least <see cref="panelCreasesDroppedShare"/> of what it marked:
+        /// an edge is then a crease where two panels of at least <see cref="panelCreaseMinCells"/>
+        /// square cells meet at <see cref="panelCreaseDegrees"/> or more, with the narrow fillets
+        /// between panels first closed onto the line where they meet. Off: the bend test alone.
+        /// </summary>
+        /// <remarks>
+        /// The armoured car (one 1.5-million-triangle shell, every plate edge rounded over several
+        /// triangles) at 8,000: the 20 degree test marked 163,033 edges, the filter dropped
+        /// 157,665, and the 5,368 left lay in 1,475 chains of three or four edges -- nothing for the
+        /// grid to run along, and every plate edge came out soft. From its panels: 3,439 edges in
+        /// 259 chains, loops along the plate edges, round wheels.
+        /// </remarks>
+        public static bool hardSurfacePanelCreases = true;
+
+        /// <summary>The share of bend-test creases the density filter must drop for the panels to be asked instead.</summary>
+        public static float panelCreasesDroppedShare = 0.5f;
+
+        /// <summary>
+        /// ...on an input of at least this many triangles, dense enough for its edges to be rounded
+        /// over several of them. The Ford's parts, a few thousand triangles each, lose half their
+        /// bend-test creases on a grille or a bumper too, and there the panels' creases were no
+        /// better: a bumper cleaner, the one under the grille opened along its lower edge.
+        /// </summary>
+        public static int panelCreasesMinTriangles = 200000;
+
+        /// <summary>
+        /// ...and when the panels give at least this many crease edges for each the filter left.
+        /// A building's walls meet its windows in steps and recesses rather than panel to panel:
+        /// the white house as Hard Surface got 36 edges from its panels against 3,070 left by the
+        /// filter, and built on those its windows came out as mush. The car: 3,439 against 5,368.
+        /// </summary>
+        public static float panelCreasesMinShare = 0.25f;
+
+        /// <summary>Panels meeting at this angle or more make a crease, degrees.</summary>
+        public static float panelCreaseDegrees = 20f;
+
+        /// <summary>Only panels of at least this many square cells make creases (a tyre's flat spots do not).</summary>
+        public static float panelCreaseMinCells = 8f;
+
+        /// <summary>Fillets narrower than this many cells are closed before the panels' meeting lines are read.</summary>
+        public static float panelFilletCells = 0.5f;
+
+        /// <summary>FeatureFit passes over a result whose creases came from its panels.</summary>
+        public static int panelFitPasses = 2;
+
+        /// <summary>
+        /// The angle normals split from (TextureBake.hardEdgeAngle, chartCreaseAngle) on a result
+        /// whose creases came from its panels. At 40, plate edges of 20 to 40 degrees -- most of
+        /// the car's -- shaded round over a whole quad.
+        /// </summary>
+        public static float panelHardEdgeAngle = 25f;
+
+        // The boundaries of `topology`, and an edge wherever two of its flat panels meet (see hardSurfacePanelCreases).
+        static FeatureGraph PanelCreases(RemeshTopology topology, int quadCount, out int count)
+        {
+            var cell = topology.EdgeLengthForQuadCount(Mathf.Max(1, quadCount));
+            var flat = PlanarRegions.Flatten(topology.positions, topology.triangles, cell, PlanarRegions.minAreaCells,
+                panelFilletCells);
+            var tris = topology.triangles;
+            var m = tris.Length / 3;
+            var first = new Dictionary<long, int>(3 * m);
+            var edges = new List<(int a, int b)>();
+            var minArea = panelCreaseMinCells * cell * cell;
+            var cos = Mathf.Cos(panelCreaseDegrees * Mathf.Deg2Rad);
+            var region = flat.triangleRegion;
+            for (var t = 0; t < m && region != null; t++)
+                for (var k = 0; k < 3; k++)
+                {
+                    int a = tris[3 * t + k], b = tris[3 * t + (k + 1) % 3];
+                    var key = Extraction.EdgeKey.PackUndirected(a, b);
+                    if (!first.TryGetValue(key, out var u)) { first[key] = t; continue; }
+                    int r0 = region[u], r1 = region[t];
+                    if (r0 < 0 || r1 < 0 || r0 == r1 || flat.areas[r0] < minArea || flat.areas[r1] < minArea) continue;
+                    if (Mathf.Abs(Vector3.Dot(flat.normals[r0], flat.normals[r1])) >= cos) continue;
+                    edges.Add((a, b));
+                }
+            count = edges.Count;
+            if (QuadReduction.logStats)
+                Debug.Log($"[Native Remesher] panel creases: {edges.Count} edges from {flat}");
+            return FeatureGraph.Detect(topology, 0f).WithEdges(topology, edges);
+        }
+
         /// <summary>The profile's dihedral creases on <paramref name="topology"/>, as Hard Surface keeps them.</summary>
         static FeatureGraph ProfileFeatures(RemeshResult result, RemeshTopology topology, int quadCount,
             FeatureGraph detected = null)
@@ -2395,9 +2501,24 @@ namespace NativeRemesher
             if (!hardSurfaceSparseCreases || result.profile.kind != RemeshProfileKind.HardSurface
                 || result.profile.featureAngleDegrees <= 0f) return graph;
             var cell = topology.EdgeLengthForQuadCount(Mathf.Max(1, quadCount));
+            var marked = graph.featureEdgeCount;
             graph = graph.KeepSparseCreases(topology, sparseCreaseRadiusCells * cell, sparseCreaseMaxLength,
                 out var dropped);
             result.denseCreasesDropped += dropped;
+            // Decided once, on the first topology asked (the solve's); the coarser ones follow it.
+            if (result.panelCreases) return PanelCreases(topology, quadCount, out _);
+            if (hardSurfacePanelCreases && PlanarRegions.enabled && !result.panelCreasesRefused
+                && marked > 0 && dropped >= panelCreasesDroppedShare * marked
+                && result.originalTriangles != null && result.originalTriangles.Length / 3 >= panelCreasesMinTriangles)
+            {
+                var panels = PanelCreases(topology, quadCount, out var panelEdges);
+                if (panelEdges >= panelCreasesMinShare * graph.featureEdgeCount)
+                {
+                    result.panelCreases = true;
+                    return panels;
+                }
+                result.panelCreasesRefused = true;
+            }
             return graph;
         }
 

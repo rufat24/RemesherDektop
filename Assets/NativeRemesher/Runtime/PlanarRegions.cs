@@ -55,6 +55,12 @@ namespace NativeRemesher
         /// <summary>Rounds of taking in unclaimed neighbours that lie on a region's plane (a board's step).</summary>
         public static int absorbRounds = 40;
 
+        /// <summary>How far, degrees, a fillet point's normal may stray from the turn between its two planes (Flatten's fillet).</summary>
+        public static float filletNormalDegrees = 20f;
+
+        /// <summary>Last run's fillet points moved onto their panels' meeting line (diagnostic).</summary>
+        public static int lastFilletPoints;
+
         /// <summary>The flattening is used when its regions cover at least this share of the area.</summary>
         public static float minShare = 0.5f;
 
@@ -76,7 +82,19 @@ namespace NativeRemesher
                 $"planar regions {regions} over {share:P0} of the area, {moved} vertices moved ({lines} on lines, {corners} at corners, {refused} refused), {smoothSweeps} sweeps, {ms} ms";
         }
 
-        public static Result Flatten(Vector3[] positions, int[] triangles, float cell)
+        public static Result Flatten(Vector3[] positions, int[] triangles, float cell) =>
+            Flatten(positions, triangles, cell, minAreaCells, 0f);
+
+        /// <summary>
+        /// As above, keeping regions from <paramref name="minArea"/> square cells, and with
+        /// <paramref name="filletCells"/> above 0 two regions meeting through a narrow fillet made to
+        /// meet at the line where their planes cross: each point of the fillet within that many
+        /// cells of both planes, whose normal turns between theirs, is moved onto the nearer plane
+        /// and on toward the line (all the way at the fillet's middle), and the fillet's triangles
+        /// then lying on a plane join its region. A plate's edge rounded over a fraction of a cell
+        /// is then a line between two regions instead of a strip between them that is neither.
+        /// </summary>
+        public static Result Flatten(Vector3[] positions, int[] triangles, float cell, float minArea, float filletCells)
         {
             var watch = System.Diagnostics.Stopwatch.StartNew();
             var result = new Result { positions = positions };
@@ -210,7 +228,7 @@ namespace NativeRemesher
             var tolerance = distanceCells * cell;
             var sums = new List<(double nx, double ny, double nz, double cx, double cy, double cz, double a)>();
             var queue = new Queue<int>();
-            var minArea = minAreaCells * cell * cell;
+            var minRegionArea = minArea * cell * cell;
             var fitArea = fitAreaCells * cell * cell;
             void Grow(Vector3[] normals)
             {
@@ -322,7 +340,7 @@ namespace NativeRemesher
             Fit();
             // Small regions are not walls.
             for (var f = 0; f < m; f++)
-                if (region[f] >= 0 && regionArea[region[f]] < minArea) region[f] = -1;
+                if (region[f] >= 0 && regionArea[region[f]] < minRegionArea) region[f] = -1;
 
             // Unclaimed triangles lying on a neighbouring region's plane (corners within the
             // tolerance: a board's step, the band the smoothing bent at a wall's corner) join it.
@@ -367,6 +385,11 @@ namespace NativeRemesher
                 }
                 frontier = nextFrontier;
             }
+
+            lastFilletPoints = 0;
+            if (filletCells > 0f)
+                lastFilletPoints = SharpenFillets(p, t, region, planeNormal, planeOffset, vtStart, vt, neighbour,
+                    faceNormal, area, filletCells * cell, Mathf.Cos(lineMinAngle * Mathf.Deg2Rad), tolerance);
 
             // Small flat faces the smoothing blurred -- a window's casing, sash and panes, the sides
             // of its recess, a sill -- grown again on the triangles' own normals, and kept down to
@@ -490,6 +513,123 @@ namespace NativeRemesher
             result.triangleRegion = region;
             result.ms = watch.ElapsedMilliseconds;
             return result;
+        }
+
+        // The point of the line where two planes meet nearest q.
+        static Vector3 LinePoint(Vector3 q, Vector3 n0, float d0, Vector3 n1, float d1)
+        {
+            double r0 = d0 - Vector3.Dot(n0, q), r1 = d1 - Vector3.Dot(n1, q);
+            double g = Vector3.Dot(n0, n1), det = 1 - g * g;
+            if (!(det > 1e-9)) return q;
+            var s0 = (r0 - g * r1) / det;
+            var s1 = (r1 - g * r0) / det;
+            return q + (float)s0 * n0 + (float)s1 * n1;
+        }
+
+        // Fillets between two regions closed onto the line their planes meet at (see Flatten):
+        // `p` moved, and the fillet's triangles lying on a plane after given to its region.
+        // Returns the points moved.
+        static int SharpenFillets(Vector3[] p, int[] t, int[] region, Vector3[] planeNormal, float[] planeOffset,
+            int[] vtStart, int[] vt, int[] neighbour, Vector3[] faceNormal, double[] area, float reach, float cosLine,
+            float tolerance)
+        {
+            var n = p.Length;
+            var target = new Vector3[n];
+            var has = new bool[n];
+            var reach2 = reach * reach;
+            var straySin = Mathf.Sin(filletNormalDegrees * Mathf.Deg2Rad);
+            Parallel.For(0, n, BackgroundScheduler.Options, () => (new HashSet<int>(), new Stack<int>(), new List<int>()),
+                (v, state, local) =>
+                {
+                    var (seen, stack, found) = local;
+                    seen.Clear(); stack.Clear(); found.Clear();
+                    var q = p[v];
+                    var normal = Vector3.zero;
+                    for (var k = vtStart[v]; k < vtStart[v + 1]; k++)
+                    {
+                        var f = vt[k];
+                        if (region[f] >= 0) return local;
+                        normal += faceNormal[f] * (float)area[f];
+                        if (seen.Add(f)) stack.Push(f);
+                    }
+                    if (stack.Count == 0) return local;
+                    // The regions met within reach, across fillet triangles.
+                    while (stack.Count > 0)
+                    {
+                        var f = stack.Pop();
+                        for (var j = 0; j < 3; j++)
+                        {
+                            var g = neighbour[3 * f + j];
+                            if (g < 0 || !seen.Add(g)) continue;
+                            if (region[g] >= 0) { if (!found.Contains(region[g])) found.Add(region[g]); continue; }
+                            var near = false;
+                            for (var k = 0; k < 3 && !near; k++) near = (p[t[3 * g + k]] - q).sqrMagnitude <= reach2;
+                            if (near) stack.Push(g);
+                        }
+                    }
+                    if (found.Count < 2) return local;
+                    // The two planes it lies nearest, not alike in direction.
+                    int bestA = -1, bestB = -1;
+                    var bestOff = float.MaxValue;
+                    for (var i = 0; i < found.Count; i++)
+                        for (var j = i + 1; j < found.Count; j++)
+                        {
+                            int ra = found[i], rb = found[j];
+                            if (Mathf.Abs(Vector3.Dot(planeNormal[ra], planeNormal[rb])) > cosLine) continue;
+                            var off = Mathf.Max(Mathf.Abs(Vector3.Dot(planeNormal[ra], q) - planeOffset[ra]),
+                                Mathf.Abs(Vector3.Dot(planeNormal[rb], q) - planeOffset[rb]));
+                            if (off < bestOff) { bestOff = off; bestA = ra; bestB = rb; }
+                        }
+                    if (bestA < 0 || bestOff > reach) return local;
+                    Vector3 nA = planeNormal[bestA], nB = planeNormal[bestB];
+                    // A fillet's normal turns from one plane's to the other's: it lies near their span.
+                    var len = normal.magnitude;
+                    if (!(len > 0f)) return local;
+                    normal /= len;
+                    var axis = Vector3.Cross(nA, nB).normalized;
+                    if (Mathf.Abs(Vector3.Dot(normal, axis)) > straySin) return local;
+                    var sA = Vector3.Dot(nA, q) - planeOffset[bestA];
+                    var sB = Vector3.Dot(nB, q) - planeOffset[bestB];
+                    float a = Mathf.Abs(sA), b = Mathf.Abs(sB);
+                    Vector3 onPlane;
+                    float toLine;
+                    if (a <= b) { onPlane = q - sA * nA; toLine = b > 0f ? a / b : 1f; }
+                    else { onPlane = q - sB * nB; toLine = a > 0f ? b / a : 1f; }
+                    var line = LinePoint(onPlane, nA, planeOffset[bestA], nB, planeOffset[bestB]);
+                    var moved = onPlane + (line - onPlane) * toLine;
+                    if ((moved - q).sqrMagnitude > reach2) return local;
+                    target[v] = moved;
+                    has[v] = true;
+                    return local;
+                }, _ => { });
+            var count = 0;
+            for (var v = 0; v < n; v++) if (has[v]) { p[v] = target[v]; count++; }
+            if (count == 0) return 0;
+
+            // Fillet triangles now on a neighbouring region's plane join it, outward from the regions.
+            var m = region.Length;
+            var on = 0.25f * tolerance;
+            for (var round = 0; round < 64; round++)
+            {
+                var joined = new List<(int f, int r)>();
+                for (var f = 0; f < m; f++)
+                {
+                    if (region[f] >= 0) continue;
+                    for (var j = 0; j < 3; j++)
+                    {
+                        var g = neighbour[3 * f + j];
+                        if (g < 0 || region[g] < 0) continue;
+                        var r = region[g];
+                        var flat = true;
+                        for (var k = 0; k < 3 && flat; k++)
+                            flat = Mathf.Abs(Vector3.Dot(planeNormal[r], p[t[3 * f + k]]) - planeOffset[r]) <= on;
+                        if (flat) { joined.Add((f, r)); break; }
+                    }
+                }
+                if (joined.Count == 0) break;
+                foreach (var (f, r) in joined) region[f] = r;
+            }
+            return count;
         }
 
         // The eigenvector of the smallest eigenvalue of a symmetric 3x3 (packed xx xy xz yy yz zz),
