@@ -1168,12 +1168,31 @@ namespace NativeRemesher
         /// <summary>Quads of the last output turned by <see cref="nearerDiagonals"/>.</summary>
         public static int lastTurnedQuads;
 
+        /// <summary>
+        /// Every output's patches of faces wound against the source as a whole reversed, whatever
+        /// their border: Unity draws a face from its front only, and the head's ear cup at 2,000
+        /// came out wound in (455 of its triangles facing the head), drawn as a hole. The face
+        /// orienter leaves a patch whose border agrees with its neighbours, as a fold the winding
+        /// cannot express; seen from outside it is still a hole. False: as each path wound them.
+        /// </summary>
+        public static bool facesToSource = true;
+
+        /// <summary>Faces of the last output reversed by <see cref="facesToSource"/>.</summary>
+        public static int lastReversedFaces;
+
         // Turns the result's quads (see nearerDiagonals) and their corners' UVs, tangents and
-        // normals with them; new lists and arrays, as a result's extraction may share them.
+        // normals with them, after reversing the patches facing against the source (see
+        // facesToSource); new lists and arrays, as a result's extraction may share them.
         static RemeshResult NearerDiagonals(RemeshResult result, Vector3[] positions, int[] triangles, ref SpatialGrid source)
         {
             var ex = result?.extraction;
-            if (!nearerDiagonals || ex?.positions == null || ex.faces.Count == 0) return result;
+            if (ex?.positions == null || ex.faces.Count == 0) return result;
+            if (facesToSource)
+            {
+                source ??= new SpatialGrid(positions, triangles);
+                FacesToSource(ex, source);
+            }
+            if (!nearerDiagonals) return result;
             source ??= new SpatialGrid(positions, triangles);
             var faces = new List<int[]>(ex.faces);
             var turned = new bool[faces.Count];
@@ -1193,6 +1212,100 @@ namespace NativeRemesher
             ex.faceTangents = Turned(ex.faceTangents);
             ex.faceNormals = Turned(ex.faceNormals);
             return result;
+        }
+
+        // Patches of faces (joined at shared edges) each facing against the source's nearest
+        // triangle, reversed when their area-weighted cosine to it is below -0.5 over at least
+        // four faces: a sliver's single face may meet the far side by chance. Faces over a source
+        // of two opposite skins close together do not vote.
+        static void FacesToSource(QuadExtractionResult ex, SpatialGrid source)
+        {
+            lastReversedFaces = 0;
+            var faces = ex.faces;
+            var n = faces.Count;
+            var cosine = new float[n];
+            var area = new float[n];
+            System.Threading.Tasks.Parallel.For(0, n, BackgroundScheduler.Options, f =>
+            {
+                var face = faces[f];
+                if (face == null || face.Length < 3) return;
+                var normal = QuadExtractor.FaceNormal(ex.positions, face);
+                area[f] = normal.magnitude;
+                if (!(area[f] > 0f)) return;
+                var middle = Vector3.zero;
+                foreach (var v in face) middle += ex.positions[v];
+                middle /= face.Length;
+                var unit = normal / area[f];
+                source.NearestPoint(middle, out _, out var there);
+                // A thin part's source of both sides (a panel's two skins): which one is nearest is
+                // chance, so its face does not vote. Probed a quarter of the face's size off it
+                // either way; the two sides' normals turn apart there.
+                var reach = 0.25f * Mathf.Sqrt(area[f]);
+                source.NearestPoint(middle + reach * unit, out _, out var front);
+                source.NearestPoint(middle - reach * unit, out _, out var back);
+                if (Vector3.Dot(front, back) < 0f) return;
+                cosine[f] = Vector3.Dot(unit, there);
+            });
+            var edgeFaces = new Dictionary<long, List<int>>(n * 2, Extraction.EdgeKey.Comparer);
+            for (var f = 0; f < n; f++)
+            {
+                var face = faces[f];
+                if (face == null || face.Length < 3) continue;
+                for (var i = 0; i < face.Length; i++)
+                {
+                    var key = Extraction.EdgeKey.PackUndirected(face[i], face[(i + 1) % face.Length]);
+                    if (!edgeFaces.TryGetValue(key, out var list)) edgeFaces[key] = list = new List<int>(2);
+                    list.Add(f);
+                }
+            }
+            var seen = new bool[n];
+            var members = new List<int>();
+            var queue = new Queue<int>();
+            var reversed = new bool[n];
+            for (var seed = 0; seed < n; seed++)
+            {
+                if (seen[seed] || !(cosine[seed] < 0f)) continue;
+                members.Clear();
+                seen[seed] = true;
+                queue.Enqueue(seed);
+                while (queue.Count > 0)
+                {
+                    var f = queue.Dequeue();
+                    members.Add(f);
+                    var face = faces[f];
+                    for (var i = 0; i < face.Length; i++)
+                        foreach (var g in edgeFaces[Extraction.EdgeKey.PackUndirected(face[i], face[(i + 1) % face.Length])])
+                            if (!seen[g] && cosine[g] < 0f) { seen[g] = true; queue.Enqueue(g); }
+                }
+                double vote = 0, total = 0;
+                foreach (var f in members) { vote += cosine[f] * area[f]; total += area[f]; }
+                if (members.Count < 4 || !(total > 0) || vote / total > -0.5) continue;
+                foreach (var f in members) reversed[f] = true;
+                lastReversedFaces += members.Count;
+            }
+            if (lastReversedFaces == 0) return;
+            // New lists and arrays, as the extraction's may be shared; corners reversed with their face.
+            T[][] Reversed<T>(T[][] corners)
+            {
+                if (corners == null || corners.Length != n) return corners;
+                var copy = (T[][])corners.Clone();
+                for (var f = 0; f < n; f++)
+                    if (reversed[f] && copy[f] != null) { copy[f] = (T[])copy[f].Clone(); Array.Reverse(copy[f]); }
+                return copy;
+            }
+            var turned = new List<int[]>(n);
+            for (var f = 0; f < n; f++)
+            {
+                var face = faces[f];
+                if (reversed[f] && face != null) { face = (int[])face.Clone(); Array.Reverse(face); }
+                turned.Add(face);
+            }
+            ex.faces = turned;
+            ex.faceUvs = Reversed(ex.faceUvs);
+            ex.faceTangents = Reversed(ex.faceTangents);
+            ex.faceNormals = Reversed(ex.faceNormals);
+            if (ex.shadingNormals != null && ex.shadingNormals.Length == ex.positions.Length)
+                ex.shadingNormals = Extraction.NormalRecalculator.Compute(turned, ex.positions, ex.normals);
         }
 
         /// <summary>
