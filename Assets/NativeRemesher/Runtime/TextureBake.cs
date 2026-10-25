@@ -1079,6 +1079,40 @@ namespace NativeRemesher
         public static float cavityRadiusEdges = 1f;
 
         /// <summary>
+        /// A texel under the mean round it is darkened by how much of the sky the source round it
+        /// hides (its horizon, CavityHorizon), not by how far under it lies: a groove's walls rise
+        /// steeply and close, a step's foot sees the sky on one side, and a body line crossed by
+        /// flat quads (the Ford's door: a centimetre under them, five wide) rises gently. Off: by
+        /// depth under the mean (cavityDepthEdges), which drew those as dark bands.
+        /// </summary>
+        public static bool cavityHorizon = true;
+
+        /// <summary>Diagnostics: each normal bake's depth per texel, the mean round it, which texels were met, and their sizes.</summary>
+        public static Action<float[], float[], bool[], float[]> debugDepth;
+
+        /// <summary>The share of the sky hidden under which a texel is not darkened at all...</summary>
+        public static float cavityHorizonKnee = 0.1f;
+
+        /// <summary>...and over which it is darkest.</summary>
+        public static float cavityHorizonFull = 0.35f;
+
+        /// <summary>
+        /// A rise hides the sky by its walls only: the steps between neighbouring texels steeper
+        /// than this (rise over run), which no texel's line meets -- a groove's sides. A slope the
+        /// lines meet is in the normal map already: the Ford's body line, crossed by flat quads,
+        /// lies a centimetre and a half under them over five, and came out a dark band. 0: every rise.
+        /// </summary>
+        public static float cavityWallSlope = 1.5f;
+
+        /// <summary>
+        /// The height's slopes add only what the source's normal under the texel does not show
+        /// already: a groove's walls, which no texel's line meets, but not a step's slope, which
+        /// the line met and the normal shades (added again, it drew the Ford's body line twice as
+        /// a dark band). Off: the whole slope.
+        /// </summary>
+        public static bool heightSlopesMissing = true;
+
+        /// <summary>
         /// Where a UV seam runs along a crease sharper than this (degrees between the sides'
         /// normals), a normal-mapped result's normals split there (CornerNormals); 0 keeps every
         /// vertex smooth, as before.
@@ -1435,11 +1469,13 @@ namespace NativeRemesher
             var mean = depth != null
                 ? LocalMean(depth, depthMet, texelSize, cavityRadiusEdges * (float)(edgeSum / Math.Max(1, edgeCount)), resolution)
                 : null;
+            if (depth != null) debugDepth?.Invoke(depth, mean, depthMet, texelSize);
             if (useHeight)
                 HeightSlopes(pixels, depth, mean, depthMet, texelSize, resolution, 0.25f * (float)(edgeSum / Math.Max(1, edgeCount)));
             if (cavity != null && cavity.Length == resolution * resolution)
                 Cavity(depth, mean, depthMet, (bool[])written.Clone(), resolution,
-                    cavityDepthEdges * (float)(edgeSum / Math.Max(1, edgeCount)), cavity);
+                    cavityDepthEdges * (float)(edgeSum / Math.Max(1, edgeCount)), cavity,
+                    texelSize, cavityRadiusEdges * (float)(edgeSum / Math.Max(1, edgeCount)));
             // Gutters spread from the charts, as the colour bake's; with that off, flat.
             if (fillGutters) FillOutward(pixels, written, resolution);
             for (var i = 0; i < pixels.Length; i++)
@@ -1486,6 +1522,15 @@ namespace NativeRemesher
                     if (gx == 0f && gy == 0f) continue;
                     var c = pixels[i];
                     var m = new Vector3(c.r / 127.5f - 1f, c.g / 127.5f - 1f, c.b / 127.5f - 1f);
+                    if (heightSlopesMissing && m.z > 0.05f)
+                    {
+                        // The slope the baked normal shows already (a height field's normal is
+                        // (-gx, -gy, 1)): only the rest added, and none against it.
+                        float Missing(float g, float shown) => g * shown < 0f ? 0f : Mathf.Sign(g) * Mathf.Max(0f, Mathf.Abs(g) - Mathf.Abs(shown));
+                        gx = Missing(gx, -m.x / m.z);
+                        gy = Missing(gy, -m.y / m.z);
+                        if (gx == 0f && gy == 0f) continue;
+                    }
                     // Whiteout blend: the slopes' normal (-gx, -gy, 1) over the baked one.
                     m = new Vector3(m.x - heightNormals * gx * m.z, m.y - heightNormals * gy * m.z, m.z);
                     m = MeshMath.SafeNormalize(m, Vector3.forward);
@@ -1499,19 +1544,70 @@ namespace NativeRemesher
         }
 
         // How far each texel's source lies below the mean of the texels round it (those met, within
-        // cavityRadiusEdges), as grey: white level or proud, darkest at `full` below. Gutters filled.
-        static void Cavity(float[] depth, float[] mean, bool[] met, bool[] written, int resolution, float full, Color32[] output)
+        // cavityRadiusEdges), as grey: white level or proud, darkest at `full` below. With
+        // cavityHorizon, by the sky hidden instead (CavityHorizon). Gutters filled.
+        static void Cavity(float[] depth, float[] mean, bool[] met, bool[] written, int resolution, float full, Color32[] output,
+            float[] texelSize = null, float radius = 0f)
         {
-            for (var i = 0; i < output.Length; i++)
+            var horizon = cavityHorizon && texelSize != null && radius > 0f;
+            Parallel.For(0, output.Length, BackgroundScheduler.Options, i =>
             {
-                if (!met[i]) { output[i] = written[i] ? new Color32(255, 255, 255, 255) : default; continue; }
-                var below = full > 0f ? Mathf.Clamp01(((mean[i] - depth[i]) / full - cavityKnee) / (1f - cavityKnee)) : 0f;
+                if (!met[i]) { output[i] = written[i] ? new Color32(255, 255, 255, 255) : default; return; }
+                var under = mean[i] - depth[i];
+                float below;
+                if (horizon)
+                    below = under > 0f
+                        ? Mathf.Clamp01((CavityHorizon(depth, met, texelSize, radius, full, resolution, i) - cavityHorizonKnee)
+                            / Mathf.Max(1e-4f, cavityHorizonFull - cavityHorizonKnee))
+                        : 0f;
+                else
+                    below = full > 0f ? Mathf.Clamp01((under / full - cavityKnee) / (1f - cavityKnee)) : 0f;
                 var g = (byte)Mathf.RoundToInt(255f * (1f - cavityStrength * below));
                 output[i] = new Color32(g, g, g, 255);
-            }
+            });
             if (fillGutters) FillOutward(output, written, resolution);
             for (var i = 0; i < output.Length; i++)
                 if (output[i].a == 0) output[i] = new Color32(255, 255, 255, 255);
+        }
+
+        // The share of the sky texel i's source does not see over the source round it, within
+        // `radius`: along eight directions in the atlas the steepest rise to a texel met (every
+        // texel on the way met too: one chart's, not a neighbour's), as the sine of its angle,
+        // averaged. 0 on a level or a step's top, half in a narrow well. A rise counts by its
+        // height up to `tall`: an emblem's letters, a millimetre or two, rise steeply but hide
+        // little, and their gaps (below a texel's reach) had greyed the Ford's door in patches.
+        static float CavityHorizon(float[] depth, bool[] met, float[] texelSize, float radius, float tall, int n, int i)
+        {
+            int x = i % n, y = i / n;
+            var size = texelSize[i];
+            if (!(size > 0f)) return 0f;
+            var r = Mathf.Clamp(Mathf.RoundToInt(radius / size), 1, 64);
+            var sum = 0f;
+            for (var dir = 0; dir < 8; dir++)
+            {
+                var dx = dir < 2 ? (dir == 0 ? 1 : -1) : dir < 4 ? 0 : (dir == 4 || dir == 6 ? 1 : -1);
+                var dy = dir < 2 ? 0 : dir < 4 ? (dir == 2 ? 1 : -1) : (dir < 6 ? 1 : -1);
+                var step = Mathf.Sqrt(dx * dx + dy * dy) * size;
+                var hidden = 0f;
+                var walls = 0f;
+                var previous = depth[i];
+                for (var k = 1; k <= r; k++)
+                {
+                    int px = x + dx * k, py = y + dy * k;
+                    if (px < 0 || py < 0 || px >= n || py >= n || !met[py * n + px]) break;
+                    var here = depth[py * n + px];
+                    if (cavityWallSlope <= 0f || here - previous > cavityWallSlope * step) walls += Mathf.Max(0f, here - previous);
+                    previous = here;
+                    var rise = here - depth[i];
+                    if (rise <= 0f) continue;
+                    var slope = rise / (k * step);
+                    // Counted by the height of the walls on the way, not of a slope met.
+                    var high = cavityWallSlope > 0f ? Mathf.Min(rise, walls) : rise;
+                    hidden = Mathf.Max(hidden, slope / Mathf.Sqrt(1f + slope * slope) * (tall > 0f ? Mathf.Min(1f, high / tall) : 1f));
+                }
+                sum += hidden;
+            }
+            return sum / 8f;
         }
 
         // The mean depth of the texels met within `radius` of each texel: box sums along rows,
