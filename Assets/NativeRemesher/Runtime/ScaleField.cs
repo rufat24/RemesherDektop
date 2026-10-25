@@ -651,6 +651,71 @@ namespace NativeRemesher
             return thickness;
         }
 
+        /// <summary>Last <see cref="FreeRods"/>: runs of rod vertices kept, and dropped as boxed in (diagnostic).</summary>
+        public static int lastFreeRods, lastBoxedRods;
+
+        /// <summary>
+        /// <paramref name="thickness"/> kept only on rods that stand free: each connected run of
+        /// vertices with a thickness is dropped (infinity) when more than <paramref name="boxedShare"/>
+        /// of them face another surface within <paramref name="clearance"/>[i], straight out along
+        /// their normal. A window's bars face their glass behind and their frame at the sides, and
+        /// refined they only crumpled the window; a mirror's arm, a barrel, a handrail stand in the
+        /// open, and dropped they left what they held in the air.
+        /// </summary>
+        public static float[] FreeRods(RemeshTopology topology, float[] thickness, float[] clearance, float boxedShare)
+        {
+            lastFreeRods = lastBoxedRods = 0;
+            var count = topology.vertexCount;
+            if (thickness == null || thickness.Length != count || clearance == null || topology.normals == null) return thickness;
+            var normals = topology.normals;
+            var positions = topology.positions;
+            var grid = new SpatialGrid(positions, topology.triangles);
+            var boxed = new bool[count];
+            System.Threading.Tasks.Parallel.For(0, count, BackgroundScheduler.Options, i =>
+            {
+                if (float.IsInfinity(thickness[i])) return;
+                var n = normals[i];
+                if (n.sqrMagnitude < 0.25f || !(clearance[i] > 0f)) return;
+                n.Normalize();
+                // Started a hair out, so the vertex's own triangles are not the hit.
+                boxed[i] = grid.FirstHit(positions[i] + n * (1e-3f * clearance[i]), n, clearance[i], 0f, out _, out _);
+            });
+            var result = (float[])thickness.Clone();
+            var start = topology.adjacencyStart;
+            var adjacency = topology.adjacency;
+            var seen = new bool[count];
+            var run = new List<int>();
+            var stack = new Stack<int>();
+            for (var s = 0; s < count; s++)
+            {
+                if (seen[s] || float.IsInfinity(thickness[s])) continue;
+                run.Clear();
+                seen[s] = true;
+                stack.Push(s);
+                while (stack.Count > 0)
+                {
+                    var v = stack.Pop();
+                    run.Add(v);
+                    for (var k = start[v]; k < start[v + 1]; k++)
+                    {
+                        var w = adjacency[k];
+                        if (seen[w] || float.IsInfinity(thickness[w])) continue;
+                        seen[w] = true;
+                        stack.Push(w);
+                    }
+                }
+                var inside = 0;
+                foreach (var v in run) if (boxed[v]) inside++;
+                if (inside > boxedShare * run.Count)
+                {
+                    foreach (var v in run) result[v] = float.PositiveInfinity;
+                    lastBoxedRods++;
+                }
+                else lastFreeRods++;
+            }
+            return result;
+        }
+
         /// <summary>
         /// How wide an open strip is at each vertex: on the strip, the distance between its two
         /// borders; infinity elsewhere (closed surface, wide panels, more than

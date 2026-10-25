@@ -190,6 +190,15 @@ namespace NativeRemesher
         /// </summary>
         public float thinCountRatio;
 
+        /// <summary>
+        /// The share of <see cref="thinCountRatio"/> Hard Surface's rods add (RemeshPipeline.hardSurfaceRods);
+        /// creases are read at the count without it, so the rods' quads change nothing else. 0 or 1: none.
+        /// </summary>
+        public float rodCountRatio;
+
+        /// <summary>Hard Surface's rods would have raised the count this much, past RemeshPipeline.hardSurfaceRodMaxGrowth, and were not refined.</summary>
+        public float rodsSkipped;
+
         /// <summary>Open strips' widths per solve vertex (RemeshPipeline.stripSizing), and the topology they are for.</summary>
         internal float[] stripWidth;
         internal RemeshTopology stripWidthFor;
@@ -2500,6 +2509,8 @@ namespace NativeRemesher
             var graph = detected ?? FeatureGraph.Detect(topology, result.profile.featureAngleDegrees);
             if (!hardSurfaceSparseCreases || result.profile.kind != RemeshProfileKind.HardSurface
                 || result.profile.featureAngleDegrees <= 0f) return graph;
+            // At the count without the rods' quads: they add a rod's own cells and change no crease.
+            if (result.rodCountRatio > 1f) quadCount = Mathf.Max(1, Mathf.RoundToInt(quadCount / result.rodCountRatio));
             var cell = topology.EdgeLengthForQuadCount(Mathf.Max(1, quadCount));
             var marked = graph.featureEdgeCount;
             graph = graph.KeepSparseCreases(topology, sparseCreaseRadiusCells * cell, sparseCreaseMaxLength,
@@ -2690,15 +2701,21 @@ namespace NativeRemesher
             return result.stripWidth;
         }
 
-        static ScaleField DetailCaps(RemeshResult result, ScaleField field)
+        static ScaleField DetailCaps(RemeshResult result, ScaleField field, bool hardSurfaceRodCap = true)
         {
             if (stripSizing && StripCapFor(result.modelType) && !(result.thicknessSkipped > 0f)
                 && result.topology.boundaryEdgeCount > 0)
                 field = ScaleField.CappedByThickness(result.topology, field, StripWidthFor(result, field),
                     stripCellsAcross, stripThinnestCells, result.profile.curvatureGradation);
-            if (thicknessSizing && ThicknessCapFor(result.modelType) && !(result.thicknessSkipped > 0f))
+            if (ThicknessCapFor(result.modelType) && !(result.thicknessSkipped > 0f)
+                && (result.modelType != ModelType.HardSurface || hardSurfaceRodCap && !(result.rodsSkipped > 0f)))
+            {
+                var rods = result.modelType == ModelType.HardSurface;
                 field = ScaleField.CappedByThickness(result.topology, field, ThicknessFor(result, field),
-                    thicknessCellsAcross, thicknessThinnestCells, result.profile.curvatureGradation, thicknessFloor);
+                    rods ? hardSurfaceRodCellsAcross : thicknessCellsAcross,
+                    rods ? hardSurfaceRodThinnestCells : thicknessThinnestCells, result.profile.curvatureGradation,
+                    thicknessFloor);
+            }
             if (ridgeGapSizing)
             {
                 field = ScaleField.CappedByRidgeGaps(result.topology, field, ridgeGapStrength, ridgeGapReachCells,
@@ -2748,8 +2765,64 @@ namespace NativeRemesher
         /// <summary>The strap finder (RibbonParts) runs for this type: not on a car or a scan.</summary>
         static bool StrapsFor(ModelType type) => type != ModelType.HardSurface && type != ModelType.Scan;
 
-        /// <summary>The thickness cap runs for this type: characters (fingers, toes).</summary>
-        static bool ThicknessCapFor(ModelType type) => type == ModelType.Character;
+        /// <summary>The thickness cap runs for this type: characters' fingers and toes under <see cref="thicknessSizing"/>, Hard Surface's rods under <see cref="hardSurfaceRods"/>.</summary>
+        static bool ThicknessCapFor(ModelType type) =>
+            type == ModelType.Character && thicknessSizing || type == ModelType.HardSurface && hardSurfaceRods;
+
+        /// <summary>
+        /// For Hard Surface, the thickness cap on rods too (<see cref="thicknessSizing"/>): a pipe, a
+        /// handrail, a mirror's arm, a gun's barrel gets cells across it. Thinner than a cell, the
+        /// grid had nothing to run round it: the rod was dropped and what it held -- a mirror, a
+        /// muzzle -- was left hanging in the air. Off: as before.
+        /// </summary>
+        /// <remarks>
+        /// The armoured car at 5000 (one fused shell, rods everywhere): 9,613 -> 19,318 faces, its
+        /// barrel round and on its mount again, the mirrors' frames and arms whole. At 1 cell across
+        /// (3 quads round) the tubes collapsed and nothing was kept; on every rod (window bars,
+        /// boards, handrails along the hull) 28,038 faces, and the white house's windows crumpled.
+        /// Hence the limits below: rods 0.2 to 0.6 of a cell thick, standing free, adding at least
+        /// a quarter. The count is raised for them under Curves Add Quads only, as for fingers.
+        /// </remarks>
+        public static bool hardSurfaceRods = true;
+
+        /// <summary>Cells across a Hard Surface rod (about 8 quads round it).</summary>
+        public static float hardSurfaceRodCellsAcross = 2.5f;
+
+        /// <summary>Most Hard Surface's rods may raise the quad count by (as <see cref="thicknessMaxGrowth"/>).</summary>
+        public static float hardSurfaceRodMaxGrowth = 4f;
+
+        /// <summary>
+        /// Hard Surface rods thicker than this many local cells are not refined: the grid holds them
+        /// (a chimney, an eave's board), and on the white house at 5000 refining them took the count
+        /// 1.84x and turned its windows to lumps. 0: no limit.
+        /// </summary>
+        public static float hardSurfaceRodThickestCells = 0.6f;
+
+        /// <summary>
+        /// Hard Surface rods are refined only when at most this share of their vertices face another
+        /// surface within <see cref="hardSurfaceRodClearanceCells"/> (ScaleField.FreeRods): a window's
+        /// bars, boxed in by glass and frame, are not (the white house at 5000: 15,113 -> 33,043 faces
+        /// and its windows crumpled with them). 1: every rod.
+        /// </summary>
+        public static float hardSurfaceRodBoxedShare = 0.4f;
+
+        /// <summary>How far, in cells, a rod's vertex looks out for a surface boxing it in.</summary>
+        public static float hardSurfaceRodClearanceCells = 2f;
+
+        /// <summary>
+        /// Hard Surface's rods are refined only when they add at least this much to the count: a few
+        /// stray ones (the white house at 5000: 1.14x) are not worth a different solve -- the
+        /// lattice they changed was no longer clearly further off than the error-driven quads, and
+        /// the house lost the crisp windows those keep. The armoured car's: 2.04x.
+        /// </summary>
+        public static float hardSurfaceRodMinGrowth = 1.25f;
+
+        /// <summary>
+        /// Hard Surface rods thinner than this many local cells are not refined: a window's bars on
+        /// the white house at 5000 are 0.1 to 0.2 of a cell, the armoured car's mirror arms,
+        /// handrails and aerials 0.2 to 0.6.
+        /// </summary>
+        public static float hardSurfaceRodThinnestCells = 0.2f;
 
         static float[] ThicknessFor(RemeshResult result, ScaleField field)
         {
@@ -2760,6 +2833,18 @@ namespace NativeRemesher
             var reach = new float[field.spacing.Length];
             for (var i = 0; i < reach.Length; i++) reach[i] = 2f * thicknessCellsAcross * field.spacing[i];
             result.thickness = ScaleField.Thickness(result.topology, reach);
+            if (result.modelType == ModelType.HardSurface && hardSurfaceRodThickestCells > 0f)
+                for (var i = 0; i < reach.Length; i++)
+                    if (result.thickness[i] > hardSurfaceRodThickestCells * field.spacing[i])
+                        result.thickness[i] = float.PositiveInfinity;
+            if (result.modelType == ModelType.HardSurface && hardSurfaceRodBoxedShare < 1f)
+            {
+                var clearance = new float[reach.Length];
+                for (var i = 0; i < clearance.Length; i++) clearance[i] = hardSurfaceRodClearanceCells * field.spacing[i];
+                result.thickness = ScaleField.FreeRods(result.topology, result.thickness, clearance, hardSurfaceRodBoxedShare);
+                if (QuadReduction.logStats)
+                    Debug.Log($"[Native Remesher] rods: {ScaleField.lastFreeRods} free, {ScaleField.lastBoxedRods} boxed in");
+            }
             result.thicknessFor = result.topology;
             return result.thickness;
         }
@@ -3195,7 +3280,9 @@ namespace NativeRemesher
             // Curves Add Quads, which is the setting that allows the result past it; off, the count
             // holds and the finger's quads come from everywhere else.
             result.thinCountRatio = 0f;
-            if ((thicknessSizing && ThicknessCapFor(result.modelType) || ridgeGapSizing
+            result.rodCountRatio = 0f;
+            result.rodsSkipped = 0f;
+            if ((ThicknessCapFor(result.modelType) || ridgeGapSizing
                  || stripSizing && StripCapFor(result.modelType) && result.topology.boundaryEdgeCount > 0)
                 && result.profile.integerGridMap
                 && result.profile.curvatureAdaptivity > 0f && settings.targetQuadCount > 0
@@ -3203,9 +3290,12 @@ namespace NativeRemesher
             {
                 var plain = SizingField(result, settings.targetQuadCount, result.profile.curvatureAdaptivity,
                     withThickness: false);
-                var capped = DetailCaps(result, plain);
                 var before = ScaleField.QuadCount(result.topology, plain);
-                var ratio = before > 0 ? (float)(ScaleField.QuadCount(result.topology, capped) / before) : 1f;
+                float Ratio(ScaleField capped) =>
+                    before > 0 ? (float)(ScaleField.QuadCount(result.topology, capped) / before) : 1f;
+                var rods = result.modelType == ModelType.HardSurface && hardSurfaceRods;
+                var ratio = Ratio(DetailCaps(result, plain, hardSurfaceRodCap: false));
+                if (QuadReduction.logStats) Debug.Log($"[Native Remesher] thin caps: {ratio:0.###}x the quads");
                 // A model that is mostly thin -- knotwork, chain mail, a lattice of rods -- would
                 // want several times the quads; squeezed into the limit, the rest of it coarsens.
                 // Fingers and toes are a small share of a body, so past the limit it is not used.
@@ -3214,11 +3304,26 @@ namespace NativeRemesher
                     result.thicknessSkipped = ratio;
                     ratio = 1f;
                 }
-                ratio = Mathf.Clamp(ratio, 1f, Extraction.IntegerGridMap.countMaxGrowth);
-                if (ratio > 1.001f && Extraction.IntegerGridMap.curvesAddQuads)
+                // Hard Surface's rods on top, under their own limit (the strips' decision is as before).
+                var withRods = ratio;
+                if (rods && !(result.thicknessSkipped > 0f))
                 {
-                    result.thinCountRatio = ratio;
-                    settings.targetQuadCount = Mathf.RoundToInt(settings.targetQuadCount * ratio);
+                    withRods = Ratio(DetailCaps(result, plain));
+                    if (QuadReduction.logStats) Debug.Log($"[Native Remesher] rods: {withRods:0.###}x the quads");
+                    if (withRods > hardSurfaceRodMaxGrowth || withRods < hardSurfaceRodMinGrowth * ratio)
+                    {
+                        result.rodsSkipped = withRods;
+                        withRods = ratio;
+                    }
+                    withRods = Mathf.Max(withRods, ratio);
+                }
+                ratio = Mathf.Clamp(ratio, 1f, Extraction.IntegerGridMap.countMaxGrowth);
+                withRods = Mathf.Clamp(withRods, 1f, Extraction.IntegerGridMap.countMaxGrowth);
+                if (withRods > 1.001f && Extraction.IntegerGridMap.curvesAddQuads)
+                {
+                    result.thinCountRatio = withRods;
+                    result.rodCountRatio = withRods / ratio;
+                    settings.targetQuadCount = Mathf.RoundToInt(settings.targetQuadCount * withRods);
                 }
             }
 

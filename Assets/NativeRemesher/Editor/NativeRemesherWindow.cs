@@ -35,6 +35,7 @@ namespace NativeRemesher
         [SerializeField] bool m_HardSourceLoops = true;         // quadReductionHardSurface
         [SerializeField] bool m_HardDenseToNormalMap = true;    // hardSurfaceSparseCreases
         [SerializeField] bool m_HardThinStrips = true;          // stripSizing
+        [SerializeField] bool m_HardRods = true;                // hardSurfaceRods
         [SerializeField] bool m_HardShapeRegions = true;        // kinematicRegionsHardSurface
         [SerializeField] bool m_ScanShapeRegions = true;        // kinematicRegionsScan
 
@@ -297,6 +298,12 @@ namespace NativeRemesher
                         new GUIContent("Two quads across thin strips",
                             "Open strips narrower than a quad (pillar trims, flanges) get two quads across."),
                         m_HardThinStrips);
+                    m_HardRods = EditorGUILayout.ToggleLeft(
+                        new GUIContent("Quads round thin rods",
+                            "Rods thinner than a few quads (pipes, handrails, a mirror's arm, a barrel) get quads " +
+                            "round them, with the count raised to pay for it, instead of being dropped and leaving " +
+                            "what they hold in the air."),
+                        m_HardRods);
                     m_HardShapeRegions = EditorGUILayout.ToggleLeft(
                         new GUIContent("Rings and rows inside parts too",
                             "Inside a piece, regions that are round (turned) or straight (extruded) get rings or " +
@@ -809,6 +816,7 @@ namespace NativeRemesher
             RemeshPipeline.quadReductionHardSurface = m_HardSourceLoops;
             RemeshPipeline.hardSurfaceSparseCreases = m_HardDenseToNormalMap;
             RemeshPipeline.stripSizing = m_HardThinStrips;
+            RemeshPipeline.hardSurfaceRods = m_HardRods;
             RemeshPipeline.kinematicGuides = m_RoundParts;
             RemeshPipeline.kinematicRegionsHardSurface = m_HardShapeRegions;
             RemeshPipeline.kinematicRegionsScan = m_ScanShapeRegions;
