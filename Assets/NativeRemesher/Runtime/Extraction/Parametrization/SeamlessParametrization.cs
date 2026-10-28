@@ -498,6 +498,17 @@ namespace NativeRemesher.Extraction
         public static double factorRetryShift = 1e-6;
 
         /// <summary>
+        /// Every diagonal entry raised by this fraction of itself before the factorisation. The
+        /// 1e-9 regulariser alone is below the elimination's rounding on the armoured car (557
+        /// pivots at 5e-15 of their diagonal, so those modes took whatever the rounding left, and
+        /// a solver that only summed in another order moved the solution 3 %); a tenth of a
+        /// billionth of the diagonal holds them, and two orders of summation then agree to 1e-6.
+        /// 0 keeps the old regulariser alone (armoured car at 5,000 then 15,188 faces against
+        /// 13,595 with it -- the old count one draw of that rounding).
+        /// </summary>
+        public static double relativeRegulariser = 1e-10;
+
+        /// <summary>
         /// Analyse the factorisation again when the matrix was assembled with another pattern.
         /// Off: the first analysis is reused, as before (wrong values once the pattern changed).
         /// </summary>
@@ -1773,7 +1784,15 @@ namespace NativeRemesher.Extraction
                     st.symbolicRedone++;
                 }
                 var numeric = System.Diagnostics.Stopwatch.StartNew();
-                if (!ldlt.Factor(matrix.val, fixedVar))
+                var factorValues = matrix.val;
+                if (relativeRegulariser > 0)
+                {
+                    factorValues = (double[])matrix.val.Clone();
+                    for (var r = 0; r < vars; r++)
+                        for (var j = matrix.start[r]; j < matrix.start[r + 1]; j++)
+                            if (matrix.col[j] == r) factorValues[j] += relativeRegulariser * Math.Abs(factorValues[j]);
+                }
+                if (!ldlt.Factor(factorValues, fixedVar))
                 {
                     st.factorFailures++;
                     if (st.factorFailures <= 4)
@@ -1842,7 +1861,7 @@ namespace NativeRemesher.Extraction
                 ldlt.Solve(b2, x);
                 st.factorMs += numeric.ElapsedMilliseconds;
                 st.factorizations++;
-                st.split += $"[par {ldlt.lastParallelMs} tasks {ldlt.taskCount} top {ldlt.topRowCount} topNnz {ldlt.TopNonZeros()}] ";
+                st.split += $"[par {ldlt.lastParallelMs} tasks {ldlt.taskCount} top {ldlt.topRowCount} topNnz {ldlt.TopNonZeros()}" + (SparseLdlt.parallelSeparators ? $" separators {ldlt.lastSeparatorMs} (solve {ldlt.lastSolveMs} sum {ldlt.lastSumMs} factor {ldlt.lastFactorMs}, {ldlt.lastSplit})" : "") + "] ";
             }
 
             // A previous pass over the same mesh and field at a uniformly different size: its free

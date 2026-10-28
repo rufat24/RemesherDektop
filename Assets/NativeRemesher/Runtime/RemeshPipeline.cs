@@ -2385,6 +2385,7 @@ namespace NativeRemesher
                 out var cornerNodes, out var cornerUv, out var cornerUvExact, out var faceUAxis, out var cornerRank, out var singularFaces,
                 out var halfEdgeAcross, out var halfEdgeTurn,
                 out result.parametrizationStats);
+            if (QuadReduction.logStats) Debug.Log($"[Native Remesher] parametrization: {result.parametrizationStats}");
 
             // Solved coarse, extracted fine: see ParametrizationTransfer.
             if (Extraction.IntegerGridMap.parametrizationExtractRefined && !Extraction.IntegerGridMap.parametrizationTrace
