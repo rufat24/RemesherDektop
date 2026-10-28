@@ -278,6 +278,9 @@ namespace NativeRemesher
         /// <summary>What RemeshPipeline.hardSurfaceSimplify did, when it ran.</summary>
         public QuadSimplify.Stats simplifyStats;
 
+        /// <summary>What RemeshPipeline.hardSurfacePlateBlocks did, when it ran.</summary>
+        public PlateBlocks.Stats plateBlocksStats;
+
 
         /// <summary>
         /// The count asked for, before Adaptive Quad Count raised it; see
@@ -1757,9 +1760,45 @@ namespace NativeRemesher
                 var sp = result.decimatedPositions ?? positions;
                 var st = result.decimatedTriangles ?? triangles;
                 var surface = new SpatialGrid(sp, st);
+                var locked = ex.onLayoutLine;
+                if (hardSurfacePlateBlocks)
+                {
+                    // The plates' quads merged nine at a time first, in rows, and held so.
+                    double sourceArea = 0;
+                    for (var t = 0; t + 2 < st.Length; t += 3)
+                        sourceArea += Vector3.Cross(sp[st[t + 1]] - sp[st[t]], sp[st[t + 2]] - sp[st[t]]).magnitude * 0.5;
+                    var cell = (float)Math.Sqrt(sourceArea / settings.targetQuadCount);
+                    var blocked = PlateBlocks.Apply(ex.positions, ex.faces, ex.onLayoutLine, cell, surface,
+                        hardSurfaceSimplifyMaxOffCells, out var origin, out var pinned, out result.plateBlocksStats);
+                    T[] Carried<T>(T[] values)
+                    {
+                        if (values == null || values.Length != ex.positions.Length) return null;
+                        var outValues = new T[blocked.Length];
+                        for (var v = 0; v < blocked.Length; v++) if (origin[v] >= 0) outValues[v] = values[origin[v]];
+                        return outValues;
+                    }
+                    var normals = Carried(ex.normals);
+                    if (normals != null)
+                    {
+                        // A new point's normal: its faces'.
+                        foreach (var f in ex.faces)
+                        {
+                            var s = Vector3.zero;
+                            for (var k = 0; k < f.Length; k++) s += Vector3.Cross(blocked[f[k]], blocked[f[(k + 1) % f.Length]]);
+                            foreach (var v in f) if (origin[v] < 0) normals[v] += s;
+                        }
+                        for (var v = 0; v < blocked.Length; v++) if (origin[v] < 0) normals[v] = normals[v].normalized;
+                    }
+                    ex.normals = normals;
+                    ex.onLayoutLine = Carried(ex.onLayoutLine);
+                    ex.positions = blocked;
+                    locked = new bool[blocked.Length];
+                    for (var v = 0; v < blocked.Length; v++) locked[v] = pinned[v] || ex.onLayoutLine != null && ex.onLayoutLine[v];
+                    if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {result.plateBlocksStats}");
+                }
                 var simplified = QuadSimplify.Simplify(ex.positions, ex.faces, sp, st, surface,
                     settings.targetQuadCount, hardSurfaceSimplifyToCount ? 0f : hardSurfaceSimplifyMaxOffCells,
-                    ex.onLayoutLine, out var remap, out result.simplifyStats);
+                    locked, out var remap, out result.simplifyStats);
                 T[] Remapped<T>(T[] values)
                 {
                     if (values == null || values.Length != remap.Length) return null;
@@ -2559,6 +2598,19 @@ namespace NativeRemesher
 
         /// <summary>...when the lattice came out at more than this many times the count asked.</summary>
         public static float hardSurfaceSimplifyMinRatio = 1.2f;
+
+        /// <summary>
+        /// Before those merges, the lattice's quads on flat plates are merged nine at a time in
+        /// rectangles (PlateBlocks), with a ring of 3-to-1 steps round each, and held: the plates in
+        /// rows of big quads where the merges alone leave fans. Off: as before.
+        /// </summary>
+        /// <remarks>
+        /// The armoured car at 5,000 (.NET harness, same lattice): 8 rectangles of 42 blocks, 15,049
+        /// -> 15,121 faces, sampled against the source 0.78 / 0.50 -> 0.74 / 0.49 thousandths of its
+        /// diagonal; the skirts, turret and front plates in rows. The side panels take few blocks
+        /// (their lattice has singular points every few quads).
+        /// </remarks>
+        public static bool hardSurfacePlateBlocks = true;
 
         /// <summary>
         /// On a result whose creases came from its panels, SurfaceClean also smooths quads folded

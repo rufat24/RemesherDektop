@@ -38,6 +38,7 @@ namespace NativeRemesher
         [SerializeField] bool m_HardRods = true;                // hardSurfaceRods
         [SerializeField] bool m_HardMergeFlat = true;           // hardSurfaceSimplify
         [SerializeField] bool m_HardToCount;                    // hardSurfaceSimplifyToCount
+        [SerializeField] bool m_HardPlateRows = true;           // hardSurfacePlateBlocks
         [SerializeField] bool m_HardShapeRegions = true;        // kinematicRegionsHardSurface
         [SerializeField] bool m_ScanShapeRegions = true;        // kinematicRegionsScan
 
@@ -312,11 +313,18 @@ namespace NativeRemesher
                             "takes a few large quads, the parts keep theirs, and the count drops."),
                         m_HardMergeFlat);
                     using (new EditorGUI.DisabledScope(!m_HardMergeFlat))
+                    {
+                        m_HardPlateRows = EditorGUILayout.ToggleLeft(
+                            new GUIContent("Plates in rows",
+                                "Before the merging, quads on a flat plate are merged nine at a time into rows of " +
+                                "big quads that follow the plate's edges, with a ring of steps round them, and kept so."),
+                            m_HardPlateRows);
                         m_HardToCount = EditorGUILayout.ToggleLeft(
                             new GUIContent("Merge down to the count (low poly)",
                                 "Keep merging until the result has the count asked, even where it costs shape: " +
                                 "edges, rods and parts are kept before the round surfaces, which turn faceted."),
                             m_HardToCount);
+                    }
                     m_HardShapeRegions = EditorGUILayout.ToggleLeft(
                         new GUIContent("Rings and rows inside parts too",
                             "Inside a piece, regions that are round (turned) or straight (extruded) get rings or " +
@@ -832,6 +840,7 @@ namespace NativeRemesher
             RemeshPipeline.hardSurfaceRods = m_HardRods;
             RemeshPipeline.hardSurfaceSimplify = m_HardMergeFlat;
             RemeshPipeline.hardSurfaceSimplifyToCount = m_HardToCount;
+            RemeshPipeline.hardSurfacePlateBlocks = m_HardPlateRows;
             RemeshPipeline.kinematicGuides = m_RoundParts;
             RemeshPipeline.kinematicRegionsHardSurface = m_HardShapeRegions;
             RemeshPipeline.kinematicRegionsScan = m_ScanShapeRegions;
