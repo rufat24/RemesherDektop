@@ -30,8 +30,15 @@
 // in the .NET harness, sampled both ways against the source in thousandths of its diagonal, mean):
 // without blocks 15,049 faces at 0.78 / 0.50; with them 8 rectangles of 38 blocks, 15,096 faces at
 // 0.74 / 0.49 -- the skirts, the turret's and the front plates in rows of big quads where they were
-// fans. The big side panels take few blocks: their lattice has singular points every few quads.
-// With the ring pinned too: 15,447 faces, a dense band round each rectangle.
+// fans. With the ring pinned too: 15,447 faces, a dense band round each rectangle.
+//
+// The big side panels took few: not for singular points (two in the near panel) but because a
+// plate's lattice waves by about a tenth of a cell off its corners' patch (half the blocks failed
+// 0.03 cells), and every ring that failed had one to seven faces of 14-19 degrees -- the inner quad
+// of a three-to-one step, about 27 degrees at best. So blocks are held to minFlatCells at least,
+// and a failed ring's new points are walked toward bigger smallest corners (angleSweeps) before a
+// row is cut. In the harness: 42 -> 105 blocks, 8 -> 17 rectangles, 18 -> 7 rows cut; in Unity at
+// 5,000 15,121 -> 15,188 faces, 0.71 / 0.44 -> 0.70 / 0.43, the upper and lower side panels in rows.
 //
 // Tried and dropped: filling a plate again from scratch (a Coons patch between four corners, or a
 // grid along the plate's frame clipped to it, with the same ring onto the plate's points) -- only a
@@ -80,6 +87,10 @@ namespace NativeRemesher
         /// <summary>Rectangles of fewer blocks than this are left as the lattice laid them.</summary>
         public static int minRectangleBlocks = 2;
 
+        /// <summary>A block's points are within at least this of its corners' patch, cells, whatever the
+        /// later merging is held to: a plate's lattice waves by about a tenth of a cell.</summary>
+        public static float minFlatCells = 0.1f;
+
         /// <summary>Rows or columns a rectangle may lose where its ring will not lay.</summary>
         public static int cutRounds = 40;
 
@@ -91,6 +102,9 @@ namespace NativeRemesher
 
         /// <summary>Whether the ring's points are pinned too, or only the merged blocks'.</summary>
         public static bool pinRing = false;
+
+        /// <summary>Diagnostics: a line per region with blocks tried, when set.</summary>
+        public static Action<string> debugLog;
 
         /// <summary>
         /// The lattice's quads on flat regions merged in blocks of 3 x 3 in place. Returns the new
@@ -156,7 +170,7 @@ namespace NativeRemesher
                 return true;
             }
 
-            var tolerance = maxOffCells * cell;
+            var tolerance = Mathf.Max(maxOffCells, minFlatCells) * cell;
             // A block from the quad (a, b, c, d) at its corner (0, 0): its 4 x 4 points (x * 4 + y)
             // and 3 x 3 quads (x * 3 + y), or false.
             bool Build(int a, int b, int c, int d, int region, HashSet<int> taken, out int[] grid, out int[] quads)
@@ -304,6 +318,8 @@ namespace NativeRemesher
                         }
                         if (best == null || trial.Count > best.Count) best = trial;
                     }
+                    debugLog?.Invoke($"region {region}: {members.Count} faces, {deep.Count} deep, grid {round}: {best?.Count ?? 0} blocks" +
+                        (members.Count > 0 ? $" normal {vectorArea[members[0]].normalized}" : ""));
                     if (best == null || best.Count < minRectangleBlocks) break;
                     grids.Add(best);
                     foreach (var blk in best) usedHere.UnionWith(blk.quads);
@@ -335,6 +351,7 @@ namespace NativeRemesher
                                 }
                             if (blocks.Count < minRectangleBlocks) break;
                             var worst = Ring(blocks, out var result, out var fresh, out var replaced);
+                            debugLog?.Invoke($"  region {region} rectangle {x1 - x0 + 1} x {y1 - y0 + 1} ({blocks.Count} blocks): {(worst < 0 ? "laid" : "worst " + worst)}");
                             if (worst < 0)
                             {
                                 foreach (var f in replaced) removed[f] = true;
@@ -397,7 +414,7 @@ namespace NativeRemesher
                             innerNext[a] = b;
                         }
                     var inner = Loops(innerNext);
-                    if (inner == null || inner.Count != 1) return 0;
+                    if (inner == null || inner.Count != 1) { debugLog?.Invoke("    inner loops"); return 0; }
 
                     // The ring's faces: every face of the region with a point of a block, not in one,
                     // none of them another ring's already.
@@ -407,7 +424,7 @@ namespace NativeRemesher
                         if (inBlock.Contains(f)) continue;
                         foreach (var v in faces[f]) if (blockPoints.Contains(v)) { layer.Add(f); break; }
                     }
-                    foreach (var f in layer) if (removed[f]) return 0;
+                    foreach (var f in layer) if (removed[f]) { debugLog?.Invoke("    another ring"); return 0; }
                     var region2 = new HashSet<int>(inBlock);
                     region2.UnionWith(layer);
                     var outerNext = new Dictionary<int, int>();
@@ -418,12 +435,12 @@ namespace NativeRemesher
                         {
                             int a = face[k], b = face[(k + 1) % face.Length];
                             if (he.TryGetValue(EdgeKey.Pack(b, a), out var g) && region2.Contains(g)) continue;
-                            if (outerNext.ContainsKey(a)) return 0;
+                            if (outerNext.ContainsKey(a)) { debugLog?.Invoke("    outer pinched"); return 0; }
                             outerNext[a] = b;
                         }
                     }
                     var outer = Loops(outerNext);
-                    if (outer == null || outer.Count != 1) return 0;
+                    if (outer == null || outer.Count != 1) { debugLog?.Invoke($"    outer loops {outer?.Count ?? -1}"); return 0; }
 
                     // Both loops flat on the region's frame, from their closest pair of points.
                     var flat = new Dictionary<int, int>();
@@ -459,7 +476,7 @@ namespace NativeRemesher
                     var edgeLength = (float)(edgeSum / Math.Max(1, ro.Length));
                     var edge = Mathf.Max(edgeLength * edgeLength, 1e-20f);
                     if (!Lay(local, ro, rg, (a, b) => (local[ro[a % ro.Length]] - local[rg[b % rg.Length]]).sqrMagnitude / edge, faceList))
-                        return 0;
+                    { debugLog?.Invoke("    no path"); return 0; }
 
                     // The ring's new points toward their neighbours while every face stays good.
                     var neighbours = new List<int>[local.Count];
@@ -487,6 +504,43 @@ namespace NativeRemesher
                         if (Good(current, faceList)) good = (Vector2[])current.Clone();
                         else if (good != null) break;
                     }
+                    if (good == null && angleSweeps > 0)
+                    {
+                        // Still bad: each new point walked to where its faces' smallest corner is biggest.
+                        var around = new List<int[]>[local.Count];
+                        foreach (var face in faceList)
+                            foreach (var v in face)
+                                if (v >= fixedCount) (around[v] ??= new List<int[]>()).Add(face);
+                        float Worst(int v)
+                        {
+                            var worstCorner = 180f;
+                            foreach (var face in around[v]) worstCorner = Mathf.Min(worstCorner, SmallestCorner(current, face));
+                            return worstCorner;
+                        }
+                        var stepLength = 0.15f * edgeLength;
+                        for (var sweep = 0; sweep < angleSweeps && stepLength > 0.005f * edgeLength; sweep++)
+                        {
+                            var better = false;
+                            for (var v = fixedCount; v < current.Length; v++)
+                            {
+                                if (around[v] == null) continue;
+                                var start = current[v];
+                                var bestPoint = start;
+                                var bestCorner = Worst(v);
+                                for (var d = 0; d < 8; d++)
+                                {
+                                    var t = d * Mathf.PI / 4f;
+                                    current[v] = start + stepLength * new Vector2(Mathf.Cos(t), Mathf.Sin(t));
+                                    var corner = Worst(v);
+                                    if (corner > bestCorner + 1e-3f) { bestCorner = corner; bestPoint = current[v]; }
+                                }
+                                current[v] = bestPoint;
+                                if (bestPoint != start) better = true;
+                            }
+                            if (!better) stepLength *= 0.5f;
+                        }
+                        if (Good(current, faceList)) good = (Vector2[])current.Clone();
+                    }
                     if (good == null)
                     {
                         // The block at the most bad faces.
@@ -498,6 +552,19 @@ namespace NativeRemesher
                         {
                             single[0] = face;
                             if (Good(current, single)) continue;
+                            if (debugLog != null)
+                            {
+                                var fresh = 0; var minAngle = 180f; var concave = false;
+                                for (var k = 0; k < face.Length; k++)
+                                {
+                                    if (face[k] >= fixedCount) fresh++;
+                                    var ba = current[face[(k + face.Length - 1) % face.Length]] - current[face[k]];
+                                    var bc = current[face[(k + 1) % face.Length]] - current[face[k]];
+                                    if (bc.x * ba.y - bc.y * ba.x <= 0f) concave = true;
+                                    minAngle = Mathf.Min(minAngle, Vector2.Angle(ba, bc));
+                                }
+                                debugLog($"      bad {face.Length}-gon, {fresh} new points, {(concave ? "concave" : "")} min {minAngle:F0}");
+                            }
                             foreach (var v in face)
                                 if (back.TryGetValue(v, out var mv) && blockOfCorner.TryGetValue(mv, out var bi))
                                     count[bi] = count.TryGetValue(bi, out var c) ? c + 1 : 1;
@@ -505,6 +572,7 @@ namespace NativeRemesher
                         var worst = 0;
                         var most = -1;
                         foreach (var kv in count) if (kv.Value > most) { most = kv.Value; worst = kv.Key; }
+                        debugLog?.Invoke($"    bad faces at {count.Count} blocks, worst {most}");
                         return worst;
                     }
 
@@ -742,6 +810,12 @@ namespace NativeRemesher
                         int ti = i + steps[s].di, tj = j + steps[s].dj;
                         if (ti > count || tj > ni) continue;
                         var c = best[i, j] + steps[s].cost + rung(ti, tj);
+                        // A face whose corners are all on the loops, priced up where it is not good.
+                        var (di, dj, _) = steps[s];
+                        if (di == 1 && dj == 1 && !Good(local, o[i % count], o[(i + 1) % count], g[(j + 1) % ni], g[j % ni])
+                            || di == 2 && dj == 0 && !Good(local, o[i % count], o[(i + 1) % count], o[(i + 2) % count], g[j % ni])
+                            || di == 0 && dj == 2 && !Good(local, o[i % count], g[(j + 2) % ni], g[(j + 1) % ni], g[j % ni]))
+                            c += badFaceCost;
                         if (c < best[ti, tj]) { best[ti, tj] = c; from[ti, tj] = (byte)s; }
                     }
                 }
@@ -805,6 +879,44 @@ namespace NativeRemesher
                 }
                 oi += di;
                 gj += dj;
+            }
+            return true;
+        }
+
+        /// <summary>Sweeps that walk a failed ring's new points toward bigger smallest corners (0: none).</summary>
+        public static int angleSweeps = 40;
+
+        // A face's smallest corner in degrees, or -1 where it is not convex and counterclockwise.
+        static float SmallestCorner(Vector2[] p, int[] face)
+        {
+            var smallest = 180f;
+            for (var k = 0; k < face.Length; k++)
+            {
+                var ba = p[face[(k + face.Length - 1) % face.Length]] - p[face[k]];
+                var bc = p[face[(k + 1) % face.Length]] - p[face[k]];
+                if (bc.x * ba.y - bc.y * ba.x <= 0f) return -1f;
+                smallest = Mathf.Min(smallest, Vector2.Angle(ba, bc));
+            }
+            return smallest;
+        }
+
+        /// <summary>What the ring's path pays for a face on its loops that is not good, against a step's own price.</summary>
+        public static float badFaceCost = 40f;
+
+        // One face of points on the loops convex, counterclockwise, with no corner under minCornerDegrees.
+        static bool Good(List<Vector2> local, params int[] face)
+        {
+            var cosMin = Mathf.Cos(minCornerDegrees * Mathf.Deg2Rad);
+            for (var k = 0; k < face.Length; k++)
+            {
+                var a = local[face[(k + face.Length - 1) % face.Length]];
+                var b = local[face[k]];
+                var c = local[face[(k + 1) % face.Length]];
+                var ba = a - b;
+                var bc = c - b;
+                if (bc.x * ba.y - bc.y * ba.x <= 0f) return false;
+                var len = ba.magnitude * bc.magnitude;
+                if (len <= 0f || Vector2.Dot(ba, bc) / len > cosMin) return false;
             }
             return true;
         }
