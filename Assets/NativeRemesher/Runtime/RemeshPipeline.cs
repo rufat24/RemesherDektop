@@ -275,6 +275,10 @@ namespace NativeRemesher
         /// <summary>The panels were asked for creases and gave too few (see RemeshPipeline.panelCreasesMinShare).</summary>
         public bool panelCreasesRefused;
 
+        /// <summary>What RemeshPipeline.hardSurfaceSimplify did, when it ran.</summary>
+        public QuadSimplify.Stats simplifyStats;
+
+
         /// <summary>
         /// The count asked for, before Adaptive Quad Count raised it; see
         /// IntegerGridMap.curvesAddQuads. Zero when the mode did not run.
@@ -1739,6 +1743,47 @@ namespace NativeRemesher
                     ex.shadingNormals = Extraction.NormalRecalculator.Compute(ex.faces, ex.positions, ex.normals);
             }
 
+            // The lattice's even quads merged where the source is flat (or down to the count asked).
+            if (hardSurfaceSimplify && !detailQuads && !planarQuads && result.panelCreases
+                && result.modelType == ModelType.HardSurface && result.extraction?.positions != null
+                && result.extraction.faceMaterials == null && result.extraction.uvs == null
+                && settings.targetQuadCount > 0
+                && result.extraction.faces.Count > hardSurfaceSimplifyMinRatio * settings.targetQuadCount)
+            {
+                onProgress?.Invoke("Simplifying quads", 0f);
+                var ex = result.extraction;
+                // Against the mesh the lattice was solved on: the 1.5-million-triangle car's own
+                // surface took 469 s of nearest-point queries.
+                var sp = result.decimatedPositions ?? positions;
+                var st = result.decimatedTriangles ?? triangles;
+                var surface = new SpatialGrid(sp, st);
+                var simplified = QuadSimplify.Simplify(ex.positions, ex.faces, sp, st, surface,
+                    settings.targetQuadCount, hardSurfaceSimplifyToCount ? 0f : hardSurfaceSimplifyMaxOffCells,
+                    ex.onLayoutLine, out var remap, out result.simplifyStats);
+                T[] Remapped<T>(T[] values)
+                {
+                    if (values == null || values.Length != remap.Length) return null;
+                    var outValues = new T[simplified.Length];
+                    for (var v = 0; v < remap.Length; v++) if (remap[v] >= 0) outValues[remap[v]] = values[v];
+                    return outValues;
+                }
+                ex.normals = Remapped(ex.normals);
+                ex.onLayoutLine = Remapped(ex.onLayoutLine);
+                ex.positions = simplified;
+                ex.quadCount = 0;
+                ex.triangleCount = 0;
+                ex.ngonCount = 0;
+                foreach (var f in ex.faces)
+                    if (f.Length == 4) ex.quadCount++;
+                    else if (f.Length == 3) ex.triangleCount++;
+                    else ex.ngonCount++;
+                if (ex.shadingNormals != null)
+                    ex.shadingNormals = ex.normals != null
+                        ? Extraction.NormalRecalculator.Compute(ex.faces, ex.positions, ex.normals)
+                        : null;
+                if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {result.simplifyStats}");
+            }
+
             TransferUvs(result, positions, triangles, sourceUvs, watch, onProgress);
             LabelFaces(result);
             return result;
@@ -2487,6 +2532,33 @@ namespace NativeRemesher
         /// and Porsche do not take panel creases and are pixel-identical.
         /// </remarks>
         public static bool panelRimCreases = true;
+
+        /// <summary>
+        /// A Hard Surface result whose creases came from its panels has its quads merged where that
+        /// costs no shape (QuadSimplify, no new face further than hardSurfaceSimplifyMaxOffCells
+        /// off the source): the plates' quads large, the parts' kept. Off: the lattice's quads as
+        /// they are, as before.
+        /// </summary>
+        /// <remarks>
+        /// The armoured car at 5,000: 19,741 -> 15,063 faces, 78 % of the points valence 4, sampled
+        /// both ways against the source 0.66 -> 0.75 / 0.42 -> 0.46 thousandths of its diagonal
+        /// (mean), the renders alike. At 0.06 cells: 10,564 faces, 0.91 / 0.55, the wheels faceted.
+        /// </remarks>
+        public static bool hardSurfaceSimplify = true;
+
+        /// <summary>Furthest off the source, in cells at the asked count's spacing, a merged quad may lie.</summary>
+        public static float hardSurfaceSimplifyMaxOffCells = 0.03f;
+
+        /// <summary>
+        /// ...or, on, merged down to the count asked whatever it costs (a low-poly model): the car at
+        /// 5,000 comes out at 4,788 faces, 1.37 / 0.99 against the source where the lattice asked
+        /// for 2,000 comes out at 6,749 and 1.62 / 0.81 -- the gun, mirrors and plate edges kept,
+        /// the wheels faceted.
+        /// </summary>
+        public static bool hardSurfaceSimplifyToCount = false;
+
+        /// <summary>...when the lattice came out at more than this many times the count asked.</summary>
+        public static float hardSurfaceSimplifyMinRatio = 1.2f;
 
         /// <summary>
         /// On a result whose creases came from its panels, SurfaceClean also smooths quads folded
