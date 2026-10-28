@@ -1733,7 +1733,8 @@ namespace NativeRemesher
                     ? new SpatialGrid(result.decimatedPositions, result.decimatedTriangles)
                     : null;
                 result.surfaceCleanStats = SurfaceClean.Apply(ex.positions, ex.faces, surfaceCleanIterations, cleanSurface,
-                    ex.onLayoutLine);
+                    ex.onLayoutLine, bentQuads: result.panelCreases && panelCleanBentQuads);
+                if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {result.surfaceCleanStats}");
                 if (ex.shadingNormals != null && ex.shadingNormals.Length == ex.positions.Length)
                     ex.shadingNormals = Extraction.NormalRecalculator.Compute(ex.faces, ex.positions, ex.normals);
             }
@@ -2487,6 +2488,12 @@ namespace NativeRemesher
         /// </remarks>
         public static bool panelRimCreases = true;
 
+        /// <summary>
+        /// On a result whose creases came from its panels, SurfaceClean also smooths quads folded
+        /// across both diagonals (squeezed between creases under a cell apart). Off: as before.
+        /// </summary>
+        public static bool panelCleanBentQuads = true;
+
         /// <summary>The turn off a panel's plane its outline needs to be a crease, degrees.</summary>
         public static float panelRimDegrees = 35f;
 
@@ -2528,8 +2535,9 @@ namespace NativeRemesher
                     else if (panelRimCreases && (big0 || big1))
                     {
                         // One panel, and past its outline a turn off its plane.
-                        var plane = big0 ? flat.normals[r0] : flat.normals[r1];
-                        if (Mathf.Abs(Vector3.Dot(plane, FaceNormal(big0 ? t : u))) < rimCos) rims.Add((a, b));
+                        var r = big0 ? r0 : r1;
+                        var other = big0 ? t : u;
+                        if (Mathf.Abs(Vector3.Dot(flat.normals[r], FaceNormal(other))) < rimCos) rims.Add((a, b));
                     }
                 }
             // Counted without the outlines: whether the panels are used at all is decided as before.

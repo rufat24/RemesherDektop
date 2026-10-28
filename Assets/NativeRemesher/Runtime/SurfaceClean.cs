@@ -72,6 +72,9 @@ namespace NativeRemesher
         /// </summary>
         public static float projectReachEdges = 0f;
 
+        /// <summary>How far apart, degrees, a bent quad's halves turn (Apply's bentQuads).</summary>
+        public static float bentQuadDegrees = 120f;
+
         public static Stats Apply(Vector3[] positions, IList<int[]> faces, int iterations) =>
             Apply(positions, faces, iterations, null);
 
@@ -84,8 +87,12 @@ namespace NativeRemesher
         /// border line (QuadExtractionResult.onLayoutLine), which sit there on purpose and look
         /// like spikes to the test below.
         /// </param>
+        /// <param name="bentQuads">
+        /// Also count as folded a quad whose two halves face apart however it is cut: it shows as
+        /// a dark notch whichever diagonal it is drawn with. False: as before.
+        /// </param>
         public static Stats Apply(Vector3[] positions, IList<int[]> faces, int iterations, SpatialGrid surface,
-            bool[] hold = null)
+            bool[] hold = null, bool bentQuads = false)
         {
             var watch = System.Diagnostics.Stopwatch.StartNew();
             var stats = new Stats { iterations = iterations };
@@ -163,6 +170,16 @@ namespace NativeRemesher
                 });
             }
 
+            // A quad whose halves, cut either way, turn more than bentQuadDegrees apart.
+            var bentCos = Mathf.Cos(bentQuadDegrees * Mathf.Deg2Rad);
+            bool Bent(int[] face)
+            {
+                if (face.Length != 4) return false;
+                Vector3 a = positions[face[0]], b = positions[face[1]], c = positions[face[2]], d = positions[face[3]];
+                return MeshMath.CosAngleBetween(Vector3.Cross(b - a, c - a), Vector3.Cross(c - a, d - a)) < bentCos
+                       && MeshMath.CosAngleBetween(Vector3.Cross(c - b, d - b), Vector3.Cross(d - b, a - b)) < bentCos;
+            }
+
             // A face pointing against the faces round it: a fold, not a crease (a thin lip's top
             // face still points with its walls' mean).
             int Folds()
@@ -173,7 +190,8 @@ namespace NativeRemesher
                     var around = Vector3.zero;
                     foreach (var g in faceNeighbours[f]) around += MeshMath.SafeNormalize(faceNormals[g], Vector3.zero);
                     folded[f] = faceNeighbours[f].Count > 0
-                                && Vector3.Dot(MeshMath.SafeNormalize(faceNormals[f], Vector3.zero), around) < 0f;
+                                && Vector3.Dot(MeshMath.SafeNormalize(faceNormals[f], Vector3.zero), around) < 0f
+                                || bentQuads && Bent(faces[f]);
                     if (folded[f]) count++;
                 }
                 return count;
