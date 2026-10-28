@@ -2472,6 +2472,27 @@ namespace NativeRemesher
         /// </summary>
         public static float panelHardEdgeAngle = 25f;
 
+        /// <summary>
+        /// A panel's outline is a crease too where it ends at a turn of <see cref="panelRimDegrees"/>
+        /// or more into something that is not a panel of its own: a frame, a step, a hatch's wall.
+        /// Off: creases only where two panels meet, as before.
+        /// </summary>
+        /// <remarks>
+        /// The armoured car's windshields, hatches and rear plates end at frames and steps narrower
+        /// than a panel, so no two panels met there and the grid crossed them in a zigzag. With
+        /// outlines, at 5,000: 846 -> 5,036 crease edges, error 0.00195 -> 0.00186 at 19,318 ->
+        /// 19,741 faces, the rear plate's seam and lower edge straight; at 8,000: 27,820 -> 26,537
+        /// faces, error 0.00128 -> 0.00135, the rear's centre crease a line. The white house, Ford
+        /// and Porsche do not take panel creases and are pixel-identical.
+        /// </remarks>
+        public static bool panelRimCreases = true;
+
+        /// <summary>The turn off a panel's plane its outline needs to be a crease, degrees.</summary>
+        public static float panelRimDegrees = 35f;
+
+        /// <summary>Outline pieces shorter than this many cells (round a bolt, a hinge) are left out.</summary>
+        public static float panelRimMinCells = 4f;
+
         // The boundaries of `topology`, and an edge wherever two of its flat panels meet (see hardSurfacePanelCreases).
         static FeatureGraph PanelCreases(RemeshTopology topology, int quadCount, out int count)
         {
@@ -2485,6 +2506,11 @@ namespace NativeRemesher
             var minArea = panelCreaseMinCells * cell * cell;
             var cos = Mathf.Cos(panelCreaseDegrees * Mathf.Deg2Rad);
             var region = flat.triangleRegion;
+            var rimCos = Mathf.Cos(panelRimDegrees * Mathf.Deg2Rad);
+            var rims = new List<(int a, int b)>();
+            Vector3 FaceNormal(int t) => MeshMath.SafeNormalize(Vector3.Cross(
+                topology.positions[tris[3 * t + 1]] - topology.positions[tris[3 * t]],
+                topology.positions[tris[3 * t + 2]] - topology.positions[tris[3 * t]]), Vector3.zero);
             for (var t = 0; t < m && region != null; t++)
                 for (var k = 0; k < 3; k++)
                 {
@@ -2492,14 +2518,55 @@ namespace NativeRemesher
                     var key = Extraction.EdgeKey.PackUndirected(a, b);
                     if (!first.TryGetValue(key, out var u)) { first[key] = t; continue; }
                     int r0 = region[u], r1 = region[t];
-                    if (r0 < 0 || r1 < 0 || r0 == r1 || flat.areas[r0] < minArea || flat.areas[r1] < minArea) continue;
-                    if (Mathf.Abs(Vector3.Dot(flat.normals[r0], flat.normals[r1])) >= cos) continue;
-                    edges.Add((a, b));
+                    if (r0 == r1) continue;
+                    bool big0 = r0 >= 0 && flat.areas[r0] >= minArea, big1 = r1 >= 0 && flat.areas[r1] >= minArea;
+                    if (big0 && big1)
+                    {
+                        if (Mathf.Abs(Vector3.Dot(flat.normals[r0], flat.normals[r1])) >= cos) continue;
+                        edges.Add((a, b));
+                    }
+                    else if (panelRimCreases && (big0 || big1))
+                    {
+                        // One panel, and past its outline a turn off its plane.
+                        var plane = big0 ? flat.normals[r0] : flat.normals[r1];
+                        if (Mathf.Abs(Vector3.Dot(plane, FaceNormal(big0 ? t : u))) < rimCos) rims.Add((a, b));
+                    }
                 }
+            // Counted without the outlines: whether the panels are used at all is decided as before.
             count = edges.Count;
+            if (rims.Count > 0) edges.AddRange(LongPieces(topology.positions, rims, panelRimMinCells * cell));
             if (QuadReduction.logStats)
                 Debug.Log($"[Native Remesher] panel creases: {edges.Count} edges from {flat}");
             return FeatureGraph.Detect(topology, 0f).WithEdges(topology, edges);
+        }
+
+        // The edges in pieces (joined through shared vertices) at least `minLength` long in all.
+        static List<(int a, int b)> LongPieces(Vector3[] positions, List<(int a, int b)> edges, float minLength)
+        {
+            var parent = new Dictionary<int, int>();
+            int Find(int v)
+            {
+                if (!parent.ContainsKey(v)) { parent[v] = v; return v; }
+                var root = v;
+                while (parent[root] != root) root = parent[root];
+                while (parent[v] != root) { var next = parent[v]; parent[v] = root; v = next; }
+                return root;
+            }
+            foreach (var (a, b) in edges)
+            {
+                int ra = Find(a), rb = Find(b);
+                if (ra != rb) parent[ra] = rb;
+            }
+            var length = new Dictionary<int, float>();
+            foreach (var (a, b) in edges)
+            {
+                var r = Find(a);
+                length[r] = (length.TryGetValue(r, out var l) ? l : 0f) + (positions[a] - positions[b]).magnitude;
+            }
+            var kept = new List<(int a, int b)>(edges.Count);
+            foreach (var e in edges)
+                if (length[Find(e.a)] >= minLength) kept.Add(e);
+            return kept;
         }
 
         /// <summary>The profile's dihedral creases on <paramref name="topology"/>, as Hard Surface keeps them.</summary>
