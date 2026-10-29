@@ -41,6 +41,7 @@ namespace NativeRemesher
         [SerializeField] bool m_HardEvenRows;                   // hardSurfaceCleanLayout
         [SerializeField] bool m_HardAcrossRounding;             // hardSurfaceRoundedCreases
         [SerializeField] bool m_HardFlatPanels = true;          // hardSurfaceFair
+        [SerializeField] bool m_HardEdgesAtCount = true;        // hardSurfaceSourceCreases
         [SerializeField] bool m_HardToCount;                    // hardSurfaceSimplifyToCount
         [SerializeField] bool m_HardPlateRows = true;           // hardSurfacePlateBlocks
         [SerializeField] bool m_HardShapeRegions = true;        // kinematicRegionsHardSurface
@@ -331,6 +332,13 @@ namespace NativeRemesher
                             "streaks) leave the panels flat instead of crumpled; the normal map carries them. " +
                             "Edges between panels stay sharp. Off: the points stay on the source as laid."),
                         m_HardFlatPanels);
+                    m_HardEdgesAtCount = EditorGUILayout.ToggleLeft(
+                        new GUIContent("Small details to the normal map",
+                            "Each edge is checked on the source at the size of a quad of the count asked: at a low " +
+                            "count a door handle, a door's gap or a seam does not bend the rows and is left to the " +
+                            "normal map, while window frames, sills and arches stay edges. At a higher count the " +
+                            "smaller edges come back. Off: every edge found is kept at any count."),
+                        m_HardEdgesAtCount);
                     using (new EditorGUI.DisabledScope(m_HardEvenRows))
                     m_HardMergeFlat = EditorGUILayout.ToggleLeft(
                         new GUIContent("Big quads on flat plates",
@@ -867,6 +875,7 @@ namespace NativeRemesher
             RemeshPipeline.hardSurfaceCleanLayout = m_HardEvenRows;
             RemeshPipeline.hardSurfaceRoundedCreases = m_HardAcrossRounding;
             RemeshPipeline.hardSurfaceFair = m_HardFlatPanels;
+            RemeshPipeline.hardSurfaceSourceCreases = m_HardEdgesAtCount;
             RemeshPipeline.hardSurfaceSimplifyToCount = m_HardToCount;
             RemeshPipeline.hardSurfacePlateBlocks = m_HardPlateRows;
             RemeshPipeline.kinematicGuides = m_RoundParts;

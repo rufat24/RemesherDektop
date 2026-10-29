@@ -299,6 +299,10 @@ namespace NativeRemesher
 
         /// <summary>What SurfaceFair did, when Hard Surface's output was faired.</summary>
         public SurfaceFair.Stats fairStats;
+
+        /// <summary>The creases read again on the source (RemeshPipeline.hardSurfaceSourceCreases), the last search's.</summary>
+        public SourceCreases.Stats sourceCreaseStats;
+        [NonSerialized] internal SourceCreases.Index sourceCreaseIndex;
         public StarFill.Stats starFillStats;
 
         /// <summary>How the error-driven quads measured against the lattice, when they were tried (detailQuadsTry); null otherwise.</summary>
@@ -2980,9 +2984,49 @@ namespace NativeRemesher
         public static string debugCreasesPath;
         static int s_DebugCreasesDumps;
 
+        /// <summary>
+        /// Hard Surface keeps only the creases the source bends at across a quad of the asked count
+        /// (SourceCreases): at a low count a door handle's rim, a door's gap and the solve mesh's
+        /// sliver streaks are left to the normal map, the window frames, sills and arches kept; at
+        /// a higher count the smaller ones come back. Off: every crease found, at any count.
+        /// </summary>
+        public static bool hardSurfaceSourceCreases = true;
+
+        /// <summary>
+        /// ...on a source of at least this many triangles: one finer than the quads, with handles and
+        /// gaps to leave out. The Ford's parts, a few thousand triangles each, came out a little
+        /// more folded with it (8.75 -> 8.99 % of the area turned over).
+        /// </summary>
+        public static int sourceCreasesMinTriangles = 200000;
+
+        /// <summary>...reading, where the panels gave no creases, every edge the profile's angle marks, not only those the density filter kept.</summary>
+        public static bool hardSurfaceSourceCreaseCandidates = true;
+
         /// <summary>The profile's dihedral creases on <paramref name="topology"/>, as Hard Surface keeps them.</summary>
         static FeatureGraph ProfileFeatures(RemeshResult result, RemeshTopology topology, int quadCount,
             FeatureGraph detected = null)
+        {
+            var graph = ProfileFeaturesFound(result, topology, quadCount, detected);
+            if (!hardSurfaceSourceCreases || result.profile.kind != RemeshProfileKind.HardSurface
+                || result.originalPositions == null || result.originalTriangles == null
+                || result.originalTriangles.Length / 3 < sourceCreasesMinTriangles) return graph;
+            if (result.rodCountRatio > 1f) quadCount = Mathf.Max(1, Mathf.RoundToInt(quadCount / result.rodCountRatio));
+            var cell = topology.EdgeLengthForQuadCount(Mathf.Max(1, quadCount));
+            var stats = new SourceCreases.Stats();
+            // Without panels, every edge bent past the profile's angle is a candidate too: the density
+            // filter leaves out window frames rounded over a few triangles, which the source keeps. The
+            // panels' lines are whole already; added to them the raw edges come back as scraps.
+            var raw = hardSurfaceSourceCreaseCandidates && !result.panelCreases && result.profile.featureAngleDegrees > 0f
+                ? FeatureGraph.Detect(topology, result.profile.featureAngleDegrees) : null;
+            graph = SourceCreases.Keep(graph, topology, result.originalPositions, result.originalTriangles, cell,
+                ref result.sourceCreaseIndex, stats, raw);
+            result.sourceCreaseStats = stats;
+            if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {stats} on {topology.triangleCount} triangles");
+            return graph;
+        }
+
+        static FeatureGraph ProfileFeaturesFound(RemeshResult result, RemeshTopology topology, int quadCount,
+            FeatureGraph detected)
         {
             if (debugCreasesPath != null)
             {
