@@ -131,7 +131,10 @@ namespace NativeRemesher
                         var dn = (normal[g] - normal[f]).sqrMagnitude;
                         s += area[g] * Mathf.Exp(-d * spatial - dn * rangeWeight) * normal[g];
                     }
-                    filtered[f] = s.sqrMagnitude > 0f ? s.normalized : normal[f];
+                    // By hand: Unity's normalize gives zero under 1e-5, and a model imported at a hundredth
+                    // of a metre has its area-weighted sums far below that (the house, the Porsche).
+                    var l = s.magnitude;
+                    filtered[f] = l > 0f ? s / l : normal[f];
                 });
                 Array.Copy(filtered, normal, m);
             }
