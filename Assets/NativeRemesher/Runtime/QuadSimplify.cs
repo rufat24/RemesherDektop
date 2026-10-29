@@ -138,10 +138,12 @@ namespace NativeRemesher
         /// <paramref name="maxOffCells"/> above 0: no collapse whose new faces lie further than that
         /// many cells (at the target's spacing) off the source, so only what costs no shape is taken
         /// and the result can stay above the target; 0, down to the target.
+        /// <paramref name="tidyOnly"/>: no collapses or turns -- only the smoothing and the folded
+        /// quads' repair, so the rows stay as laid.
         /// </summary>
         public static Vector3[] Simplify(Vector3[] positions, List<int[]> faces, Vector3[] sourcePositions,
             int[] sourceTriangles, SpatialGrid surface, int target, float maxOffCells, bool[] hold, out int[] remap,
-            out Stats stats)
+            out Stats stats, bool tidyOnly = false)
         {
             var watch = System.Diagnostics.Stopwatch.StartNew();
             var st = new Stats { facesBefore = faces.Count };
@@ -149,7 +151,7 @@ namespace NativeRemesher
             var n = positions.Length;
             remap = new int[n];
             for (var i = 0; i < n; i++) remap[i] = i;
-            if (n == 0 || faces.Count <= target || sourceTriangles == null || sourceTriangles.Length < 3)
+            if (n == 0 || !tidyOnly && faces.Count <= target || sourceTriangles == null || sourceTriangles.Length < 3)
             {
                 st.facesAfter = faces.Count;
                 return positions;
@@ -587,7 +589,7 @@ namespace NativeRemesher
                 return true;
             }
 
-            for (var stage = 0; stage < stages && count > target; stage++)
+            for (var stage = 0; stage < stages && count > target && !tidyOnly; stage++)
             {
                 var goal = Math.Max(target, (int)Math.Round(start - (start - target) * (stage + 1) / (double)stages));
                 Rebuild();
@@ -600,8 +602,11 @@ namespace NativeRemesher
                 Rotate();
                 Smooth(stageSmoothSweeps);
             }
-            Rotate();
-            Rotate();
+            if (!tidyOnly)
+            {
+                Rotate();
+                Rotate();
+            }
             Smooth(finalSmoothSweeps);
 
             // Quads still folded over both diagonals -- drawn either way, one half faces the

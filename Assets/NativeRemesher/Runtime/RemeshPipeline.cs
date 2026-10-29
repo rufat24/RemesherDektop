@@ -1139,9 +1139,11 @@ namespace NativeRemesher
                 var detailRegular = RegularShare(detail.extraction);
                 tried += $"; error-driven {detailOff:G3} (p99 {detailFar:G3}), {detailTurn:0.0} deg, {detailRegular:P0} regular at {detail.extraction.faces.Count}";
                 // Clearly closer, and their faces turning from the source's no more.
-                if (detailOff < (s_RegularJudge ? cleanLayoutDetailWins : detailQuadsWins) * latticeOff
-                    && detailTurn <= detailQuadsTurn * latticeTurn
-                    && (RegularEnough(detailRegular, latticeRegular) || TornLattice(detailFar, latticeFar)))
+                // Or, nearly as close, where the lattice is torn (TornLattice).
+                if (detailTurn <= detailQuadsTurn * latticeTurn
+                    && (detailOff < (s_RegularJudge ? cleanLayoutDetailWins : detailQuadsWins) * latticeOff
+                        && RegularEnough(detailRegular, latticeRegular)
+                        || detailOff < tornLatticeWins * latticeOff && TornLattice(detailFar, latticeFar)))
                 {
                     best = detail;
                     bestOff = detailOff;
@@ -1205,10 +1207,17 @@ namespace NativeRemesher
         public static float candidateRegularShare = 0.5f;
 
         /// <summary>
-        /// ...unless the lattice is torn somewhere -- its worst hundredth off the source further
-        /// than this many times the candidate's: a house's windows folded through the wall.
+        /// The error-driven quads are also kept at under tornLatticeWins of the lattice's distance
+        /// when the lattice is torn somewhere -- its worst hundredth off the source further than this
+        /// many times theirs: the house's windows folded through the wall. Its lattice came out at
+        /// 0.66 of the distance with its worst hundredth 1.79 times theirs, just past detailQuadsWins,
+        /// and was kept with its windows torn open. On four cars and the armoured car the lattice's
+        /// worst hundredth is 0.18-1.66 times theirs with them 0.65-4.96 as far. 0: off.
         /// </summary>
-        public static float tornLatticeFar = 0f;
+        public static float tornLatticeFar = 1.7f;
+
+        /// <summary>See tornLatticeFar.</summary>
+        public static float tornLatticeWins = 0.75f;
 
         static bool TornLattice(float candidateFar, float latticeFar) =>
             tornLatticeFar > 0f && latticeFar > tornLatticeFar * candidateFar;
@@ -1814,7 +1823,13 @@ namespace NativeRemesher
             }
 
             // The lattice's even quads merged where the source is flat (or down to the count asked).
-            if (hardSurfaceSimplify && !hardSurfaceCleanLayout && !detailQuads && !planarQuads && result.panelCreases
+            // With the clean layout nothing is merged, but its points are still smoothed and its
+            // folded quads taken out (hardSurfaceCleanTidy).
+            var tidyOnly = hardSurfaceCleanLayout && hardSurfaceCleanTidy && !planarQuads
+                && result.modelType == ModelType.HardSurface && result.extraction?.positions != null
+                && result.extraction.faceMaterials == null && result.extraction.uvs == null
+                && settings.targetQuadCount > 0;
+            if (tidyOnly || hardSurfaceSimplify && !hardSurfaceCleanLayout && !detailQuads && !planarQuads && result.panelCreases
                 && result.modelType == ModelType.HardSurface && result.extraction?.positions != null
                 && result.extraction.faceMaterials == null && result.extraction.uvs == null
                 && settings.targetQuadCount > 0
@@ -1828,7 +1843,7 @@ namespace NativeRemesher
                 var st = result.decimatedTriangles ?? triangles;
                 var surface = new SpatialGrid(sp, st);
                 var locked = ex.onLayoutLine;
-                if (hardSurfacePlateBlocks)
+                if (hardSurfacePlateBlocks && !tidyOnly)
                 {
                     // The plates' quads merged nine at a time first, in rows, and held so.
                     double sourceArea = 0;
@@ -1865,7 +1880,7 @@ namespace NativeRemesher
                 }
                 var simplified = QuadSimplify.Simplify(ex.positions, ex.faces, sp, st, surface,
                     settings.targetQuadCount, hardSurfaceSimplifyToCount ? 0f : hardSurfaceSimplifyMaxOffCells,
-                    locked, out var remap, out result.simplifyStats);
+                    locked, out var remap, out result.simplifyStats, tidyOnly);
                 T[] Remapped<T>(T[] values)
                 {
                     if (values == null || values.Length != remap.Length) return null;
@@ -2677,8 +2692,18 @@ namespace NativeRemesher
         /// the merging broke the lattice's rows into stars, and one car kept the building's quads
         /// (35 % regular) for lying 0.000879 off the source against the lattice's 0.00177.
         /// False: merged, and the closest output kept, as before.
+        /// Off by default: faster (cars 50-60 s against 80-95 s), but measured against the source's
+        /// normals it leaves more of the surface turned over -- car1 0.50 % of the area against the
+        /// merging's 0.42 %, car2 0.78 against 0.53, the house 1.58 against 0.87, the armoured car
+        /// 2.45 against 2.20 -- and the renders show the holes and wobbles.
         /// </summary>
-        public static bool hardSurfaceCleanLayout = true;
+        public static bool hardSurfaceCleanLayout = false;
+
+        /// <summary>
+        /// With hardSurfaceCleanLayout: the quads' points still smoothed along the source and its
+        /// folded quads taken out, as the merging did -- without, the layout keeps its wobbles.
+        /// </summary>
+        public static bool hardSurfaceCleanTidy = true;
 
         /// <summary>
         /// With hardSurfaceCleanLayout, the count is also held to what was asked even where
@@ -2814,7 +2839,7 @@ namespace NativeRemesher
         /// edges in 317 strokes, 1,653 cells, round every window, door, arch and bumper. Off: the
         /// 20 degree test with the density filter and the panels (the old behaviour).
         /// </summary>
-        public static bool hardSurfaceRoundedCreases = true;
+        public static bool hardSurfaceRoundedCreases = false;
 
         /// <summary>
         /// The bend a rounded crease needs, degrees, across the radius. 35: at 30 a ribbed horn's

@@ -37,8 +37,9 @@ namespace NativeRemesher
         [SerializeField] bool m_HardThinStrips = true;          // stripSizing
         [SerializeField] bool m_HardRods = true;                // hardSurfaceRods
         [SerializeField] bool m_HardMergeFlat = true;           // hardSurfaceSimplify
-        [SerializeField] bool m_HardRowsAtCount = true;         // hardSurfaceCleanLayout
-        [SerializeField] bool m_HardRoundedEdges = true;        // hardSurfaceRoundedCreases
+        // Renamed from m_HardEvenRows / m_HardAcrossRounding so open windows pick up the default off.
+        [SerializeField] bool m_HardEvenRows;                   // hardSurfaceCleanLayout
+        [SerializeField] bool m_HardAcrossRounding;             // hardSurfaceRoundedCreases
         [SerializeField] bool m_HardToCount;                    // hardSurfaceSimplifyToCount
         [SerializeField] bool m_HardPlateRows = true;           // hardSurfacePlateBlocks
         [SerializeField] bool m_HardShapeRegions = true;        // kinematicRegionsHardSurface
@@ -309,25 +310,26 @@ namespace NativeRemesher
                             "round them, with the count raised to pay for it, instead of being dropped and leaving " +
                             "what they hold in the air."),
                         m_HardRods);
-                    m_HardRowsAtCount = EditorGUILayout.ToggleLeft(
+                    m_HardEvenRows = EditorGUILayout.ToggleLeft(
                         new GUIContent("Even rows at the count",
                             "The quads are laid once, in even rows, at the count asked: the count is not raised for " +
                             "curved ground and the rows are not merged back down afterwards. Off: more quads on " +
-                            "curves, then merged where flat (the older way, slower and with broken rows)."),
-                        m_HardRowsAtCount);
-                    m_HardRoundedEdges = EditorGUILayout.ToggleLeft(
+                            "curves, then merged where flat. Faster, but on the cars, the house and the armoured car " +
+                            "it leaves more folded and bent faces than the merging, so it is off by default."),
+                        m_HardEvenRows);
+                    m_HardAcrossRounding = EditorGUILayout.ToggleLeft(
                         new GUIContent("Edges found across their rounding",
                             "An edge rounded over several triangles (a window frame, a door gap, a wheel arch) is " +
                             "measured across its rounding, so the rows follow it. Off: edge by edge, with the dense " +
-                            "and the flat panels' tests."),
-                        m_HardRoundedEdges);
-                    using (new EditorGUI.DisabledScope(m_HardRowsAtCount))
+                            "and the flat panels' tests (the default: sharper plates on the armoured car)."),
+                        m_HardAcrossRounding);
+                    using (new EditorGUI.DisabledScope(m_HardEvenRows))
                     m_HardMergeFlat = EditorGUILayout.ToggleLeft(
                         new GUIContent("Big quads on flat plates",
                             "On a dense model of plates, quads are merged where that costs no shape: a flat plate " +
                             "takes a few large quads, the parts keep theirs, and the count drops."),
                         m_HardMergeFlat);
-                    using (new EditorGUI.DisabledScope(!m_HardMergeFlat || m_HardRowsAtCount))
+                    using (new EditorGUI.DisabledScope(!m_HardMergeFlat || m_HardEvenRows))
                     {
                         m_HardPlateRows = EditorGUILayout.ToggleLeft(
                             new GUIContent("Plates in rows",
@@ -854,8 +856,8 @@ namespace NativeRemesher
             RemeshPipeline.stripSizing = m_HardThinStrips;
             RemeshPipeline.hardSurfaceRods = m_HardRods;
             RemeshPipeline.hardSurfaceSimplify = m_HardMergeFlat;
-            RemeshPipeline.hardSurfaceCleanLayout = m_HardRowsAtCount;
-            RemeshPipeline.hardSurfaceRoundedCreases = m_HardRoundedEdges;
+            RemeshPipeline.hardSurfaceCleanLayout = m_HardEvenRows;
+            RemeshPipeline.hardSurfaceRoundedCreases = m_HardAcrossRounding;
             RemeshPipeline.hardSurfaceSimplifyToCount = m_HardToCount;
             RemeshPipeline.hardSurfacePlateBlocks = m_HardPlateRows;
             RemeshPipeline.kinematicGuides = m_RoundParts;
