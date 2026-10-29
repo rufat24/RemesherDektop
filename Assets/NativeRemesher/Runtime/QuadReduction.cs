@@ -130,6 +130,20 @@ namespace NativeRemesher
             for (var i = 0; i < t.Length; i++) t[i] = weld[triangles[i]];
 
             var ordered = PairInOrder(t, tc, out var orderedPairs);
+            // Written in strips but not as quads: the pairs the order gives are rhombi too, and the
+            // angle pairing would only say so 1.9 s later (on each 1.5-million-triangle car: 8-9 %
+            // of the ordered pairs square, 14 % of the angle pairs, against the half asked).
+            if (quickRefusal && 2f * orderedPairs / Math.Max(1, tc) >= 0.5f
+                && 2f * orderedPairs / Math.Max(1, tc) < minQuadShare
+                && SquareShare(welded, ordered, orderedPairs) < 0.5f * minSquareShare)
+            {
+                faces = ordered;
+                stats.pairing = "order (refused early)";
+                stats.inputQuads = orderedPairs;
+                stats.quadShare = 2f * orderedPairs / Math.Max(1, tc);
+                stats.squareShare = SquareShare(welded, ordered, orderedPairs);
+                return false;
+            }
             if (2f * orderedPairs / Math.Max(1, tc) >= minQuadShare)
             {
                 faces = ordered;
@@ -152,6 +166,21 @@ namespace NativeRemesher
             // A sculpt's even triangles pair up too (91-97 % on the project's), but into rhombi:
             // 11-19 % of its pairs are square against 65-92 % of a modelled part's.
             return stats.quadShare >= minQuadShare && stats.squareShare >= minSquareShare;
+        }
+
+        /// <summary>
+        /// An input written in strips whose consecutive pairs are mostly not square is refused
+        /// without pairing it by angle as well. False: always paired both ways.
+        /// </summary>
+        public static bool quickRefusal = true;
+
+        static float SquareShare(Vector3[] welded, int[] faces, int pairs)
+        {
+            var square = 0;
+            for (var f = 0; f + 3 < faces.Length; f += 4)
+                if (faces[f + 3] >= 0 && QuadScore(welded[faces[f]], welded[faces[f + 1]], welded[faces[f + 2]], welded[faces[f + 3]]) >= squareScore)
+                    square++;
+            return pairs > 0 ? square / (float)pairs : 0f;
         }
 
         // Consecutive triangles that share an edge: how a quad is written out as two.
