@@ -1429,10 +1429,11 @@ namespace NativeRemesher
 
         /// <summary>
         /// detailQuadsWins under Hard Surface's clean layout: its lattice is no longer merged nearer
-        /// the source first, so the error-driven quads win at a smaller margin (the house 0.65, the
-        /// cars 0.53-0.78 of the lattice's distance; the armoured car 0.95).
+        /// the source first, so the error-driven quads win at a smaller margin (the house 0.65-0.74
+        /// over runs, its lattice's windows torn; the cars 0.53-0.78 of the lattice's distance; the
+        /// armoured car 0.95, its lattice kept).
         /// </summary>
-        public static float cleanLayoutDetailWins = 0.7f;
+        public static float cleanLayoutDetailWins = 0.8f;
 
         /// <summary>...and the angle their faces turn from the source's (mean) at most this many times the lattice's.</summary>
         public static float detailQuadsTurn = 1.05f;
@@ -2815,8 +2816,13 @@ namespace NativeRemesher
         /// </summary>
         public static bool hardSurfaceRoundedCreases = true;
 
-        /// <summary>The bend a rounded crease needs, degrees, across the radius.</summary>
-        public static float roundedCreaseDegrees = 30f;
+        /// <summary>
+        /// The bend a rounded crease needs, degrees, across the radius. 35: at 30 a ribbed horn's
+        /// rings pass (the helmet's horns kinked at each); at 40 the helmet's shell lattice came out
+        /// two widths off somewhere and its part was collapsed to triangles. The cars' windows,
+        /// doors and arches bend 60-90 and pass either way.
+        /// </summary>
+        public static float roundedCreaseDegrees = 35f;
 
         /// <summary>How far either side of an edge its bend is measured, in cells.</summary>
         public static float roundedCreaseRadiusCells = 0.4f;
@@ -2827,6 +2833,13 @@ namespace NativeRemesher
         /// <summary>Two parallel strokes closer than this, in cells, keep only the longer.</summary>
         public static float roundedCreaseSeparationCells = 0.7f;
 
+        /// <summary>
+        /// Strokes with parallel strokes within this many cells on both sides -- a row of ribs, a
+        /// horn's rings -- are dropped for the normal map (FeatureGraph.KeepUnribbed). The helmet's
+        /// ribbed horns, pinned to every ring, came out kinked at each. 0: kept.
+        /// </summary>
+        public static float roundedCreaseRibCells = 1.5f;
+
         static FeatureGraph RoundedCreases(RemeshResult result, RemeshTopology topology, int quadCount)
         {
             if (result.rodCountRatio > 1f) quadCount = Mathf.Max(1, Mathf.RoundToInt(quadCount / result.rodCountRatio));
@@ -2834,13 +2847,15 @@ namespace NativeRemesher
             var graph = FeatureGraph.DetectAtScale(topology, roundedCreaseDegrees, roundedCreaseRadiusCells * cell)
                 .KeepCoherentCurves(topology, roundedCreaseMinCells * cell, roundedCreaseStraightness, out _, out _)
                 .KeepSeparatedCurves(topology, roundedCreaseSeparationCells * cell, 0.5f, out _);
+            if (roundedCreaseRibCells > 0f) graph = graph.KeepUnribbed(topology, roundedCreaseRibCells * cell, out _);
             if (QuadReduction.logStats)
                 Debug.Log($"[Native Remesher] rounded creases: {graph.featureEdgeCount} edges in {graph.polylineCount} strokes on {topology.triangleCount} triangles");
             return graph;
         }
 
-        /// <summary>Diagnostics: where the first crease search writes its mesh (positions, triangles, count, angle); null: nowhere.</summary>
+        /// <summary>Diagnostics: where each crease search writes its mesh (positions, triangles, count, angle), numbered; null: nowhere.</summary>
         public static string debugCreasesPath;
+        static int s_DebugCreasesDumps;
 
         /// <summary>The profile's dihedral creases on <paramref name="topology"/>, as Hard Surface keeps them.</summary>
         static FeatureGraph ProfileFeatures(RemeshResult result, RemeshTopology topology, int quadCount,
@@ -2849,8 +2864,7 @@ namespace NativeRemesher
             if (debugCreasesPath != null)
             {
                 // Diagnostics: the mesh the creases are found on, once, for an offline harness.
-                var path = debugCreasesPath;
-                debugCreasesPath = null;
+                var path = debugCreasesPath.Replace(".bin", $"_{s_DebugCreasesDumps++}.bin");
                 using var w = new System.IO.BinaryWriter(System.IO.File.Create(path));
                 w.Write(topology.positions.Length);
                 foreach (var p in topology.positions) { w.Write(p.x); w.Write(p.y); w.Write(p.z); }

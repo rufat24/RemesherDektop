@@ -740,6 +740,92 @@ namespace NativeRemesher
         public bool polylinesCarried { get; private set; } = true;
 
         /// <summary>
+        /// The creases less those in a row of ribs: a stroke most of whose points have a stroke
+        /// running within 30 degrees of parallel within <paramref name="radius"/> on both sides.
+        /// </summary>
+        /// <remarks>
+        /// A ribbed horn, a hose or a tread measured at a quad's scale is a crease every half cell,
+        /// each a few cells round: long enough to keep and too close to follow, and pinned to them
+        /// the grid kinks at every rib. A window frame or a door gap has its partner on one side
+        /// only, and stays. Boundary edges are kept regardless.
+        /// </remarks>
+        public FeatureGraph KeepUnribbed(RemeshTopology topology, float radius, out int droppedCurves)
+        {
+            if (topology == null) throw new ArgumentNullException(nameof(topology));
+            droppedCurves = 0;
+            var curves = polylineCount;
+            if (curves == 0 || !(radius > 0f)) return this;
+            var P = topology.positions;
+            var N = topology.normals;
+            // Each polyline point's curve and tangent, in a hash grid of the radius.
+            var pointCurve = new List<int>();
+            var pointVertex = new List<int>();
+            var pointTangent = new List<Vector3>();
+            for (var c = 0; c < curves; c++)
+            {
+                int from = polylineStart[c], to = polylineStart[c + 1];
+                for (var i = from; i < to; i++)
+                {
+                    var prev = polylineVertices[Math.Max(from, i - 1)];
+                    var next = polylineVertices[Math.Min(to - 1, i + 1)];
+                    pointCurve.Add(c);
+                    pointVertex.Add(polylineVertices[i]);
+                    pointTangent.Add((P[next] - P[prev]).normalized);
+                }
+            }
+            var grid = new Dictionary<(int, int, int), List<int>>();
+            (int, int, int) Cell(Vector3 x) => (Mathf.FloorToInt(x.x / radius), Mathf.FloorToInt(x.y / radius), Mathf.FloorToInt(x.z / radius));
+            for (var i = 0; i < pointVertex.Count; i++)
+            {
+                var k = Cell(P[pointVertex[i]]);
+                if (!grid.TryGetValue(k, out var list)) grid[k] = list = new List<int>(4);
+                list.Add(i);
+            }
+            var parallelCos = Mathf.Cos(30f * Mathf.Deg2Rad);
+            var r2 = radius * radius;
+            var ribbedPoints = new int[curves];
+            var points = new int[curves];
+            for (var i = 0; i < pointVertex.Count; i++)
+            {
+                var c = pointCurve[i];
+                points[c]++;
+                var v = pointVertex[i];
+                var t = pointTangent[i];
+                if (t.sqrMagnitude < 0.5f) continue;
+                var n = N != null && v < N.Length ? N[v] : Vector3.zero;
+                var side = Vector3.Cross(n, t);
+                if (side.sqrMagnitude < 1e-12f) continue;
+                bool left = false, right = false;
+                var (x, y, z) = Cell(P[v]);
+                for (var dx = -1; dx <= 1 && !(left && right); dx++)
+                for (var dy = -1; dy <= 1 && !(left && right); dy++)
+                for (var dz = -1; dz <= 1 && !(left && right); dz++)
+                {
+                    if (!grid.TryGetValue((x + dx, y + dy, z + dz), out var list)) continue;
+                    foreach (var j in list)
+                    {
+                        if (pointCurve[j] == c) continue;
+                        var w = P[pointVertex[j]] - P[v];
+                        if (w.sqrMagnitude > r2) continue;
+                        if (Mathf.Abs(Vector3.Dot(pointTangent[j], t)) < parallelCos) continue;
+                        if (Vector3.Dot(w, side) > 0f) left = true; else right = true;
+                    }
+                }
+                if (left && right) ribbedPoints[c]++;
+            }
+            var edges = new List<(int a, int b)>();
+            for (var c = 0; c < curves; c++)
+            {
+                if (ribbedPoints[c] > 0.5f * points[c]) { droppedCurves++; continue; }
+                // A closed polyline repeats its first point at the end, so its pairs close it.
+                for (var i = polylineStart[c]; i + 1 < polylineStart[c + 1]; i++)
+                    edges.Add((polylineVertices[i], polylineVertices[i + 1]));
+            }
+            if (droppedCurves == 0) return this;
+            return Detect(topology, 0f).WithEdges(topology, edges);
+        }
+
+        /// <summary>
         /// The boundary edges plus the crease edges that stand alone: those with less than
         /// <paramref name="maxLengthOverRadius"/> x <paramref name="radius"/> of crease (themselves
         /// included) whose midpoints lie within <paramref name="radius"/> of their own.
