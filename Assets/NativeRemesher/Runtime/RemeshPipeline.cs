@@ -1129,14 +1129,19 @@ namespace NativeRemesher
             var bestOff = latticeOff;
             var bestTurn = latticeTurn;
             var bestFar = latticeFar;
-            var tried = $"lattice {latticeOff:G3}, {latticeTurn:0.0} deg at {lattice.extraction.faces.Count} faces";
+            s_RegularJudge = hardSurfaceCleanLayout && lattice.modelType == ModelType.HardSurface;
+            var latticeRegular = RegularShare(lattice.extraction);
+            var tried = $"lattice {latticeOff:G3} (p99 {latticeFar:G3}), {latticeTurn:0.0} deg, {latticeRegular:P0} regular at {lattice.extraction.faces.Count} faces";
             var kept = "";
             if (detail?.extraction != null && detail.extraction.faces.Count > 0)
             {
                 var detailOff = DistanceOff(positions, triangles, detail.extraction, out var detailTurn, out var detailFar);
-                tried += $"; error-driven {detailOff:G3}, {detailTurn:0.0} deg at {detail.extraction.faces.Count}";
+                var detailRegular = RegularShare(detail.extraction);
+                tried += $"; error-driven {detailOff:G3} (p99 {detailFar:G3}), {detailTurn:0.0} deg, {detailRegular:P0} regular at {detail.extraction.faces.Count}";
                 // Clearly closer, and their faces turning from the source's no more.
-                if (detailOff < detailQuadsWins * latticeOff && detailTurn <= detailQuadsTurn * latticeTurn)
+                if (detailOff < (s_RegularJudge ? cleanLayoutDetailWins : detailQuadsWins) * latticeOff
+                    && detailTurn <= detailQuadsTurn * latticeTurn
+                    && (RegularEnough(detailRegular, latticeRegular) || TornLattice(detailFar, latticeFar)))
                 {
                     best = detail;
                     bestOff = detailOff;
@@ -1153,7 +1158,9 @@ namespace NativeRemesher
             // building's fill leaves everything not flat -- wheels, pipes, hinges -- as loose
             // triangles, which measured nearer the car (0.00114 against 0.00153) and looked
             // crumpled and lumpy beside the grid's round wheels and straight plate edges.
-            if (planarQuadsTry && PlanarQuads.enabled && !lattice.panelCreases)
+            // Hard Surface's clean layout: the building's quads come out a third regular (30-35 % on
+            // four cars, the armoured car and the house) and can never pass the regularity test.
+            if (planarQuadsTry && PlanarQuads.enabled && !lattice.panelCreases && !s_RegularJudge)
             {
                 onProgress?.Invoke("Trying a building's quads", 0f);
                 RemeshResult planar;
@@ -1172,9 +1179,11 @@ namespace NativeRemesher
                     var planarOff = DistanceOff(positions, triangles, planar.extraction, out var planarTurn, out var planarFar);
                     var faces = planar.extraction.faces.Count;
                     var triangleShare = planar.extraction.triangleCount / (float)faces;
-                    tried += $"; building {planarOff:G3} (p99 {planarFar:G3} against {bestFar:G3}), {planarTurn:0.0} deg at {faces} ({triangleShare:P1} triangles)";
+                    var planarRegular = RegularShare(planar.extraction);
+                    tried += $"; building {planarOff:G3} (p99 {planarFar:G3} against {bestFar:G3}), {planarTurn:0.0} deg, {planarRegular:P0} regular at {faces} ({triangleShare:P1} triangles)";
                     if (planarOff <= bestOff && planarFar <= bestFar && planarTurn <= bestTurn && triangleShare <= planarQuadsTriangles
-                        && faces <= planarQuadsFaces * best.extraction.faces.Count)
+                        && faces <= planarQuadsFaces * best.extraction.faces.Count
+                        && (RegularEnough(planarRegular, latticeRegular) || TornLattice(planarFar, latticeFar)))
                     {
                         best = planar;
                         kept = ": building kept";
@@ -1185,6 +1194,56 @@ namespace NativeRemesher
             lattice.detailTry = tried;
             best.detailTry = tried + kept;
             return best;
+        }
+
+        /// <summary>
+        /// A candidate that measures closer than the lattice is kept only with at least this share of
+        /// the lattice's regular points (valence 4, inside): closeness alone kept a car's building
+        /// quads -- no rows at all, 0.000879 against the lattice's 0.00177 -- because a mesh with
+        /// no flow can still lie on the surface. 0: closeness alone, as before.
+        /// </summary>
+        public static float candidateRegularShare = 0.5f;
+
+        /// <summary>
+        /// ...unless the lattice is torn somewhere -- its worst hundredth off the source further
+        /// than this many times the candidate's: a house's windows folded through the wall.
+        /// </summary>
+        public static float tornLatticeFar = 0f;
+
+        static bool TornLattice(float candidateFar, float latticeFar) =>
+            tornLatticeFar > 0f && latticeFar > tornLatticeFar * candidateFar;
+
+        static bool RegularEnough(float candidate, float lattice) =>
+            !(candidateRegularShare > 0f) || !s_RegularJudge || candidate >= candidateRegularShare * lattice;
+
+        // Set per solve: the regularity test is Hard Surface's, with its clean layout.
+        [ThreadStatic] static bool s_RegularJudge;
+
+        // The share of interior points with four faces.
+        static float RegularShare(QuadExtractionResult ex)
+        {
+            if (ex?.faces == null || ex.positions == null) return 0f;
+            var n = ex.positions.Length;
+            var valence = new int[n];
+            var edgeUse = new Dictionary<long, int>();
+            foreach (var f in ex.faces)
+                for (var k = 0; k < f.Length; k++)
+                {
+                    valence[f[k]]++;
+                    var key = Extraction.EdgeKey.PackUndirected(f[k], f[(k + 1) % f.Length]);
+                    edgeUse[key] = edgeUse.TryGetValue(key, out var c) ? c + 1 : 1;
+                }
+            var open = new bool[n];
+            foreach (var kv in edgeUse)
+                if (kv.Value != 2) { open[Extraction.EdgeKey.First(kv.Key)] = true; open[Extraction.EdgeKey.Second(kv.Key)] = true; }
+            int inside = 0, regular = 0;
+            for (var v = 0; v < n; v++)
+            {
+                if (open[v] || valence[v] == 0) continue;
+                inside++;
+                if (valence[v] == 4) regular++;
+            }
+            return inside > 0 ? regular / (float)inside : 0f;
         }
 
         /// <summary>
@@ -1367,6 +1426,13 @@ namespace NativeRemesher
         /// of the lattice's at the same faces. White house at 5,000: 7.4e-6 against 1.9e-5.
         /// </summary>
         public static float detailQuadsWins = 0.6f;
+
+        /// <summary>
+        /// detailQuadsWins under Hard Surface's clean layout: its lattice is no longer merged nearer
+        /// the source first, so the error-driven quads win at a smaller margin (the house 0.65, the
+        /// cars 0.53-0.78 of the lattice's distance; the armoured car 0.95).
+        /// </summary>
+        public static float cleanLayoutDetailWins = 0.7f;
 
         /// <summary>...and the angle their faces turn from the source's (mean) at most this many times the lattice's.</summary>
         public static float detailQuadsTurn = 1.05f;
@@ -1747,7 +1813,7 @@ namespace NativeRemesher
             }
 
             // The lattice's even quads merged where the source is flat (or down to the count asked).
-            if (hardSurfaceSimplify && !detailQuads && !planarQuads && result.panelCreases
+            if (hardSurfaceSimplify && !hardSurfaceCleanLayout && !detailQuads && !planarQuads && result.panelCreases
                 && result.modelType == ModelType.HardSurface && result.extraction?.positions != null
                 && result.extraction.faceMaterials == null && result.extraction.uvs == null
                 && settings.targetQuadCount > 0
@@ -1828,17 +1894,33 @@ namespace NativeRemesher
             return result;
         }
 
+        [ThreadStatic] static (Vector3[] positions, int[] triangles, int target) t_StripsRefused;
+        [ThreadStatic] static QuadReduction.Stats t_StripsRefusedStats;
+
         // The input reduced by quad strips (QuadReduction), or null when it is not quads or will not reduce.
         static RemeshResult SolveByStrips(Vector3[] positions, int[] triangles, RemeshSettings settings,
             RemeshProfile profile, Action<string, float> onProgress, Vector2[] sourceUvs, int[] triangleMaterials,
             out QuadReduction.Stats stats)
         {
+            // The same input and count refused already (each output tried -- lattice, error-driven
+            // quads -- comes back through here): 3.5 s a time on a 1.5-million-triangle car.
+            if (ReferenceEquals(t_StripsRefused.positions, positions) && ReferenceEquals(t_StripsRefused.triangles, triangles)
+                && (t_StripsRefused.target == settings.targetQuadCount || t_StripsRefusedStats?.reason == "not quads"))
+            {
+                stats = t_StripsRefusedStats;
+                return null;
+            }
             onProgress?.Invoke("Reducing the quads", 0f);
             var watch = System.Diagnostics.Stopwatch.StartNew();
             var reducedOk = QuadReduction.Reduce(positions, triangles, Mathf.Max(1, settings.targetQuadCount),
                 out var outPositions, out var outFaces, out stats);
             if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {(reducedOk ? "strips" : "remesher")}: {stats}");
-            if (!reducedOk) return null;
+            if (!reducedOk)
+            {
+                t_StripsRefused = (positions, triangles, settings.targetQuadCount);
+                t_StripsRefusedStats = stats;
+                return null;
+            }
             return FromQuadReduction(positions, triangles, outPositions, outFaces, stats, settings, profile,
                 sourceUvs, triangleMaterials, watch, onProgress);
         }
@@ -2586,6 +2668,23 @@ namespace NativeRemesher
         /// </remarks>
         public static bool hardSurfaceSimplify = true;
 
+        /// <summary>
+        /// Hard Surface lays its quads once and keeps their rows: the lattice is not merged back
+        /// down afterwards (hardSurfaceSimplify, hardSurfacePlateBlocks), and of the other outputs
+        /// tried, one is kept only with at least candidateRegularShare of the lattice's regular
+        /// points (the building's quads, a third regular, are not tried). On four cars at 5,000
+        /// the merging broke the lattice's rows into stars, and one car kept the building's quads
+        /// (35 % regular) for lying 0.000879 off the source against the lattice's 0.00177.
+        /// False: merged, and the closest output kept, as before.
+        /// </summary>
+        public static bool hardSurfaceCleanLayout = true;
+
+        /// <summary>
+        /// With hardSurfaceCleanLayout, the count is also held to what was asked even where
+        /// Curves Add Quads would raise it. Off: the count as the window's setting reads it.
+        /// </summary>
+        public static bool hardSurfaceCleanExactCount = false;
+
         /// <summary>Furthest off the source, in cells at the asked count's spacing, a merged quad may lie.</summary>
         public static float hardSurfaceSimplifyMaxOffCells = 0.03f;
 
@@ -2702,10 +2801,66 @@ namespace NativeRemesher
             return kept;
         }
 
+        /// <summary>
+        /// Hard Surface finds its creases at the scale of a quad rather than edge by edge: each edge's
+        /// bend is measured between the faces either side of it within roundedCreaseRadiusCells
+        /// (FeatureGraph.DetectAtScale), so a rounded edge -- a window frame, a door gap, a wheel
+        /// arch spread over several triangles -- reads as the bend it is; then the strokes shorter
+        /// than roundedCreaseMinCells or wandering are dropped, and of two parallel ones closer
+        /// than roundedCreaseSeparationCells the shorter. Measured on a car's solve mesh at 5,000
+        /// (128,022 triangles): the 20 degree test kept sparse left 810 edges in 375 scraps, 340
+        /// cells long in all, and the windows, doors and arches came out melted; this keeps 3,923
+        /// edges in 317 strokes, 1,653 cells, round every window, door, arch and bumper. Off: the
+        /// 20 degree test with the density filter and the panels (the old behaviour).
+        /// </summary>
+        public static bool hardSurfaceRoundedCreases = true;
+
+        /// <summary>The bend a rounded crease needs, degrees, across the radius.</summary>
+        public static float roundedCreaseDegrees = 30f;
+
+        /// <summary>How far either side of an edge its bend is measured, in cells.</summary>
+        public static float roundedCreaseRadiusCells = 0.4f;
+
+        /// <summary>The shortest stroke kept, in cells, and how straight (end to end over length) it must run.</summary>
+        public static float roundedCreaseMinCells = 3f, roundedCreaseStraightness = 0.6f;
+
+        /// <summary>Two parallel strokes closer than this, in cells, keep only the longer.</summary>
+        public static float roundedCreaseSeparationCells = 0.7f;
+
+        static FeatureGraph RoundedCreases(RemeshResult result, RemeshTopology topology, int quadCount)
+        {
+            if (result.rodCountRatio > 1f) quadCount = Mathf.Max(1, Mathf.RoundToInt(quadCount / result.rodCountRatio));
+            var cell = topology.EdgeLengthForQuadCount(Mathf.Max(1, quadCount));
+            var graph = FeatureGraph.DetectAtScale(topology, roundedCreaseDegrees, roundedCreaseRadiusCells * cell)
+                .KeepCoherentCurves(topology, roundedCreaseMinCells * cell, roundedCreaseStraightness, out _, out _)
+                .KeepSeparatedCurves(topology, roundedCreaseSeparationCells * cell, 0.5f, out _);
+            if (QuadReduction.logStats)
+                Debug.Log($"[Native Remesher] rounded creases: {graph.featureEdgeCount} edges in {graph.polylineCount} strokes on {topology.triangleCount} triangles");
+            return graph;
+        }
+
+        /// <summary>Diagnostics: where the first crease search writes its mesh (positions, triangles, count, angle); null: nowhere.</summary>
+        public static string debugCreasesPath;
+
         /// <summary>The profile's dihedral creases on <paramref name="topology"/>, as Hard Surface keeps them.</summary>
         static FeatureGraph ProfileFeatures(RemeshResult result, RemeshTopology topology, int quadCount,
             FeatureGraph detected = null)
         {
+            if (debugCreasesPath != null)
+            {
+                // Diagnostics: the mesh the creases are found on, once, for an offline harness.
+                var path = debugCreasesPath;
+                debugCreasesPath = null;
+                using var w = new System.IO.BinaryWriter(System.IO.File.Create(path));
+                w.Write(topology.positions.Length);
+                foreach (var p in topology.positions) { w.Write(p.x); w.Write(p.y); w.Write(p.z); }
+                w.Write(topology.triangles.Length);
+                foreach (var t in topology.triangles) w.Write(t);
+                w.Write(quadCount);
+                w.Write(result.profile.featureAngleDegrees);
+            }
+            if (hardSurfaceRoundedCreases && result.profile.kind == RemeshProfileKind.HardSurface)
+                return RoundedCreases(result, topology, quadCount);
             var graph = detected ?? FeatureGraph.Detect(topology, result.profile.featureAngleDegrees);
             if (!hardSurfaceSparseCreases || result.profile.kind != RemeshProfileKind.HardSurface
                 || result.profile.featureAngleDegrees <= 0f) return graph;
@@ -3437,7 +3592,8 @@ namespace NativeRemesher
             // paddle three quads wide. So the target is raised here, before anything is sized, by
             // how much a field whose flat spacing is the uniform one would need.
             if (result.profile.integerGridMap && Extraction.IntegerGridMap.curvesAddQuads
-                && result.profile.curvatureAdaptivity > 0f && settings.targetQuadCount > 0)
+                && result.profile.curvatureAdaptivity > 0f && settings.targetQuadCount > 0
+                && !(hardSurfaceCleanLayout && hardSurfaceCleanExactCount && result.modelType == ModelType.HardSurface))
             {
                 var requested = settings.targetQuadCount;
                 // Counted at the slider's own value: curveDetailScale softens how steeply the
@@ -3519,7 +3675,8 @@ namespace NativeRemesher
                 }
                 ratio = Mathf.Clamp(ratio, 1f, Extraction.IntegerGridMap.countMaxGrowth);
                 withRods = Mathf.Clamp(withRods, 1f, Extraction.IntegerGridMap.countMaxGrowth);
-                if (withRods > 1.001f && Extraction.IntegerGridMap.curvesAddQuads)
+                if (withRods > 1.001f && Extraction.IntegerGridMap.curvesAddQuads
+                    && !(hardSurfaceCleanLayout && hardSurfaceCleanExactCount && result.modelType == ModelType.HardSurface))
                 {
                     result.thinCountRatio = withRods;
                     result.rodCountRatio = withRods / ratio;
@@ -4175,6 +4332,7 @@ namespace NativeRemesher
                 result.positionMs = positionTotal;
                 result.extractionMs = extractionTotal;
                 result.scale = bestScale;
+                if (QuadReduction.logStats) Debug.Log($"[Native Remesher] count passes at {target}: {result.faceCountTrace}");
                 onProgress?.Invoke("Done", 1f);
                 return;
             }

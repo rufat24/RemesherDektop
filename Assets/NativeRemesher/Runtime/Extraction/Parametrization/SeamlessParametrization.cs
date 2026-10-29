@@ -266,6 +266,12 @@ namespace NativeRemesher.Extraction
         /// </summary>
         public static float untangleSigmaMin = 0.5f;
 
+        /// <summary>
+        /// The barrier untangling stops once this many rounds in a row took out no fold (0: it runs
+        /// its rounds out).
+        /// </summary>
+        public static int untangleStallRounds = 0;
+
         /// <summary>Diagnostics: log every untangling round into the stats.</summary>
         public static bool untangleTrace = false;
 
@@ -2143,6 +2149,8 @@ namespace NativeRemesher.Extraction
                 // The paper's start: eps just large enough that the worst face is not yet crushed.
                 eps = dmin0 > 0 ? 1e-9 : Math.Max(1e-3, 2 * Math.Abs(dmin0));
                 var prevE = double.NaN;
+                var fewestFlips = int.MaxValue;
+                var stalled = 0;
                 for (var round = 0; round < rounds; round++)
                 {
                     var count = 0;
@@ -2244,6 +2252,14 @@ namespace NativeRemesher.Extraction
                     st.untangleBarrierRounds++;
                     if (untangleTrace) st.untangleLog += $"[{label}{round} E {startE:G4}->{energy:G4} dmin {dmin:G3} eps {eps:G3} flips {CountFlipsQuiet()} ev {evaluations}] ";
                     if (dmin > 0 && eps <= 1e-9 && round >= 1) break;
+                    // Folds that the rounds stopped taking out stay: on the armoured car 30 rounds
+                    // left ~30 of 1,011 every time, the last 20 rounds taking out none.
+                    if (untangleStallRounds > 0)
+                    {
+                        var flipsNow = CountFlipsQuiet();
+                        if (flipsNow < fewestFlips) { fewestFlips = flipsNow; stalled = 0; }
+                        else if (++stalled >= untangleStallRounds) break;
+                    }
                 }
                 st.untangleEvaluations += evaluations;
                 var flips = CountFlips();
