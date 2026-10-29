@@ -296,6 +296,9 @@ namespace NativeRemesher
 
         /// <summary>What RemeshPipeline.surfaceCleanIterations did, when on.</summary>
         public SurfaceClean.Stats surfaceCleanStats;
+
+        /// <summary>What SurfaceFair did, when Hard Surface's output was faired.</summary>
+        public SurfaceFair.Stats fairStats;
         public StarFill.Stats starFillStats;
 
         /// <summary>How the error-driven quads measured against the lattice, when they were tried (detailQuadsTry); null otherwise.</summary>
@@ -1630,6 +1633,7 @@ namespace NativeRemesher
                 result.extractionMs = watch.ElapsedMilliseconds;
                 result.originalPositions = positions;
                 result.originalTriangles = triangles;
+                FairHardSurface(result, onProgress);
                 TransferUvs(result, positions, triangles, sourceUvs, watch, onProgress);
                 LabelFaces(result);
                 onProgress?.Invoke("Done", 1f);
@@ -1725,6 +1729,8 @@ namespace NativeRemesher
                     result.decimateStats = decimateStats;
                 }
             }
+            if (debugSolveMeshPath != null && System.IO.File.Exists(debugSolveMeshPath))
+                LoadObj(debugSolveMeshPath, out solvePositions, out solveTriangles);
             if (lockAxis != SymmetryAxis.None)
                 solvePositions = Symmetry.LockBorderToPlane(solvePositions, solveTriangles, lockAxis, lockPlane);
 
@@ -1775,8 +1781,11 @@ namespace NativeRemesher
             // The decimated mesh, before refinement: what the parametrisation solves on.
             result.decimatedPositions = refineInputPositions;
             result.decimatedTriangles = refineInputTriangles;
+            var dumpRun = debugStagesPath != null ? s_DebugStagesRuns++ : 0;
+            DumpStage(dumpRun, "decimated", refineInputPositions, Triples(refineInputTriangles));
             RunCore(solvePositions, solveTriangles, settings, result, watch, onProgress,
                 autoSelectProfile);
+            DumpStage(dumpRun, "extracted", result.extraction?.positions, result.extraction?.faces);
 
             if (QuadReduction.logStats && result.features != null)
                 Debug.Log($"[Native Remesher] creases: {result.features.featureEdgeCount} edges in {result.features.polylineCount} chains, " +
@@ -1788,6 +1797,7 @@ namespace NativeRemesher
                 onProgress?.Invoke("Fitting features", 0f);
                 result.featureFitStats = FeatureFit.Fit(result.extraction.positions, result.extraction.faces,
                     positions, triangles, fitPasses);
+                DumpStage(dumpRun, "fitted", result.extraction.positions, result.extraction.faces);
             }
 
             // Stars (many faces folded round one vertex, where detail a cell or two across was
@@ -1818,6 +1828,7 @@ namespace NativeRemesher
                 result.surfaceCleanStats = SurfaceClean.Apply(ex.positions, ex.faces, surfaceCleanIterations, cleanSurface,
                     ex.onLayoutLine, bentQuads: result.panelCreases && panelCleanBentQuads);
                 if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {result.surfaceCleanStats}");
+                DumpStage(dumpRun, "cleaned", ex.positions, ex.faces);
                 if (ex.shadingNormals != null && ex.shadingNormals.Length == ex.positions.Length)
                     ex.shadingNormals = Extraction.NormalRecalculator.Compute(ex.faces, ex.positions, ex.normals);
             }
@@ -1905,9 +1916,96 @@ namespace NativeRemesher
                 if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {result.simplifyStats}");
             }
 
+            FairHardSurface(result, onProgress);
+            DumpStage(dumpRun, "final", result.extraction?.positions, result.extraction?.faces);
             TransferUvs(result, positions, triangles, sourceUvs, watch, onProgress);
             LabelFaces(result);
             return result;
+        }
+
+        /// <summary>
+        /// Hard Surface's output faired as the last step (SurfaceFair): its faces' normals averaged
+        /// with their neighbours' where they nearly agree, and the points moved to fit, so the
+        /// source's ripples under a quad's size (the cars' panels, the solve mesh's slivers) leave
+        /// the doors flat instead of crumpled; the normal map carries them. Off: the points stay
+        /// where the output put them, as before.
+        /// </summary>
+        public static bool hardSurfaceFair = true;
+
+        static void FairHardSurface(RemeshResult result, Action<string, float> onProgress)
+        {
+            var ex = result.extraction;
+            if (!hardSurfaceFair || result.modelType != ModelType.HardSurface || ex?.positions == null || ex.faces == null) return;
+            onProgress?.Invoke("Fairing the surface", 0f);
+            result.fairStats = SurfaceFair.Apply(ex.positions, ex.faces);
+            if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {result.fairStats}");
+            if (ex.normals != null && ex.normals.Length == ex.positions.Length)
+            {
+                var normals = new Vector3[ex.positions.Length];
+                foreach (var f in ex.faces)
+                {
+                    if (f == null || f.Length < 3) continue;
+                    var fn = Vector3.zero;
+                    for (var k = 1; k + 1 < f.Length; k++)
+                        fn += Vector3.Cross(ex.positions[f[k]] - ex.positions[f[0]], ex.positions[f[k + 1]] - ex.positions[f[0]]);
+                    foreach (var v in f) normals[v] += fn;
+                }
+                for (var v = 0; v < normals.Length; v++) normals[v] = MeshMath.SafeNormalize(normals[v], ex.normals[v]);
+                ex.normals = normals;
+            }
+            if (ex.shadingNormals != null && ex.shadingNormals.Length == ex.positions.Length)
+                ex.shadingNormals = Extraction.NormalRecalculator.Compute(ex.faces, ex.positions, ex.normals);
+        }
+
+        /// <summary>Diagnostics: a folder each solve's stages are written to as OBJ (run_stage.obj); null: nowhere.</summary>
+        public static string debugStagesPath;
+        static int s_DebugStagesRuns;
+
+        /// <summary>Diagnostics: an OBJ solved on in place of the decimated mesh (same frame); null: none.</summary>
+        public static string debugSolveMeshPath;
+
+        static void LoadObj(string path, out Vector3[] positions, out int[] triangles)
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            var p = new List<Vector3>();
+            var t = new List<int>();
+            foreach (var line in System.IO.File.ReadLines(path))
+            {
+                var s = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                if (s.Length >= 4 && s[0] == "v")
+                    p.Add(new Vector3(float.Parse(s[1], inv), float.Parse(s[2], inv), float.Parse(s[3], inv)));
+                else if (s.Length >= 4 && s[0] == "f")
+                    for (var k = 2; k + 1 < s.Length; k++)
+                    {
+                        t.Add(int.Parse(s[1].Split('/')[0], inv) - 1);
+                        t.Add(int.Parse(s[k].Split('/')[0], inv) - 1);
+                        t.Add(int.Parse(s[k + 1].Split('/')[0], inv) - 1);
+                    }
+            }
+            positions = p.ToArray();
+            triangles = t.ToArray();
+        }
+
+        static IEnumerable<int[]> Triples(int[] triangles)
+        {
+            for (var t = 0; t + 2 < triangles.Length; t += 3) yield return new[] { triangles[t], triangles[t + 1], triangles[t + 2] };
+        }
+
+        internal static void DumpStage(int run, string stage, Vector3[] positions, IEnumerable<int[]> faces)
+        {
+            if (debugStagesPath == null || positions == null || faces == null) return;
+            System.IO.Directory.CreateDirectory(debugStagesPath);
+            var sb = new System.Text.StringBuilder();
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            foreach (var p in positions) sb.Append("v ").Append(p.x.ToString("R", inv)).Append(' ').Append(p.y.ToString("R", inv)).Append(' ').Append(p.z.ToString("R", inv)).Append('\n');
+            foreach (var f in faces)
+            {
+                if (f == null || f.Length < 3) continue;
+                sb.Append('f');
+                foreach (var v in f) sb.Append(' ').Append(v + 1);
+                sb.Append('\n');
+            }
+            System.IO.File.WriteAllText(System.IO.Path.Combine(debugStagesPath, $"{run}_{stage}.obj"), sb.ToString());
         }
 
         [ThreadStatic] static (Vector3[] positions, int[] triangles, int target) t_StripsRefused;

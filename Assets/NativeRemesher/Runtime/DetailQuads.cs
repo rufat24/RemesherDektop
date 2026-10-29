@@ -56,6 +56,14 @@ namespace NativeRemesher
         /// <summary>Smallest pair score (worst corner's sine, times flatness) accepted.</summary>
         public static float pairMinScore = 0.15f;
 
+        /// <summary>
+        /// Points put on the nearest point of the input after the split. Off: they stay on the
+        /// simplification's faces (its own points where its quadrics put them, the split's on its
+        /// flat faces), so a flat plate stays flat and the input's small bumps are left to the
+        /// normal map.
+        /// </summary>
+        public static bool projectToSource = true;
+
         /// <summary>FeatureFit passes after the split.</summary>
         public static int fitIterations = 3;
 
@@ -237,12 +245,15 @@ namespace NativeRemesher
             }
             stats.quads = faces.Count;
 
+            RemeshPipeline.DumpStage(0, "detail_split", positions, faces);
             var surface = new SpatialGrid(sourcePositions, sourceTriangles);
             var placed = positions;
-            Parallel.For(0, placed.Length, BackgroundScheduler.Options, v =>
-                placed[v] = surface.NearestPoint(placed[v], out _));
+            if (projectToSource)
+                Parallel.For(0, placed.Length, BackgroundScheduler.Options, v =>
+                    placed[v] = surface.NearestPoint(placed[v], out _));
             if (relaxAll) for (var v = 0; v < isNew.Length; v++) isNew[v] = true;
             Relax(positions, faces, isNew, surface, relaxIterations);
+            RemeshPipeline.DumpStage(0, "detail_relaxed", positions, faces);
             stats.buildMs = watch.ElapsedMilliseconds;
 
             watch.Restart();

@@ -37,9 +37,10 @@ namespace NativeRemesher
         [SerializeField] bool m_HardThinStrips = true;          // stripSizing
         [SerializeField] bool m_HardRods = true;                // hardSurfaceRods
         [SerializeField] bool m_HardMergeFlat = true;           // hardSurfaceSimplify
-        // Renamed from m_HardEvenRows / m_HardAcrossRounding so open windows pick up the default off.
+        // Renamed from m_HardRowsAtCount / m_HardRoundedEdges so open windows pick up the default off.
         [SerializeField] bool m_HardEvenRows;                   // hardSurfaceCleanLayout
         [SerializeField] bool m_HardAcrossRounding;             // hardSurfaceRoundedCreases
+        [SerializeField] bool m_HardFlatPanels = true;          // hardSurfaceFair
         [SerializeField] bool m_HardToCount;                    // hardSurfaceSimplifyToCount
         [SerializeField] bool m_HardPlateRows = true;           // hardSurfacePlateBlocks
         [SerializeField] bool m_HardShapeRegions = true;        // kinematicRegionsHardSurface
@@ -323,6 +324,13 @@ namespace NativeRemesher
                             "measured across its rounding, so the rows follow it. Off: edge by edge, with the dense " +
                             "and the flat panels' tests (the default: sharper plates on the armoured car)."),
                         m_HardAcrossRounding);
+                    m_HardFlatPanels = EditorGUILayout.ToggleLeft(
+                        new GUIContent("Flatten panels",
+                            "The output's faces are faired at the end: where neighbouring faces nearly agree they " +
+                            "are made to agree, so ripples in the source smaller than a quad (and the solve mesh's " +
+                            "streaks) leave the panels flat instead of crumpled; the normal map carries them. " +
+                            "Edges between panels stay sharp. Off: the points stay on the source as laid."),
+                        m_HardFlatPanels);
                     using (new EditorGUI.DisabledScope(m_HardEvenRows))
                     m_HardMergeFlat = EditorGUILayout.ToggleLeft(
                         new GUIContent("Big quads on flat plates",
@@ -858,6 +866,7 @@ namespace NativeRemesher
             RemeshPipeline.hardSurfaceSimplify = m_HardMergeFlat;
             RemeshPipeline.hardSurfaceCleanLayout = m_HardEvenRows;
             RemeshPipeline.hardSurfaceRoundedCreases = m_HardAcrossRounding;
+            RemeshPipeline.hardSurfaceFair = m_HardFlatPanels;
             RemeshPipeline.hardSurfaceSimplifyToCount = m_HardToCount;
             RemeshPipeline.hardSurfacePlateBlocks = m_HardPlateRows;
             RemeshPipeline.kinematicGuides = m_RoundParts;
