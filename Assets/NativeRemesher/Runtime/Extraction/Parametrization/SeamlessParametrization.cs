@@ -262,9 +262,11 @@ namespace NativeRemesher.Extraction
 
         /// <summary>
         /// Least relative shrink of the barrier's eps per round. The paper uses 0.1; 0.5 untangles
-        /// these maps in fewer rounds (body at 2k: 8 rounds against 30 still folded).
+        /// these maps in fewer rounds (body at 2k: 8 rounds against 30 still folded), and 0.75 in
+        /// fewer still: the cars at 5,000 untangled in 2.5 s against 4.6 (the same 0 folds left),
+        /// the armoured car's output as near its source (0.89 against 0.91).
         /// </summary>
-        public static float untangleSigmaMin = 0.5f;
+        public static float untangleSigmaMin = 0.75f;
 
         /// <summary>
         /// The barrier untangling stops once this many rounds in a row took out no fold (0: it runs
@@ -534,8 +536,12 @@ namespace NativeRemesher.Extraction
         /// <summary>Closure weight when the layout is meshed: its separatrices cross every seam.</summary>
         public static float layoutClosureWeight = 1e5f;
 
-        /// <summary>Untangling rounds of the free map when the layout is meshed (it needs no folds).</summary>
-        public static int layoutUntangleRounds = 30;
+        /// <summary>
+        /// Untangling rounds of the free map when the layout is meshed (it needs no folds). With the
+        /// barrier shrinking by untangleSigmaMin 0.75 a round, 18 leave the armoured car as folded
+        /// as 30 did (35-49 faces), in 4.7 s an untangling against 8.
+        /// </summary>
+        public static int layoutUntangleRounds = 18;
 
         static int FreeUntangleRounds => IntegerGridMap.parametrizationLayout
             ? Math.Max(untangleFreeRounds, layoutUntangleRounds) : untangleFreeRounds;
