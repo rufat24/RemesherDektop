@@ -1104,14 +1104,22 @@ namespace NativeRemesher
                 onProgress?.Invoke("Recognising the model", 0f);
                 settings.modelType = ShapeRecognition.Classify(positions, triangles, out settings.shapeSignals);
             }
-            var lattice = SolveLattice(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile,
-                triangleMaterials);
+            var tryOthers = detailQuadsTry && !detailQuads && settings.modelType != ModelType.Character
+                && settings.symmetry == SymmetryAxis.None && settings.densityPaint == null
+                && triangles.Length / 3 >= detailQuadsTryTriangles
+                && triangles.Length / 3 >= detailQuadsTryTrianglesPerQuad * Math.Max(1, settings.targetQuadCount);
+            // With no other quads to try, the lattice is the output: its crease pieces joined from the start.
+            s_JoinPieces = !tryOthers;
+            RemeshResult lattice;
+            try
+            {
+                lattice = SolveLattice(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile,
+                    triangleMaterials);
+            }
+            finally { s_JoinPieces = false; }
             SpatialGrid sourceGrid = null;
             NearerDiagonals(lattice, positions, triangles, ref sourceGrid);
-            if (!detailQuadsTry || detailQuads || lattice?.extraction == null || settings.modelType == ModelType.Character
-                || settings.symmetry != SymmetryAxis.None || settings.densityPaint != null
-                || triangles.Length / 3 < detailQuadsTryTriangles
-                || triangles.Length / 3 < detailQuadsTryTrianglesPerQuad * Math.Max(1, settings.targetQuadCount))
+            if (!tryOthers || lattice?.extraction == null)
                 return lattice;
             // A dense mesh of flat walls and boxed-in detail (the white house: 1.8 million
             // triangles, window recesses three cells wide) comes out of the lattice soft-walled and
@@ -1169,6 +1177,10 @@ namespace NativeRemesher
             // crumpled and lumpy beside the grid's round wheels and straight plate edges.
             // Hard Surface's clean layout: the building's quads come out a third regular (30-35 % on
             // four cars, the armoured car and the house) and can never pass the regularity test.
+            // Where small details go to the normal map (hardSurfaceSourceCreases) they need the
+            // regularity too: built from the source's own planes they keep every handle and badge at
+            // any count, and that is what measures them nearer. Car2 at 5,000: 0.00168 against the
+            // lattice's 0.00247, 34 % regular against 97 %, handles in the quads, panels crumpled.
             if (planarQuadsTry && PlanarQuads.enabled && !lattice.panelCreases && !s_RegularJudge)
             {
                 onProgress?.Invoke("Trying a building's quads", 0f);
@@ -1192,10 +1204,39 @@ namespace NativeRemesher
                     tried += $"; building {planarOff:G3} (p99 {planarFar:G3} against {bestFar:G3}), {planarTurn:0.0} deg, {planarRegular:P0} regular at {faces} ({triangleShare:P1} triangles)";
                     if (planarOff <= bestOff && planarFar <= bestFar && planarTurn <= bestTurn && triangleShare <= planarQuadsTriangles
                         && faces <= planarQuadsFaces * best.extraction.faces.Count
-                        && (RegularEnough(planarRegular, latticeRegular) || TornLattice(planarFar, latticeFar)))
+                        && (RegularEnough(planarRegular, latticeRegular) || TornLattice(planarFar, latticeFar))
+                        && (lattice.sourceCreaseStats == null || !(candidateRegularShare > 0f)
+                            || planarRegular >= candidateRegularShare * latticeRegular))
                     {
                         best = planar;
                         kept = ": building kept";
+                    }
+                }
+            }
+            // The lattice kept, from creases read edge by edge: laid again along them joined
+            // (SourceCreases.Keep's joinPieces). Not before the others are judged: they are made at
+            // the faces the lattice came out at, and the white house's error-driven quads, at 3 % fewer
+            // faces off the joined lattice, crumpled its windows.
+            if (best == lattice && joinLatticePieces && lattice.sourceCreaseStats != null && lattice.sourceCreaseStats.loose)
+            {
+                onProgress?.Invoke("Laying the grid along joined creases", 0f);
+                RemeshResult joined;
+                s_JoinPieces = true;
+                try
+                {
+                    joined = SolveLattice(positions, triangles, settings, profile, onProgress, sourceUvs, autoSelectProfile,
+                        triangleMaterials);
+                }
+                finally { s_JoinPieces = false; }
+                NearerDiagonals(joined, positions, triangles, ref sourceGrid);
+                if (joined?.extraction != null && joined.extraction.faces.Count > 0)
+                {
+                    var joinedOff = DistanceOff(positions, triangles, joined.extraction, out var joinedTurn, out var joinedFar);
+                    tried += $"; joined lattice {joinedOff:G3} (p99 {joinedFar:G3}), {joinedTurn:0.0} deg at {joined.extraction.faces.Count}";
+                    if (joinedOff <= joinedLatticeSlack * latticeOff && joinedTurn <= joinedLatticeSlack * latticeTurn)
+                    {
+                        best = joined;
+                        kept = ": joined lattice kept";
                     }
                 }
             }
@@ -1234,6 +1275,21 @@ namespace NativeRemesher
 
         // Set per solve: the regularity test is Hard Surface's, with its clean layout.
         [ThreadStatic] static bool s_RegularJudge;
+
+        // Set per lattice solve: its source creases' pieces joined (SourceCreases.Keep's joinPieces).
+        [ThreadStatic] static bool s_JoinPieces;
+
+        /// <summary>
+        /// A lattice kept over the other quads, its creases read off the solve mesh edge by edge (no
+        /// panels), is laid again along them joined -- gaps bridged, handles' rims dropped -- and
+        /// that kept when no further from the source nor turning more than joinedLatticeSlack times
+        /// the first. Car2 at 5,000: its window frames in 888 dashes, the grid ran through them, and
+        /// the handles folded into the doors. Off: the first lattice.
+        /// </summary>
+        public static bool joinLatticePieces = true;
+
+        /// <summary>See joinLatticePieces.</summary>
+        public static float joinedLatticeSlack = 1.05f;
 
         // The share of interior points with four faces.
         static float RegularShare(QuadExtractionResult ex)
@@ -1830,7 +1886,7 @@ namespace NativeRemesher
                     ? new SpatialGrid(result.decimatedPositions, result.decimatedTriangles)
                     : null;
                 result.surfaceCleanStats = SurfaceClean.Apply(ex.positions, ex.faces, surfaceCleanIterations, cleanSurface,
-                    ex.onLayoutLine, bentQuads: result.panelCreases && panelCleanBentQuads);
+                    ex.onLayoutLine, bentQuads: (result.panelCreases || result.sourceCreaseStats != null) && panelCleanBentQuads);
                 if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {result.surfaceCleanStats}");
                 DumpStage(dumpRun, "cleaned", ex.positions, ex.faces);
                 if (ex.shadingNormals != null && ex.shadingNormals.Length == ex.positions.Length)
@@ -2841,8 +2897,10 @@ namespace NativeRemesher
         public static bool hardSurfacePlateBlocks = true;
 
         /// <summary>
-        /// On a result whose creases came from its panels, SurfaceClean also smooths quads folded
-        /// across both diagonals (squeezed between creases under a cell apart). Off: as before.
+        /// On a result whose creases came from its panels, or were judged on the source
+        /// (hardSurfaceSourceCreases), SurfaceClean also smooths quads folded across both diagonals
+        /// (squeezed between creases under a cell apart: car2's window sills, a step a third of a
+        /// cell high, folded a row of them). Off: as before.
         /// </summary>
         public static bool panelCleanBentQuads = true;
 
@@ -3019,7 +3077,7 @@ namespace NativeRemesher
             var raw = hardSurfaceSourceCreaseCandidates && !result.panelCreases && result.profile.featureAngleDegrees > 0f
                 ? FeatureGraph.Detect(topology, result.profile.featureAngleDegrees) : null;
             graph = SourceCreases.Keep(graph, topology, result.originalPositions, result.originalTriangles, cell,
-                ref result.sourceCreaseIndex, stats, raw);
+                ref result.sourceCreaseIndex, stats, raw, joinPieces: s_JoinPieces && !detailQuads && !planarQuads);
             result.sourceCreaseStats = stats;
             if (QuadReduction.logStats) Debug.Log($"[Native Remesher] {stats} on {topology.triangleCount} triangles");
             return graph;
