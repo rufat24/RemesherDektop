@@ -443,7 +443,7 @@ namespace NativeRemesher
             var half = 0.5f * maxThickness;
             var thickness = new float[nv];
             var opposite = new int[nv];
-            Parallel.For(0, nv, v =>
+            Parallel.For(0, nv, BackgroundScheduler.Options, v =>
             {
                 thickness[v] = float.PositiveInfinity;
                 opposite[v] = -1;
@@ -1079,7 +1079,7 @@ namespace NativeRemesher
             var r2 = radius * radius;
             var maxSpread = maxBandSpreadCells * cell;
             var band = new bool[nVox];
-            Parallel.For(0, nVox, i =>
+            Parallel.For(0, nVox, BackgroundScheduler.Options, i =>
             {
                 var k = keys[i];
                 double w = 0, mx = 0, my = 0, mz = 0;
@@ -1281,7 +1281,7 @@ namespace NativeRemesher
                     list.Add(reps.Count);
                     reps.Add(v);
                 }
-                Parallel.For(0, nv, v => { if (thickness[v] >= maxThickness) repOfVertex[v] = Nearest(v); });
+                Parallel.For(0, nv, BackgroundScheduler.Options, v => { if (thickness[v] >= maxThickness) repOfVertex[v] = Nearest(v); });
             }
             else
                 for (var v = 0; v < nv; v++)
@@ -1313,7 +1313,7 @@ namespace NativeRemesher
             var axis = new Vector3[reps.Count];
             var band = new bool[reps.Count];
             var depths = new[] { depth, 0.1f * cell, 0.2f * cell };
-            Parallel.For(0, reps.Count, i =>
+            Parallel.For(0, reps.Count, BackgroundScheduler.Options, i =>
             {
                 var v = reps[i];
                 var n = N[v];
@@ -1372,7 +1372,7 @@ namespace NativeRemesher
             });
 
             var height = new float[nv];
-            Parallel.For(0, nv, v =>
+            Parallel.For(0, nv, BackgroundScheduler.Options, v =>
             {
                 height[v] = float.PositiveInfinity;
                 if (thickness[v] < maxThickness) return;

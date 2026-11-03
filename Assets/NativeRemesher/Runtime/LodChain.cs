@@ -263,7 +263,7 @@ namespace NativeRemesher
                 var mineSamples = SpatialGrid.SampleSurface(positions, triangles, samples, 7);
                 var theirSamples = SpatialGrid.SampleSurface(referencePositions, referenceTriangles, samples, 11);
                 var share = new float[2];
-                Parallel.For(0, 2, side =>
+                Parallel.For(0, 2, BackgroundScheduler.Options, side =>
                 {
                     var points = side == 0 ? mineSamples : theirSamples;
                     var against = side == 0 ? reference : grid;
@@ -280,7 +280,7 @@ namespace NativeRemesher
             for (var i = 0; i < positions.Length; i += Math.Max(1, positions.Length / samples)) mine.Add(positions[i]);
             var theirs = SpatialGrid.SampleSurface(referencePositions, referenceTriangles, samples, 11);
             var worst = new float[2];
-            Parallel.For(0, 2, side =>
+            Parallel.For(0, 2, BackgroundScheduler.Options, side =>
             {
                 var points = side == 0 ? mine : theirs;
                 var against = side == 0 ? reference : grid;
@@ -353,7 +353,7 @@ namespace NativeRemesher
             if (input.faceMaterials != null && input.materialSlots > 1)
             {
                 level.faceMaterials = new int[level.faces.Count];
-                Parallel.For(0, level.faces.Count, f =>
+                Parallel.For(0, level.faces.Count, BackgroundScheduler.Options, f =>
                 {
                     var face = level.faces[f];
                     var c = Vector3.zero;

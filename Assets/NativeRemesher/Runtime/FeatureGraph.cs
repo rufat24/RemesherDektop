@@ -871,7 +871,7 @@ namespace NativeRemesher
             var keep = new bool[creases.Count];
             var radiusSqr = radius * radius;
             var limit = maxLengthOverRadius * radius;
-            System.Threading.Tasks.Parallel.For(0, creases.Count, i =>
+            System.Threading.Tasks.Parallel.For(0, creases.Count, BackgroundScheduler.Options, i =>
             {
                 var c = Vector3Int.FloorToInt(mid[i] / radius);
                 var sum = 0f;

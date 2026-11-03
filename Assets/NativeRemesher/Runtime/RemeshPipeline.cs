@@ -708,7 +708,7 @@ namespace NativeRemesher
             var grid = new SpatialGrid(extraction.positions, tris);
             var points = SpatialGrid.SampleSurface(positions, triangles, samples, 5);
             var worst = new float[points.Count];
-            System.Threading.Tasks.Parallel.For(0, points.Count, i => worst[i] = grid.NearestDistance(points[i], out _));
+            System.Threading.Tasks.Parallel.For(0, points.Count, BackgroundScheduler.Options, i => worst[i] = grid.NearestDistance(points[i], out _));
             var max = 0f;
             foreach (var w in worst) max = Mathf.Max(max, w);
             if (cellsOffBothWays)
@@ -719,7 +719,7 @@ namespace NativeRemesher
                 var source = new SpatialGrid(positions, triangles);
                 var mine = SpatialGrid.SampleSurface(extraction.positions, tris, samples, 6);
                 var back = new float[mine.Count];
-                System.Threading.Tasks.Parallel.For(0, mine.Count, i => back[i] = source.NearestDistance(mine[i], out _));
+                System.Threading.Tasks.Parallel.For(0, mine.Count, BackgroundScheduler.Options, i => back[i] = source.NearestDistance(mine[i], out _));
                 foreach (var w in back) max = Mathf.Max(max, w);
             }
             return max / cell;
@@ -1533,11 +1533,11 @@ namespace NativeRemesher
             var there = SpatialGrid.SampleSurface(positions, triangles, samples, 5);
             var back = SpatialGrid.SampleSurface(extraction.positions, tris, samples, 6);
             var d = new float[there.Count + back.Count];
-            System.Threading.Tasks.Parallel.For(0, there.Count, i => d[i] = output.NearestDistance(there[i], out _));
-            System.Threading.Tasks.Parallel.For(0, back.Count, i => d[there.Count + i] = source.NearestDistance(back[i], out _));
+            System.Threading.Tasks.Parallel.For(0, there.Count, BackgroundScheduler.Options, i => d[i] = output.NearestDistance(there[i], out _));
+            System.Threading.Tasks.Parallel.For(0, back.Count, BackgroundScheduler.Options, i => d[there.Count + i] = source.NearestDistance(back[i], out _));
             // The turn: at points of the output, its triangle's normal against the source's nearest one's.
             var angles = new float[back.Count];
-            System.Threading.Tasks.Parallel.For(0, back.Count, i =>
+            System.Threading.Tasks.Parallel.For(0, back.Count, BackgroundScheduler.Options, i =>
             {
                 output.NearestDistance(back[i], out var mine);
                 source.NearestDistance(back[i], out var theirs);
