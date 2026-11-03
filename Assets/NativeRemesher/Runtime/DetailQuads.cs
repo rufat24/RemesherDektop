@@ -70,8 +70,15 @@ namespace NativeRemesher
         /// <summary>Tangential smoothing passes over the split's new points before the fit.</summary>
         public static int relaxIterations = 2;
 
-        /// <summary>Smooth the simplification's own points too, not only the split's.</summary>
-        public static bool relaxAll = false;
+        /// <summary>
+        /// Smooth the simplification's own points too, not only the split's. The simplification
+        /// leaves long thin triangles on a flat wall (any shape costs it nothing there), and their
+        /// quads fanned out of the white house's window corners as streaks. On: at 5,000 the
+        /// house lies nearer its source (0.51 -> 0.46 thousandths of the diagonal, p99 4.72 ->
+        /// 3.66), 1.40 -> 1.24 % of its area turned over, its walls flatter round the windows. At
+        /// 6 passes instead of 2 the house's torn lattice won. Off: only the split's points.
+        /// </summary>
+        public static bool relaxAll = true;
 
         /// <summary>
         /// Exponent on (median spacing / curvature spacing) weighting the simplification's planes:
