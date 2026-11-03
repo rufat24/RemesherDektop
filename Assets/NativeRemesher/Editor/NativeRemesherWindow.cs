@@ -44,6 +44,7 @@ namespace NativeRemesher
         [SerializeField] bool m_HardEdgesAtCount = true;        // hardSurfaceSourceCreases
         [SerializeField] bool m_HardToCount;                    // hardSurfaceSimplifyToCount
         [SerializeField] bool m_HardPlateRows = true;           // hardSurfacePlateBlocks
+        [SerializeField] bool m_HardRowsAtMerged;               // hardSurfaceRowsAtMergedCount
         [SerializeField] bool m_HardShapeRegions = true;        // kinematicRegionsHardSurface
         [SerializeField] bool m_ScanShapeRegions = true;        // kinematicRegionsScan
 
@@ -352,6 +353,12 @@ namespace NativeRemesher
                                 "Before the merging, quads on a flat plate are merged nine at a time into rows of " +
                                 "big quads that follow the plate's edges, with a ring of steps round them, and kept so."),
                             m_HardPlateRows);
+                        m_HardRowsAtMerged = EditorGUILayout.ToggleLeft(
+                            new GUIContent("Even rows at the merged count",
+                                "The quads are laid again in even rows at the count the merging came to, and not " +
+                                "merged: the same faces, the doors and roofs flat instead of crumpled by the big " +
+                                "merged quads. Takes a second solve. Off: the merged quads."),
+                            m_HardRowsAtMerged);
                         m_HardToCount = EditorGUILayout.ToggleLeft(
                             new GUIContent("Merge down to the count (low poly)",
                                 "Keep merging until the result has the count asked, even where it costs shape: " +
@@ -878,6 +885,7 @@ namespace NativeRemesher
             RemeshPipeline.hardSurfaceSourceCreases = m_HardEdgesAtCount;
             RemeshPipeline.hardSurfaceSimplifyToCount = m_HardToCount;
             RemeshPipeline.hardSurfacePlateBlocks = m_HardPlateRows;
+            RemeshPipeline.hardSurfaceRowsAtMergedCount = m_HardRowsAtMerged && !m_HardToCount;
             RemeshPipeline.kinematicGuides = m_RoundParts;
             RemeshPipeline.kinematicRegionsHardSurface = m_HardShapeRegions;
             RemeshPipeline.kinematicRegionsScan = m_ScanShapeRegions;

@@ -281,6 +281,12 @@ namespace NativeRemesher
         /// <summary>What RemeshPipeline.hardSurfacePlateBlocks did, when it ran.</summary>
         public PlateBlocks.Stats plateBlocksStats;
 
+        /// <summary>
+        /// With RemeshPipeline.hardSurfaceRowsAtMergedCount: the faces the merging came to, the
+        /// count this lattice was laid again at. Zero when it was not.
+        /// </summary>
+        public int mergedFaces;
+
 
         /// <summary>
         /// The count asked for, before Adaptive Quad Count raised it; see
@@ -1556,6 +1562,59 @@ namespace NativeRemesher
             RemeshProfile profile, Action<string, float> onProgress, Vector2[] sourceUvs, bool autoSelectProfile,
             int[] triangleMaterials)
         {
+            var result = SolveLatticeOnce(positions, triangles, settings, profile, onProgress, sourceUvs,
+                autoSelectProfile, triangleMaterials);
+            var merged = result?.simplifyStats;
+            if (!hardSurfaceRowsAtMergedCount || s_NoMerge || merged == null || hardSurfaceSimplifyToCount
+                || result.extraction?.faces == null || settings.targetQuadCount <= 0) return result;
+            var before = result.plateBlocksStats != null ? result.plateBlocksStats.facesBefore : merged.facesBefore;
+            if (before <= 0) return result;
+            var ratio = result.extraction.faces.Count / (float)before;
+            if (!(ratio < rowsAtMergedCountMinSaving)) return result;
+
+            onProgress?.Invoke("Laying even rows at the merged count", 0f);
+            var fewer = settings;
+            fewer.targetQuadCount = Mathf.Max(1, Mathf.RoundToInt(settings.targetQuadCount * ratio));
+            RemeshResult rows;
+            s_NoMerge = true;
+            try
+            {
+                rows = SolveLatticeOnce(positions, triangles, fewer, profile, onProgress, sourceUvs,
+                    autoSelectProfile, triangleMaterials);
+            }
+            finally { s_NoMerge = false; }
+            if (rows?.extraction?.faces == null || rows.extraction.faces.Count == 0) return result;
+            if (QuadReduction.logStats)
+                Debug.Log($"[Native Remesher] even rows at the merged count: {before} -> {result.extraction.faces.Count} " +
+                    $"faces merged, laid again at {fewer.targetQuadCount} asked: {rows.extraction.faces.Count} faces");
+            rows.mergedFaces = result.extraction.faces.Count;
+            return rows;
+        }
+
+        /// <summary>
+        /// Hard Surface's lattice, where its plates would be merged down (hardSurfaceSimplify), laid
+        /// again at the count the merging came to and not merged: the same faces in even rows. The
+        /// merging's big quads, a star at every collapse, crumpled the cars' doors and roofs in the
+        /// renders (car3 at 5,000: 14,873 -> 8,867 faces merged); laid at 0.6 of the asked count
+        /// the lattice gave 9,422 faces, the doors and roof flat. Measured against the source's
+        /// normals the merging keeps a little more of the small parts (car3 0.56 % of the area
+        /// turned over against 0.92, the turned faces under the car and along the trims).
+        /// Off by default: the lattice's count does not follow the count asked evenly (car1 asked
+        /// 0.67 of it gave 0.54 of the faces, car3 0.6 gave 0.55 and lay further off), car1 and
+        /// car4 came out no better in the renders, and the armoured car's wheels got holes.
+        /// </summary>
+        public static bool hardSurfaceRowsAtMergedCount = false;
+
+        /// <summary>The merging must have come to under this share of the lattice's faces.</summary>
+        public static float rowsAtMergedCountMinSaving = 0.95f;
+
+        // Set for the lattice laid again at the merged count: not merged.
+        [ThreadStatic] static bool s_NoMerge;
+
+        static RemeshResult SolveLatticeOnce(Vector3[] positions, int[] triangles, RemeshSettings settings,
+            RemeshProfile profile, Action<string, float> onProgress, Vector2[] sourceUvs, bool autoSelectProfile,
+            int[] triangleMaterials)
+        {
             var result = SolveInternal(positions, triangles, settings, profile, onProgress, sourceUvs,
                 autoSelectProfile, SymmetryAxis.None, 0f, triangleMaterials);
             if (!layoutCoverageFallback || !Extraction.IntegerGridMap.parametrization
@@ -1900,7 +1959,7 @@ namespace NativeRemesher
                 && result.modelType == ModelType.HardSurface && result.extraction?.positions != null
                 && result.extraction.faceMaterials == null && result.extraction.uvs == null
                 && settings.targetQuadCount > 0;
-            if (tidyOnly || hardSurfaceSimplify && !hardSurfaceCleanLayout && !detailQuads && !planarQuads && result.panelCreases
+            if (tidyOnly || hardSurfaceSimplify && !s_NoMerge && !hardSurfaceCleanLayout && !detailQuads && !planarQuads && result.panelCreases
                 && result.modelType == ModelType.HardSurface && result.extraction?.positions != null
                 && result.extraction.faceMaterials == null && result.extraction.uvs == null
                 && settings.targetQuadCount > 0
@@ -2869,8 +2928,11 @@ namespace NativeRemesher
         /// </summary>
         public static bool hardSurfaceCleanExactCount = false;
 
-        /// <summary>Furthest off the source, in cells at the asked count's spacing, a merged quad may lie.</summary>
-        public static float hardSurfaceSimplifyMaxOffCells = 0.03f;
+        /// <summary>
+        /// Furthest off the source, in cells at the asked count's spacing, a merged quad may lie.
+        /// 0.06 with QuadSimplify.maxValence 5 (0.03 with 7 before: about the same faces).
+        /// </summary>
+        public static float hardSurfaceSimplifyMaxOffCells = 0.06f;
 
         /// <summary>
         /// ...or, on, merged down to the count asked whatever it costs (a low-poly model): the car at

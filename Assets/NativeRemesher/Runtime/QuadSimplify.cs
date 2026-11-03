@@ -60,8 +60,19 @@ namespace NativeRemesher
         /// <summary>Weight of a collapse's change in the squared valence errors.</summary>
         public static float valenceWeight = 0.5f;
 
-        /// <summary>No collapse leaves a point in more faces than this.</summary>
-        public static int maxValence = 7;
+        /// <summary>
+        /// No collapse leaves a point in more faces than this, held to a limit off the source. At 7
+        /// the cars' doors and hoods came out crumpled in the renders: each collapse there left a
+        /// star of six or seven big quads, their shading creased at the middle. At 5 the collapses
+        /// stop a little sooner, so the limit off the source went from 0.03 to 0.06 cells for the
+        /// same faces (car1, car3, car4, the armoured car at 5,000: 1.03, 1.01, 1.06, 1.00 times
+        /// the faces), and every car lies nearer the source (p99 car1 4.71 -> 3.35, car3 3.14 ->
+        /// 2.84, car4 3.77 -> 3.52 thousandths of the diagonal), the panels smooth.
+        /// </summary>
+        public static int maxValence = 5;
+
+        /// <summary>The same, merged down to the count asked.</summary>
+        public static int maxValenceToCount = 7;
 
         /// <summary>No collapse or turn leaves a face with a corner under this, degrees.</summary>
         public static float minCornerDegrees = 12f;
@@ -549,7 +560,7 @@ namespace NativeRemesher
                 Around(u, w, f);
                 foreach (var g in around)
                     if (Array.IndexOf(faces[g], u) >= 0 && Array.IndexOf(faces[g], w) >= 0) return false;
-                if (around.Count > maxValence) return false;
+                if (around.Count > (maxOffCells > 0f ? maxValence : maxValenceToCount)) return false;
                 var x = Place(u, w, q4);
                 foreach (var g in around)
                 {
