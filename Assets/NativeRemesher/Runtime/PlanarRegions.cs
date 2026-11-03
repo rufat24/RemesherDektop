@@ -638,7 +638,11 @@ namespace NativeRemesher
         {
             double xx = c[o], xy = c[o + 1], xz = c[o + 2], yy = c[o + 3], yz = c[o + 4], zz = c[o + 5];
             var trace = xx + yy + zz;
-            var g = guess.sqrMagnitude > 0f ? guess.normalized : Vector3.up;
+            // Not Vector3.normalized: it is zero under a length of 1e-5, and the area-weighted normals of
+            // a mesh stored small (the white house, its triangles 3e-5 across) sum to about 1e-8: every
+            // region stopped growing at one square cell, where this plane takes over.
+            var guessLength = guess.magnitude;
+            var g = guessLength > 0f ? guess / guessLength : Vector3.up;
             if (!(trace > 0)) return g;
             // Shifted slightly so the system stays solvable when the region is exactly flat.
             var shift = 1e-9 * trace;

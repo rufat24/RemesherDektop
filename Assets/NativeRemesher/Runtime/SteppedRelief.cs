@@ -43,6 +43,16 @@ namespace NativeRemesher
         /// <summary>A relief with more cells than this many per square cell of its area is too busy to build this way.</summary>
         public static float maxCellsPerArea = 12f;
 
+        /// <summary>
+        /// A step narrower than this many cells (a window's glazing bar, a casing's lip) is not built:
+        /// it takes its wider neighbour's level and is left to the normal map, and its samples are not
+        /// asked to fit. Off: the white house's bars took 3,278 of its 5,375 faces at 5,000, but built
+        /// they measure nearer and look right, and windows whose steps fail are boxed instead
+        /// (PlanarQuads.reliefBoxes); at 0.5 its building quads lost to its torn lattice at 3,500-8,000,
+        /// at 0.25 they kept and looked as clean. 0: every step built, as before.
+        /// </summary>
+        public static float minWidthCells = 0f;
+
         public sealed class Relief
         {
             // Lines across the rectangle (both ends included) and each cell's height above the wall.
@@ -203,6 +213,8 @@ namespace NativeRemesher
                 for (var b = 0; b < cv; b++)
                     if (!inside[a, b]) level[a, b] = 0f;
             Cluster(level, cu, cv, 0.5f * step);
+            var thinU = Thin(us, cu, cv, level, inside, true, minWidthCells * cell);
+            var thinV = Thin(vs, cv, cu, level, inside, false, minWidthCells * cell);
 
             // Lines with the same level either side go (not the given ones).
             var keepU = new bool[us.Count];
@@ -236,11 +248,13 @@ namespace NativeRemesher
                 var x = u0 + (i + 0.5f) * su;
                 var a = Cell(fu, x);
                 if (Mathf.Min(x - fu[a], fu[a + 1] - x) < su) continue;
+                if (thinU != null && thinU[Cell(us, x)]) continue;
                 for (var j = 0; j < nv; j++)
                 {
                     var y = v0 + (j + 0.5f) * sv;
                     var b = Cell(fv, y);
                     if (!keptInside[a, b] || Mathf.Min(y - fv[b], fv[b + 1] - y) < sv) continue;
+                    if (thinV != null && thinV[Cell(vs, y)]) continue;
                     counted++;
                     if (Mathf.Abs(height[i, j] - kept[a, b]) <= fit) good++;
                 }
@@ -254,6 +268,46 @@ namespace NativeRemesher
             relief.outline = Outline(keptInside);
             if (relief.outline == null) { why = "pinched"; return null; }
             if (!Manifold(relief)) { why = "saddle"; relief = null; }
+            return relief;
+        }
+
+        /// <summary>
+        /// A hole whose steps could not be built (Build's null) as one box: its rectangle at the median
+        /// depth of what is in it, every frame and bar left to the normal map. Null where the hole
+        /// reaches the rectangle's edge.
+        /// </summary>
+        public static Relief Box(float[,] height, bool[,] wall, float u0, float v0, float su, float sv, float cell, float spacing)
+        {
+            int nu = height.GetLength(0), nv = height.GetLength(1);
+            int ia = nu, ib = -1, ja = nv, jb = -1;
+            var values = new List<float>();
+            for (var i = 0; i < nu; i++)
+                for (var j = 0; j < nv; j++)
+                {
+                    if (wall[i, j] || float.IsNegativeInfinity(height[i, j])) continue;
+                    ia = Math.Min(ia, i); ib = Math.Max(ib, i); ja = Math.Min(ja, j); jb = Math.Max(jb, j);
+                    values.Add(height[i, j]);
+                }
+            if (ib < 0 || ia == 0 || ja == 0 || ib == nu - 1 || jb == nv - 1) return null;
+            values.Sort();
+            var depth = values[values.Count / 2];
+            if (Mathf.Abs(depth) < stepCells * cell) depth = 0f;
+            var us = new List<float> { u0, u0 + ia * su, u0 + (ib + 1) * su, u0 + nu * su };
+            var vs = new List<float> { v0, v0 + ja * sv, v0 + (jb + 1) * sv, v0 + nv * sv };
+            var all = new[] { true, true, true, true };
+            var fu = Keep(us, all, spacing, out var fromU);
+            var fv = Keep(vs, all, spacing, out var fromV);
+            var relief = new Relief { samples = nu * nv, fit = 1f, us = fu, vs = fv };
+            relief.level = new float[fu.Count - 1, fv.Count - 1];
+            relief.inside = new bool[fu.Count - 1, fv.Count - 1];
+            for (var a = 0; a + 1 < fu.Count; a++)
+                for (var b = 0; b + 1 < fv.Count; b++)
+                {
+                    relief.inside[a, b] = fromU[a] == 1 && fromV[b] == 1;
+                    relief.level[a, b] = relief.inside[a, b] ? depth : 0f;
+                }
+            relief.outline = Outline(relief.inside);
+            if (relief.outline == null || !Manifold(relief)) return null;
             return relief;
         }
 
@@ -342,6 +396,43 @@ namespace NativeRemesher
                 if (!next.TryGetValue(at, out at) || loop.Count > edges) return null;
             } while (at != start);
             return loop.Count == edges ? loop : null;
+        }
+
+        // The strips between lines narrower than `width`, each given its wider neighbour's levels
+        // (inside cells only; the thinnest first, so a run of thin steps goes to the wide one beside
+        // it). Along u (strips are columns of level) or v (rows). Null: none.
+        static bool[] Thin(List<float> lines, int count, int across, float[,] level, bool[,] inside, bool alongU, float width)
+        {
+            if (!(width > 0f) || count < 2) return null;
+            float Get(int a, int b) => alongU ? level[a, b] : level[b, a];
+            bool In(int a, int b) => alongU ? inside[a, b] : inside[b, a];
+            void Set(int a, int b, float x) { if (alongU) level[a, b] = x; else level[b, a] = x; }
+            var size = new float[count];
+            for (var a = 0; a < count; a++) size[a] = lines[a + 1] - lines[a];
+            var thin = new bool[count];
+            var any = false;
+            var order = new List<int>();
+            for (var a = 0; a < count; a++) if (size[a] < width) order.Add(a);
+            order.Sort((x, y) => size[x].CompareTo(size[y]));
+            foreach (var a in order)
+            {
+                // The wider neighbour (counting a merged one as one strip with it).
+                int left = a - 1, right = a + 1;
+                float wl = left >= 0 ? size[left] : -1f, wr = right < count ? size[right] : -1f;
+                var from = wl >= wr ? left : right;
+                if (from < 0 || from >= count) continue;
+                var changed = false;
+                for (var b = 0; b < across; b++)
+                {
+                    if (!In(a, b)) continue;
+                    var x = In(from, b) ? Get(from, b) : 0f;
+                    if (x != Get(a, b)) { Set(a, b, x); changed = true; }
+                }
+                size[from] += size[a];
+                thin[a] = changed;
+                any |= changed;
+            }
+            return any ? thin : null;
         }
 
         static int Cell(List<float> lines, float x)

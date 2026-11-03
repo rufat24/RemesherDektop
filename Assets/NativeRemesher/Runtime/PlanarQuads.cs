@@ -199,6 +199,14 @@ namespace NativeRemesher
         /// <summary>A strip of not-wall thinner than twice this many cells does not join two patches (a trim from a window to the wall's edge).</summary>
         public static float reliefBarrierCells = 0.25f;
 
+        /// <summary>
+        /// A hole whose steps cannot be built (SteppedRelief.Build: they do not fit, cross at a
+        /// saddle, are too busy) is built as one box at its median depth, its frames and bars left to
+        /// the normal map; off: left to the general fill, crumpled. The white house at 3,500 had 11
+        /// of its 19 windows so left.
+        /// </summary>
+        public static bool reliefBoxes = true;
+
         /// <summary>The smallest relief, in cells along either side.</summary>
         public static float reliefMinCells = 0.75f;
 
@@ -1535,6 +1543,12 @@ namespace NativeRemesher
                             }
                         var none = new List<float>();
                         var relief = SteppedRelief.Build(ch, cw, u0 + ca * s, v0 + cc * s, s, s, none, none, cell, h, out var why);
+                        if (relief == null && reliefBoxes)
+                        {
+                            // Its steps not built: a box, its frames left to the normal map.
+                            relief = SteppedRelief.Box(ch, cw, u0 + ca * s, v0 + cc * s, s, s, cell, h);
+                            if (relief != null) Left("boxed " + why, f, pu0, pv0, pu1, pv1);
+                        }
                         if (relief == null) { Left(why, f, pu0, pv0, pu1, pv1); continue; }
                         float rlo = 0f, rhi = 0f;
                         foreach (var l in relief.level) { rlo = Mathf.Min(rlo, l); rhi = Mathf.Max(rhi, l); }

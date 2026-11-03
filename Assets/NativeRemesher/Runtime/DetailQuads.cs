@@ -376,8 +376,12 @@ namespace NativeRemesher
         {
             var count = t.Length / 3;
             var normals = new Vector3[count];
+            // Divided by their length, not Vector3.normalized (zero under 1e-5): on a mesh stored small
+            // (the white house's triangles' cross products are about 1e-8) no pair was made, and every
+            // triangle came out as the split's three quads round a point.
+            Vector3 Unit(Vector3 v) { var len = v.magnitude; return len > 0f ? v / len : Vector3.zero; }
             for (var f = 0; f < count; f++)
-                normals[f] = Vector3.Cross(p[t[3 * f + 1]] - p[t[3 * f]], p[t[3 * f + 2]] - p[t[3 * f]]).normalized;
+                normals[f] = Unit(Vector3.Cross(p[t[3 * f + 1]] - p[t[3 * f]], p[t[3 * f + 2]] - p[t[3 * f]]));
             var halfEdge = new Dictionary<(int, int), int>(3 * count);
             for (var f = 0; f < count; f++)
                 for (var k = 0; k < 3; k++)
@@ -400,8 +404,8 @@ namespace NativeRemesher
                     for (var i = 0; i < 4; i++)
                     {
                         Vector3 prev = p[quad[(i + 3) % 4]], cur = p[quad[i]], next = p[quad[(i + 1) % 4]];
-                        var e0 = (prev - cur).normalized;
-                        var e1 = (next - cur).normalized;
+                        var e0 = Unit(prev - cur);
+                        var e1 = Unit(next - cur);
                         var sin = Vector3.Cross(e0, e1).magnitude;
                         // A reflex corner (the quad folds over its diagonal) scores nothing.
                         if (Vector3.Dot(Vector3.Cross(cur - prev, next - cur), normals[f] + normals[g]) <= 0f) sin = 0f;

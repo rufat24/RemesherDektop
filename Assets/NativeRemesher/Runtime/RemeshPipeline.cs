@@ -1187,14 +1187,20 @@ namespace NativeRemesher
             // regularity too: built from the source's own planes they keep every handle and badge at
             // any count, and that is what measures them nearer. Car2 at 5,000: 0.00168 against the
             // lattice's 0.00247, 34 % regular against 97 %, handles in the quads, panels crumpled.
-            if (planarQuadsTry && PlanarQuads.enabled && !lattice.panelCreases && !s_RegularJudge)
+            if (planarQuadsTry && PlanarQuads.enabled && (!lattice.panelCreases || planarQuadsAfterPanels) && !s_RegularJudge)
             {
                 onProgress?.Invoke("Trying a building's quads", 0f);
+                // At the count asked first; not kept there, at the faces the lattice came out at.
+                var planarCounts = new List<RemeshSettings>();
+                if (planarQuadsAtAskedCount && settings.targetQuadCount != detailSettings.targetQuadCount) planarCounts.Add(settings);
+                planarCounts.Add(detailSettings);
+                foreach (var planarSettings in planarCounts)
+                {
                 RemeshResult planar;
                 planarQuads = true;
                 try
                 {
-                    planar = SolveInternal(positions, triangles, detailSettings, profile, onProgress, sourceUvs,
+                    planar = SolveInternal(positions, triangles, planarSettings, profile, onProgress, sourceUvs,
                         autoSelectProfile, SymmetryAxis.None, 0f, triangleMaterials);
                 }
                 finally { planarQuads = false; }
@@ -1208,15 +1214,19 @@ namespace NativeRemesher
                     var triangleShare = planar.extraction.triangleCount / (float)faces;
                     var planarRegular = RegularShare(planar.extraction);
                     tried += $"; building {planarOff:G3} (p99 {planarFar:G3} against {bestFar:G3}), {planarTurn:0.0} deg, {planarRegular:P0} regular at {faces} ({triangleShare:P1} triangles)";
-                    if (planarOff <= bestOff && planarFar <= bestFar && planarTurn <= bestTurn && triangleShare <= planarQuadsTriangles
+                    var building = planar.planarQuadsStats?.flat != null && planar.planarQuadsStats.flat.share >= planarQuadsBuildingShare;
+                    if (planarOff <= bestOff && planarFar <= bestFar && planarTurn <= (building ? detailQuadsTurn : 1f) * bestTurn
+                        && triangleShare <= planarQuadsTriangles
                         && faces <= planarQuadsFaces * best.extraction.faces.Count
                         && (RegularEnough(planarRegular, latticeRegular) || TornLattice(planarFar, latticeFar))
                         && (lattice.sourceCreaseStats == null || !(candidateRegularShare > 0f)
-                            || planarRegular >= candidateRegularShare * latticeRegular))
+                            || planarRegular >= candidateRegularShare * latticeRegular || building))
                     {
                         best = planar;
                         kept = ": building kept";
+                        break;
                     }
+                }
                 }
             }
             // The lattice kept, from creases read edge by edge: laid again along them joined
@@ -1481,6 +1491,37 @@ namespace NativeRemesher
         /// </summary>
         public static bool planarQuadsTry = true;
 
+        /// <summary>
+        /// The building's quads are tried after a lattice laid along its panels' creases too. The white
+        /// house's walls, once found (PlanarRegions at its small scale), make it such a lattice, its
+        /// windows still torn; the cars' building quads are kept off by their regularity
+        /// (candidateRegularShare). False: tried only after other lattices, as before.
+        /// </summary>
+        public static bool planarQuadsAfterPanels = true;
+
+        /// <summary>
+        /// A source this much flat walls (PlanarRegions' share of its area) is a building: its building
+        /// quads are kept without the lattice's regularity (candidateRegularShare), their grids cut
+        /// round every window by design. The white house is 90 % walls, its building quads 46 % regular
+        /// against its lattice's 97 %, half as far off the source and its windows boxes, not torn; the
+        /// four cars are 78-81 % and the armoured car 65 %. Its faces may also turn from the source's
+        /// up to detailQuadsTurn times the lattice's, as the error-driven quads' may: at 8,000 the
+        /// house's, at the count asked (8,393 faces against the lattice's 18,852), turned 11.1 degrees
+        /// against 10.8, nearer in all else. Above 1: never, as before.
+        /// </summary>
+        public static float planarQuadsBuildingShare = 0.85f;
+
+        /// <summary>
+        /// The building's quads are made at the count asked, not at the faces the lattice came out at
+        /// (Adaptive Quad Count raises those: the white house's lattice made 13,760 faces for 5,000).
+        /// The house's building quads at 5,000 come out at 5,375 faces with 18 of its 19 windows
+        /// built, and still lie nearer than the lattice (1.31e-5 against 1.85e-5); at 11,110 two
+        /// upper windows failed and were left crumpled. Not kept there, they are made again at the
+        /// lattice's faces (ccnb: 6,243 faces lost, 11,331 kept as before). False: only at the
+        /// lattice's faces, as before.
+        /// </summary>
+        public static bool planarQuadsAtAskedCount = true;
+
         /// <summary>The building's quads are kept with at most this share of triangles...</summary>
         public static float planarQuadsTriangles = 0.01f;
 
@@ -1728,11 +1769,16 @@ namespace NativeRemesher
                 {
                     if (!PlanarQuads.Build(positions, triangles, Mathf.Max(1, settings.targetQuadCount),
                             out detailPositions, out detailFaces, out result.planarQuadsStats))
+                    {
+                        if (QuadReduction.logStats) Debug.Log($"[Native Remesher] building refused: {result.planarQuadsStats}");
                         return null;
+                    }
                 }
                 else
                     DetailQuads.Build(positions, triangles, Mathf.Max(1, settings.targetQuadCount),
                         out detailPositions, out detailFaces, out result.detailQuadsStats);
+                if (QuadReduction.logStats)
+                    Debug.Log(planarQuads ? $"[Native Remesher] building: {result.planarQuadsStats}" : $"[Native Remesher] {result.detailQuadsStats}");
                 var extraction = new QuadExtractionResult { positions = detailPositions, faces = detailFaces };
                 extraction.normals = new Vector3[detailPositions.Length];
                 foreach (var face in detailFaces)
