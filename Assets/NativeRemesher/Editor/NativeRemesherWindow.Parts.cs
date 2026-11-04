@@ -106,7 +106,12 @@ namespace NativeRemesher
                 paints.Add(PaintFor(go));
             }
 
-            if (m_CombineParts)
+            // Parts sewn rim to rim into one surface (a scan saved as a ground and the branch lying in
+            // it) are remeshed as one: apart, each rim gets its own points and the seam opens.
+            var sewn = !m_CombineParts && sewnParts && inputs.Count > 1 && AllSewn(inputs);
+            if (sewn)
+                Debug.Log($"[Native Remesher] {inputs.Count} parts share their open rims: remeshed as one surface");
+            if (m_CombineParts || sewn)
             {
                 // One mesh in the root's space; submesh i of part p is slot (p's first slot + i).
                 var positions = new List<Vector3>();
@@ -602,6 +607,144 @@ namespace NativeRemesher
 
         /// <summary>A copy of an earlier part (SameShape) takes that part's result, moved; false: every part solved.</summary>
         public static bool sameParts = true;
+
+        /// <summary>
+        /// Parts whose open rims are each other's (every part joined, through rims it shares for at
+        /// least <see cref="sewnShare"/> of its own open edges) are remeshed as one surface, as Combine
+        /// Parts would; false: each part on its own, as before.
+        /// </summary>
+        public static bool sewnParts = true;
+
+        /// <summary>The share of a part's open edges another part must also have for the two to count as sewn.</summary>
+        public static float sewnShare = 0.5f;
+
+        /// <summary>
+        /// True when the parts, placed in the root, join into one surface along shared open rims: an
+        /// open edge of one part lying on an open edge of another, for at least <see cref="sewnShare"/>
+        /// of either part's open edges, and every part reached that way.
+        /// </summary>
+        /// <summary>
+        /// A weld cell's hash that mixes: the cells are large, structured lattice coordinates, which
+        /// a plain shift-and-xor hash (Vector3Int's, the tuple's) piles into long collision chains.
+        /// </summary>
+        sealed class WeldCellComparer : IEqualityComparer<(int, int, int)>
+        {
+            public static readonly WeldCellComparer instance = new WeldCellComparer();
+
+            public bool Equals((int, int, int) a, (int, int, int) b) => a == b;
+
+            public int GetHashCode((int, int, int) c)
+            {
+                unchecked
+                {
+                    var h = (ulong)(uint)c.Item1 * 0x9E3779B97F4A7C15UL;
+                    h = (h ^ (uint)c.Item2) * 0xC2B2AE3D27D4EB4FUL;
+                    h = (h ^ (uint)c.Item3) * 0x165667B19E3779F9UL;
+                    h ^= h >> 29;
+                    return (int)(h ^ (h >> 32));
+                }
+            }
+        }
+
+        /// <summary>
+        /// An edge's hash (two point ids in one long) that mixes: long's own XORs the halves, and two
+        /// neighbouring points' ids XOR to a handful of small numbers, so the edges share a few buckets.
+        /// </summary>
+        sealed class WeldEdgeComparer : IEqualityComparer<long>
+        {
+            public static readonly WeldEdgeComparer instance = new WeldEdgeComparer();
+
+            public bool Equals(long a, long b) => a == b;
+
+            public int GetHashCode(long key)
+            {
+                unchecked
+                {
+                    var h = (ulong)key * 0x9E3779B97F4A7C15UL;
+                    h ^= h >> 31;
+                    h *= 0xC2B2AE3D27D4EB4FUL;
+                    return (int)(h ^ (h >> 32));
+                }
+            }
+        }
+
+        static bool AllSewn(List<PartBake.Part> inputs)
+        {
+            var n = inputs.Count;
+            var min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+            var max = -min;
+            var placed = new Vector3[n][];
+            for (var p = 0; p < n; p++)
+            {
+                var input = inputs[p];
+                placed[p] = new Vector3[input.positions.Length];
+                for (var i = 0; i < placed[p].Length; i++)
+                {
+                    var q = input.toModel.MultiplyPoint3x4(input.positions[i]);
+                    placed[p][i] = q;
+                    min = Vector3.Min(min, q);
+                    max = Vector3.Max(max, q);
+                }
+            }
+            if (!(max.x >= min.x)) return false;
+            // The same weld the topology uses (RemeshTopology.Build): a millionth of the diagonal.
+            var epsilon = Mathf.Max((max - min).magnitude * 1e-6f, 1e-9f);
+            var cells = new Dictionary<(int, int, int), int>(WeldCellComparer.instance);
+            int Cell(Vector3 q)
+            {
+                var c = (Mathf.RoundToInt(q.x / epsilon), Mathf.RoundToInt(q.y / epsilon),
+                    Mathf.RoundToInt(q.z / epsilon));
+                if (!cells.TryGetValue(c, out var id)) cells.Add(c, id = cells.Count);
+                return id;
+            }
+
+            // Every part's open edges, as pairs of welded points shared by all the parts.
+            var open = new List<long>[n];
+            var owner = new Dictionary<long, int>(WeldEdgeComparer.instance);
+            var shared = new Dictionary<(int, int), int>();
+            for (var p = 0; p < n; p++)
+            {
+                var ids = new int[placed[p].Length];
+                for (var i = 0; i < ids.Length; i++) ids[i] = Cell(placed[p][i]);
+                var uses = new Dictionary<long, int>(WeldEdgeComparer.instance);
+                var t = inputs[p].triangles;
+                for (var k = 0; k + 2 < t.Length; k += 3)
+                    for (var e = 0; e < 3; e++)
+                    {
+                        int a = ids[t[k + e]], b = ids[t[k + (e + 1) % 3]];
+                        if (a == b) continue;
+                        var key = a < b ? ((long)a << 32) | (uint)b : ((long)b << 32) | (uint)a;
+                        uses.TryGetValue(key, out var u);
+                        uses[key] = u + 1;
+                    }
+                open[p] = new List<long>();
+                foreach (var kv in uses)
+                {
+                    if (kv.Value != 1) continue;
+                    open[p].Add(kv.Key);
+                    if (owner.TryGetValue(kv.Key, out var o))
+                    {
+                        var pair = (o, p);
+                        shared.TryGetValue(pair, out var s);
+                        shared[pair] = s + 1;
+                    }
+                    else owner[kv.Key] = p;
+                }
+            }
+
+            var root = new int[n];
+            for (var p = 0; p < n; p++) root[p] = p;
+            int Find(int p) { while (root[p] != p) p = root[p] = root[root[p]]; return p; }
+            foreach (var kv in shared)
+            {
+                var (a, b) = kv.Key;
+                if (kv.Value < sewnShare * Mathf.Min(open[a].Count, open[b].Count)) continue;
+                root[Find(a)] = Find(b);
+            }
+            for (var p = 1; p < n; p++)
+                if (Find(p) != Find(0)) return false;
+            return true;
+        }
 
         void FinishParts(PartsRun run)
         {
