@@ -12,8 +12,15 @@ Goal: a standalone **desktop** app built around the **native remesher** from the
 
 ## Phase 0 — Intake (blocks everything else)
 
-Push the following into **this repo** (suggested layout) on any branch, or connect the folder via
-Remote Control (Claude desktop app → Settings → Claude Code → Remote Control) so a session can read it.
+> **Before pushing anything: this repo is currently PUBLIC.** Switch it to **private** first
+> (GitHub → Settings → General → Danger Zone → Change visibility) unless you intend to open-source the
+> remesher — pushed code can persist in forks/caches even after deletion. If any native code is
+> third-party or purchased, confirm its license allows hosting it on GitHub (private or public).
+
+Push the following into **this repo** (suggested layout) on any branch. Pushing is the reliable route;
+connecting the folder via Remote Control (Claude desktop app → Settings → Claude Code → Remote Control)
+is an alternative but is not available on every account yet. Commit test meshes as normal files
+(a few MB each), **not Git LFS** — LFS content may not reach a cloud session.
 
 | What | Why | Suggested path |
 |---|---|---|
