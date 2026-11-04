@@ -5,7 +5,7 @@ Goal: a standalone **desktop** app built around the **native remesher** from the
 
 > **Status / honesty note.** When this plan was written the repo was empty and the Unity project
 > (`C:\Users\user\...`) is not reachable from the cloud session (no Remote Control folder connected;
-> no Quadremesh repo on GitHub; `rufat24/RemesherWeb` is also empty). Nothing below asserts anything
+> no Quadremesh repo on GitHub). Nothing below asserts anything
 > about the remesher's algorithm, exported functions or data layout. Phase 0 exists to fix that.
 
 ---
@@ -65,8 +65,8 @@ container and carries the parity tests; the GUI is just another client of `core`
 ### GUI recommendation
 **Dear ImGui + GLFW + OpenGL 3.3** — small, one-binary, fast to iterate, good enough for a mesh viewer
 (orbit/pan/zoom, solid + wireframe + quad-edge overlay, before/after toggle, parameter panel).
-Alternatives if needed: **Qt 6** (native look, heavier, LGPL obligations), or **Tauri/web** if code
-should be shared with `RemesherWeb` (would require a WASM or sidecar build of the core).
+Alternatives if needed: **Qt 6** (native look, heavier, LGPL obligations), or **Tauri** (web UI shell
+around a sidecar build of the core).
 
 ## Cross-cutting constraints
 
