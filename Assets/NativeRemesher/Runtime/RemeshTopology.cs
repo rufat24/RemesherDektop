@@ -87,6 +87,17 @@ namespace NativeRemesher
         /// <summary>Number of source vertices that collapsed away during welding.</summary>
         public int weldedAway { get; private set; }
 
+        /// <summary>
+        /// Drop a source triangle whose three welded corners, in the same winding, were already
+        /// read. A part stored twice over (every edge then used four times) otherwise reads as
+        /// non-manifold everywhere and gets no quads at all. Opposite-wound twins are kept: those
+        /// can be a deliberately two-sided sheet. A mesh with no repeats is read exactly as before.
+        /// </summary>
+        public static bool dropRepeatedTriangles = true;
+
+        /// <summary>Source triangles dropped as exact repeats (see <see cref="dropRepeatedTriangles"/>).</summary>
+        public int repeatedTriangles { get; private set; }
+
         /// <summary>Vertices with no neighbours — isolated points the solvers must skip.</summary>
         public int isolatedVertices { get; private set; }
 
@@ -340,6 +351,9 @@ namespace NativeRemesher
             // --- triangles, remapped onto welded indices ---
             var tris = new List<int>(sourceTriangles.Length);
             var sourceOf = new List<int>(sourceTriangles.Length / 3);
+            var readTriangles = dropRepeatedTriangles
+                ? new HashSet<(int, int, int)>(sourceTriangles.Length / 3)
+                : null;
             for (var i = 0; i + 2 < sourceTriangles.Length; i += 3)
             {
                 int a = remap[sourceTriangles[i]], b = remap[sourceTriangles[i + 1]],
@@ -349,6 +363,18 @@ namespace NativeRemesher
                 // they carry no normal and would poison the area weights.
                 if (a == b || b == c || a == c)
                     continue;
+
+                if (readTriangles != null)
+                {
+                    // Rotated so the smallest corner leads: the same triangle in the same winding
+                    // gives the same key whichever corner it was stored from.
+                    var key = a < b && a < c ? (a, b, c) : b < c ? (b, c, a) : (c, a, b);
+                    if (!readTriangles.Add(key))
+                    {
+                        topology.repeatedTriangles++;
+                        continue;
+                    }
+                }
 
                 tris.Add(a);
                 tris.Add(b);
@@ -783,7 +809,8 @@ namespace NativeRemesher
             return $"{vertexCount:N0} vertices ({weldedAway:N0} welded away), " +
                    $"{triangleCount:N0} triangles, avg edge {averageEdgeLength:F4}, " +
                    $"area {totalArea:F3}" +
-                   (isolatedVertices > 0 ? $", {isolatedVertices} isolated" : "");
+                   (isolatedVertices > 0 ? $", {isolatedVertices} isolated" : "") +
+                   (repeatedTriangles > 0 ? $", {repeatedTriangles:N0} repeated triangles dropped" : "");
         }
     }
 }
